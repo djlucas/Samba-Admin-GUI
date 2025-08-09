@@ -1,0 +1,368 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# -----------------------------------------------------------------------------
+# SADUC (Samba Active Directory Users and Computers)
+#
+# src/samba_backend.py
+#
+# Description:
+# This module handles all interactions with the Samba/LDAP backend. It's
+# responsible for establishing connections, querying for Active Directory
+# objects, and executing modification commands.
+#
+# -----------------------------------------------------------------------------
+
+import logging
+import ldap
+import ldap.sasl
+from ldap.controls import SimplePagedResultsControl
+import dns.resolver
+import subprocess
+import sys
+
+# --- Custom Exception ---
+class NoKerberosTicketError(Exception):
+    """Raised when no valid Kerberos ticket is found."""
+    pass
+
+# --- Global Configuration ---
+logger = logging.getLogger("saduc_app." + __name__)
+
+BASE_DN = 'dc=home,dc=lucasit,dc=com'
+# Use a broad filter to get all objects, then filter in Python
+DEFAULT_SEARCH_FILTER = "(objectclass=*)"
+PAGE_SIZE = 1000  # Default page size for paged results control
+
+# A specific, curated list of classes for objects that can appear as
+# expandable branches in the left-hand tree view. This includes standard
+# containers as well as various special system containers.
+TREE_BRANCH_CLASSES = {
+    'organizationalUnit',
+    'container',
+    'builtinDomain',
+    'domainDns',
+    'dnsZone',
+    'msDS-PasswordSettingsContainer',
+    'fileLinkTracking',
+    'linkTrackObjectMoveTable',
+    'linkTrackVolumeTable',
+    'msDFSR-GlobalSettings',
+    'msDFSR-ReplicationGroup',
+    'msDFSR-Topology',
+    'msDFSR-Content',
+    'groupPolicyContainer', # Correct class for GPOs
+    'nTFRSSettings',        # File Replication Service is a container
+    'dfsConfiguration',
+    'classStore',
+    'domainPolicy'          # For the "Default Domain Policy" object under System
+}
+
+# Specific container names that should not be expandable in the tree view.
+# This is a performance optimization for containers that *never* have sub-containers.
+# Stored in lowercase for robust, case-insensitive comparison.
+NON_EXPANDABLE_CONTAINERS = {
+    'cn=users,dc=home,dc=lucasit,dc=com',
+    'cn=computers,dc=home,dc=lucasit,dc=com',
+    'cn=builtin,dc=home,dc=lucasit,dc=com',
+    'cn=foreignsecurityprincipals,dc=home,dc=lucasit,dc=com'
+}
+
+
+def get_ldap_conn():
+    """
+    Establishes an authenticated LDAP connection using GSSAPI/Kerberos.
+    Includes a fallback mechanism for multiple servers discovered via DNS SRV records.
+    """
+    # Check for a valid Kerberos ticket before attempting connection
+    logger.info("Checking for a valid Kerberos ticket...")
+    result = subprocess.run(['klist', '-s'], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise NoKerberosTicketError(f"No valid Kerberos ticket found. Please run 'kinit' first.")
+    logger.info("Kerberos ticket found.")
+
+    domain = '.'.join(p.split('=', 1)[-1] for p in BASE_DN.split(','))
+    srv_record = f'_ldap._tcp.{domain}'
+
+    try:
+        answers = dns.resolver.resolve(srv_record, 'SRV')
+        # Sort answers by priority and weight to get the preferred servers
+        ldap_servers = sorted(answers, key=lambda x: (x.priority, x.weight))
+        server_list = [str(r.target).rstrip('.') for r in ldap_servers]
+        logger.info(f"Dynamically discovered LDAP servers via DNS: {server_list}")
+    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN) as e:
+        logger.error(f"Failed to resolve DNS SRV record for '{srv_record}': {e}")
+        return None
+    except Exception as e:
+        logger.error(f"An unexpected DNS error occurred: {e}")
+        return None
+
+    for server in server_list:
+        try:
+            logger.info(f"Attempting to connect to LDAP server: {server}")
+            conn = ldap.initialize(f'ldap://{server}')
+            conn.set_option(ldap.OPT_PROTOCOL_VERSION, 3)
+            conn.set_option(ldap.OPT_REFERRALS, 0)
+
+            # Kerberos/GSSAPI bind
+            sasl_auth = ldap.sasl.gssapi('')
+            conn.sasl_interactive_bind_s("", sasl_auth)
+            logger.info("Samba backend: Successfully established LDAP connection.")
+            return conn
+        except ldap.LDAPError as e:
+            logger.warning(f"Failed to connect to {server}: {e}")
+            continue
+
+    logger.critical("Samba backend: Failed to connect to any LDAP servers.")
+    return None
+
+def get_paged_results(samba_conn, dn, scope, search_filter, attributes):
+    """
+    Performs a paged LDAP search to handle server-side result limits.
+    """
+    page_ctrl = SimplePagedResultsControl(3, size=PAGE_SIZE, cookie='')
+    search_ctrls = [page_ctrl]
+    all_results = []
+
+    while True:
+        try:
+            msgid = samba_conn.search_ext(dn, scope, search_filter, attributes, serverctrls=search_ctrls)
+            rtype, rdata, rmsgid, serverctrls = samba_conn.result3(msgid)
+            all_results.extend(rdata)
+
+            pctrls = [c for c in serverctrls if c.controlType == SimplePagedResultsControl.controlType]
+            if not pctrls or not pctrls[0].cookie:
+                break
+
+            page_ctrl.cookie = pctrls[0].cookie
+
+        except ldap.LDAPError as e:
+            logger.error(f"Paged search error: {e}")
+            return all_results
+
+    return all_results
+
+def _is_tree_branch(entry, advanced_view=False):
+    """
+    Helper to check if an LDAP object is a structural container for the tree view.
+    """
+    if not isinstance(entry, dict) or not entry.get('objectClass'):
+        return False
+
+    if not advanced_view:
+        show_in_adv_view = entry.get('showInAdvancedViewOnly')
+        if show_in_adv_view and show_in_adv_view[0].decode('utf-8').lower() == 'true':
+            return False
+
+    object_classes = {oc.decode('utf-8') for oc in entry['objectClass']}
+    
+    # An object is a branch if its class is in our specific list.
+    return len(object_classes.intersection(TREE_BRANCH_CLASSES)) > 0
+
+def get_forest_root_info(samba_conn):
+    """
+    Retrieves the forest root domain by querying the RootDSE.
+    """
+    logger.info("Querying RootDSE to find the forest root domain.")
+    try:
+        # A search with an empty base DN targets the RootDSE
+        res = samba_conn.search_s("", ldap.SCOPE_BASE, "(objectClass=*)", ['rootDomainNamingContext'])
+        if res and res[0][1].get('rootDomainNamingContext'):
+            attrs_dict = res[0][1]
+            root_dn = attrs_dict['rootDomainNamingContext'][0].decode('utf-8')
+            domain_name = ".".join(p.split('=')[1] for p in root_dn.split(',') if p.lower().startswith('dc='))
+            logger.info(f"Found forest root DN: {root_dn} (Name: {domain_name})")
+            return {'name': domain_name, 'dn': root_dn}
+        
+        logger.warning("RootDSE query successful but 'rootDomainNamingContext' attribute not found.")
+        return None
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error querying RootDSE: {e}")
+        return None
+
+def get_expandable_children(samba_conn, dn, advanced_view=False):
+    """
+    Retrieves children of a given DN that should appear as branches in the tree view.
+    """
+    logger.debug(f"Fetching expandable children for DN: {dn}")
+    try:
+        # Request RDN attributes. We specifically AVOID displayName for the tree view.
+        attributes = ['cn', 'ou', 'dc', 'distinguishedName', 'objectClass', 'showInAdvancedViewOnly']
+        res = get_paged_results(samba_conn, dn, ldap.SCOPE_ONELEVEL, DEFAULT_SEARCH_FILTER, attributes)
+
+        children = []
+        for child_dn, entry in res:
+            if not isinstance(entry, dict):
+                logger.debug(f"Skipping non-dict entry for DN='{child_dn}': {entry}")
+                continue
+            
+            # Use the correct RDN attribute for the name ('ou', 'dc', or 'cn')
+            name_attr = entry.get('ou') or entry.get('dc') or entry.get('cn')
+
+            # Use our stricter check to see if this object belongs in the tree
+            if _is_tree_branch(entry, advanced_view) and name_attr:
+                has_sub_containers = has_expandable_children(samba_conn, child_dn, advanced_view)
+                children.append({
+                    'name': name_attr[0].decode('utf-8'),
+                    'dn': child_dn,
+                    'objectClass': [oc.decode('utf-8') for oc in entry.get('objectClass', [])],
+                    'has_sub_containers': has_sub_containers
+                })
+        return children
+    except ldap.NO_SUCH_OBJECT:
+        logger.warning(f"DN '{dn}' does not exist.")
+        return []
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error fetching expandable children for '{dn}': {e}")
+        return []
+
+
+def has_expandable_children(samba_conn, dn, advanced_view=False):
+    """
+    Checks if a given DN has any children that are themselves structural containers.
+    """
+    logger.debug(f"Checking for expandable children in DN: {dn}")
+
+    if not advanced_view and dn.lower() in NON_EXPANDABLE_CONTAINERS:
+        return False
+
+    try:
+        attributes = ['cn', 'ou', 'dc', 'objectClass', 'showInAdvancedViewOnly']
+        res = samba_conn.search_s(dn, ldap.SCOPE_ONELEVEL, DEFAULT_SEARCH_FILTER, attributes)
+
+        if not res:
+            return False
+
+        for child_dn, entry in res:
+            # Use the same strict check here
+            if _is_tree_branch(entry, advanced_view):
+                return True # Found at least one valid branch child
+        return False
+    except ldap.NO_SUCH_OBJECT:
+        return False
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error checking for expandable children in '{dn}': {e}")
+        return False
+
+
+def get_all_objects_in_dn(samba_conn, dn):
+    """
+    Retrieves all objects within a given DN, for display in the right pane.
+    """
+    logger.debug(f"Fetching all objects in DN: {dn}")
+    try:
+        search_filter = "(objectclass=*)"
+        # Here, we DO want the displayName for the list view, and now also description
+        attributes = ['cn', 'ou', 'dc', 'displayName', 'description', 'distinguishedName', 'objectClass', 'sAMAccountName']
+
+        res = get_paged_results(samba_conn, dn, ldap.SCOPE_ONELEVEL, search_filter, attributes)
+
+        objects = []
+        for child_dn, entry in res:
+            if isinstance(entry, dict):
+                # Prioritize displayName for the list view
+                name_attr = entry.get('displayName') or entry.get('ou') or entry.get('dc') or entry.get('cn')
+                if name_attr:
+                    obj_data = {
+                        'name': name_attr[0].decode('utf-8'),
+                        'dn': child_dn,
+                        'objectClass': [oc.decode('utf-8') for oc in entry.get('objectClass', [])]
+                    }
+                    # Add description if it exists
+                    if 'description' in entry:
+                        obj_data['description'] = entry['description'][0].decode('utf-8')
+                    objects.append(obj_data)
+
+        return objects
+    except ldap.NO_SUCH_OBJECT:
+        logger.warning(f"DN '{dn}' does not exist.")
+        return []
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error fetching objects in '{dn}': {e}")
+        return []
+
+
+def create_user_samba(samba_conn, user_data):
+    """Placeholder for Samba user creation logic."""
+    logger.info(f"Samba backend: Creating user with data: {user_data}")
+    # ... placeholder for backend logic ...
+    return True, "dialog.user.new.success_message"
+
+
+def copy_user_samba(samba_conn, source_username, new_user_data):
+    """Placeholder for Samba user creation logic."""
+    logger.info(f"Samba backend: Copying user '{source_username}' to new user with data: {new_user_data}")
+    # ... placeholder for backend logic ...
+    return True, "dialog.user.copy.success_message"
+
+def get_user_properties(samba_conn, user_dn):
+    """Retrieves all properties for a given user."""
+    logger.debug(f"Fetching properties for user DN: {user_dn}")
+    try:
+        attributes = [
+            'givenName', 'sn', 'displayName', 'description', 'sAMAccountName',
+            'userAccountControl', 'memberOf'
+        ]
+        res = samba_conn.search_s(user_dn, ldap.SCOPE_BASE, '(objectClass=user)', attributes)
+
+        if not res:
+            return None
+
+        entry = res[0][1]
+        properties = {}
+        for key, value in entry.items():
+            properties[key] = [v.decode('utf-8') for v in value]
+
+        return properties
+
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error fetching user properties for DN '{user_dn}': {e}")
+        return None
+
+def get_computer_properties(samba_conn, computer_dn):
+    """Retrieves all properties for a given computer."""
+    logger.debug(f"Fetching properties for computer DN: {computer_dn}")
+    try:
+        attributes = [
+            'cn', 'dNSHostName', 'description', 'operatingSystem',
+            'operatingSystemVersion', 'operatingSystemServicePack', 'memberOf'
+        ]
+        res = samba_conn.search_s(computer_dn, ldap.SCOPE_BASE, '(objectClass=computer)', attributes)
+
+        if not res:
+            return None
+
+        entry = res[0][1]
+        properties = {}
+        for key, value in entry.items():
+            properties[key] = [v.decode('utf-8') for v in value]
+
+        return properties
+
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error fetching computer properties for DN '{computer_dn}': {e}")
+        return None
+
+def get_group_properties(samba_conn, group_dn):
+    """Retrieves all properties for a given group."""
+    logger.debug(f"Fetching properties for group DN: {group_dn}")
+    try:
+        attributes = [
+            'cn', 'description', 'groupType', 'member', 'memberOf'
+        ]
+        res = samba_conn.search_s(group_dn, ldap.SCOPE_BASE, '(objectClass=group)', attributes)
+
+        if not res:
+            return None
+
+        entry = res[0][1]
+        properties = {}
+        for key, value in entry.items():
+            properties[key] = [v.decode('utf-8') for v in value]
+
+        return properties
+
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error fetching group properties for DN '{group_dn}': {e}")
+        return None
+

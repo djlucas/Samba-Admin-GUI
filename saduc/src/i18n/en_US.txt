@@ -1,0 +1,156 @@
+# Main Window
+main.window_title=Samba Active Directory Users & Computers
+main.toolbar.main=Main Toolbar
+main.status_bar_ready=Ready
+
+# Menus
+menu.file=File
+menu.file.exit=Exit
+menu.file.exit.shortcut=Ctrl+Q
+menu.file.exit.status_tip=Exit the application
+menu.action=Action
+menu.view=View
+menu.view.advanced=Advanced Features
+menu.view.advanced.status_tip=Show advanced features and objects
+menu.window=Window
+menu.help=Help
+
+# Tree View Pane
+tree_pane.header=Domain
+
+# Table View Headers (New Standard Headers)
+table.header.name=Name
+table.header.type=Type
+table.header.description=Description
+
+# Status Bar
+status.selected_item=Selected: %s
+status.loading=Loading %s...
+status.loaded_items=%d items in %s
+
+# Action Pane
+action_pane.static_title=Actions
+action_pane.button.actions=Actions
+action_pane.menu.new_user=New User...
+action_pane.menu.find_user=Find...
+action_pane.menu.copy_user=Copy User...
+action_pane.menu.delete_user=Delete
+action_pane.menu.disable_user=Disable Account
+action_pane.menu.new_computer=New Computer...
+action_pane.menu.find_computer=Find...
+action_pane.menu.disable_computer=Disable Account
+action_pane.menu.reset_computer_account=Reset Account
+action_pane.menu.new_group=New Group...
+action_pane.menu.find_group=Find...
+action_pane.menu.delete_group=Delete
+action_pane.menu.properties=Properties
+action_pane.container_header=Actions for '{0}'
+action_pane.object_header=Actions for '{0}'
+
+# New User Wizard
+dialog.new_user.title=New Object - User
+dialog.new_user.page1.title=Create a new user
+dialog.new_user.page1.subtitle=Fill in the user's name details and logon names.
+dialog.new_user.page1.intro_text=Create a new user
+dialog.new_user.page1.create_in=samba.local/Users
+dialog.new_user.page1.first_name=First Name
+dialog.new_user.page1.initials=Initials
+dialog.new_user.page1.last_name=Last Name
+dialog.new_user.page1.full_name=Full Name
+dialog.new_user.page1.user_logon_name=User logon name
+dialog.new_user.page1.pre_win2k_logon_name=User logon name (pre-Windows 2000)
+dialog.new_user.page1.pre_win2k_domain=SAMBA
+dialog.new_user.page1.upn_domain_1=@samba.local
+dialog.new_user.page1.upn_domain_2=@mail.samba.local
+
+dialog.new_user.page2.title=New Object - User
+dialog.new_user.page2.subtitle=Set the password and account options.
+dialog.new_user.page2.password_label=Password
+dialog.new_user.page2.confirm_password_label=Confirm Password
+dialog.new_user.page2.password_mismatch=Passwords do not match.
+dialog.new_user.page2.user_must_change_password=User must change password at next logon
+dialog.new_user.page2.user_cannot_change_password=User cannot change password
+dialog.new_user.page2.password_never_expires=Password never expires
+dialog.new_user.page2.account_disabled=Account is disabled
+
+dialog.new_user.page3.title=Completing the New Object - User Wizard
+dialog.new_user.page3.subtitle=You have successfully created a new user.
+dialog.new_user.page3.summary_intro=Please review the following details for the new user account:
+dialog.new_user.page3.summary_full_name=<br><b>Full Name:</b> %s
+dialog.new_user.page3.summary_user_logon=<br><b>User Logon Name:</b> %s%s
+dialog.new_user.page3.user_must_change_password_option=User must change password at next logon.
+dialog.new_user.page3.user_cannot_change_password_option=User cannot change password.
+dialog.new_user.page3.password_never_expires_option=User never expires.
+dialog.new_user.page3.account_disabled_option=Account is disabled.
+
+# Copy User Wizard
+dialog.copy_user.title=Copy Object - User
+dialog.copy_user.page1.title=Copy an existing user
+dialog.copy_user.page1.subtitle=Fill in the copied user's details. The following attributes will be automatically adjusted: Group Memberships, Profile Path, Home Directory, and Login Script.
+dialog.copy_user.page1.intro_text=Copy from: %s
+
+# Confirmation Dialogs
+dialog.delete_user.title=Confirm Deletion
+dialog.delete_user.message=Are you sure you want to delete the user '%s'? This action cannot be undone.
+dialog.disable_user.title=Confirm Account Disable
+dialog.disable_user.message=Are you sure you want to disable the user '%s'? The user will not be able to log on.
+
+# Generic Dialogs and Backend Messages
+dialog.common.success.title=Success
+dialog.common.error.title=Error
+dialog.common.error.generic=An unexpected error occurred. Check the debug log for details.
+
+samba_backend.success.create_user = User '{0}' created successfully.
+samba_backend.success.copy_user = User '{0}' copied successfully.
+samba_backend.success.delete_user = User '{0}' has been deleted (simulated).
+samba_backend.success.disable_user = User '{0}' has been disabled (simulated).
+samba_backend.error.create_user = An error occurred while creating the user: {0}
+samba_backend.error.copy_user = An error occurred while copying the user: {0}
+error.backend.fetch_failed=Failed to fetch objects from the directory. Please check the connection and permissions. Details: {0}
+
+# Authentication Dialog
+dialog.auth.title=Authenticate to Active Directory
+dialog.auth.username=User Name
+dialog.auth.password=Password
+
+# User Properties Dialog
+user_properties.window_title=User Properties
+user_properties.tab.general=General
+user_properties.tab.account=Account
+user_properties.tab.member_of=Member Of
+user_properties.checkbox.must_change_password=User must change password at next logon
+user_properties.checkbox.cannot_change_password=User cannot change password
+user_properties.checkbox.password_never_expires=Password never expires
+user_properties.checkbox.account_disabled=Account is disabled
+user_properties.label.first_name=First name:
+user_properties.label.last_name=Last name:
+user_properties.label.display_name=Display name:
+user_properties.label.description=Description:
+user_properties.label.user_logon_name=User logon name:
+
+# Computer Properties Dialog
+computer_properties.window_title=Computer Properties
+computer_properties.tab.general=General
+computer_properties.tab.os=Operating System
+computer_properties.tab.member_of=Member Of
+computer_properties.label.computer_name=Computer name:
+computer_properties.label.dns_name=DNS name:
+computer_properties.label.description=Description:
+computer_properties.label.os_name=Operating System:
+computer_properties.label.os_version=Version:
+computer_properties.label.os_service_pack=Service Pack:
+
+# Group Properties Dialog
+group_properties.window_title=Group Properties
+group_properties.tab.general=General
+group_properties.tab.members=Members
+group_properties.tab.member_of=Member Of
+group_properties.groupbox.scope=Group scope
+group_properties.radio.domain_local=Domain local
+group_properties.radio.global=Global
+group_properties.radio.universal=Universal
+group_properties.groupbox.type=Group type
+group_properties.radio.security=Security
+group_properties.radio.distribution=Distribution
+group_properties.label.group_name=Group name:
+group_properties.label.description=Description:

@@ -1,0 +1,449 @@
+{
+  "toolName": "SADUC (Samba Active Directory Users and Computers)",
+  "description": "A UI specification for an Active Directory Users and Computers-like management tool running on Linux, leveraging Samba for backend interactions.",
+  "components": {
+    "mainWindow": {
+      "type": "QMainWindow",
+      "layout": "Standard application window with menu bar, toolbar area, central widget with splitters for panes, and status bar.",
+      "children": [
+        "menuBar",
+        "toolbarArea",
+        "centralPaneArea",
+        "statusBar"
+      ]
+    },
+    "menuBar": {
+      "type": "QMenuBar",
+      "menus": {
+        "file": {
+          "label": "&File",
+          "items": [
+            "Exit"
+          ]
+        },
+        "action": {
+          "label": "&Action",
+          "items": [
+            "Delegate Control...",
+            "Pre-create Read-only Domain Controller Account...",
+            "Find...",
+            "---",
+            "New (sub-menu: User, Group, Computer, Contact, Organizational Unit)",
+            "---",
+            "Connect to Domain...",
+            "Connect to Domain Controller...",
+            "Change Domain...",
+            "Change Domain Controller...",
+            "---",
+            "Refresh",
+            "Export List...",
+            "---",
+            "Properties",
+            "---",
+            "Help"
+          ]
+        },
+        "view": {
+          "label": "&View",
+          "items": [
+            "Add/Remove Columns...",
+            "Choose Columns...",
+            "---",
+            "Filter Options...",
+            "Customize View (sub-menu for main window components)",
+            "Advanced Features (Checkable)",
+            "Users, Contacts, Groups as folders (Checkable)",
+            "---",
+            "Standard Toolbar (Checkable, default checked)",
+            "Status Bar (Checkable, default checked)",
+            "Description Bar (Checkable, default unchecked)",
+            "Action Pane (Checkable, default checked)"
+          ]
+        },
+        "window": {
+          "label": "&Window",
+          "items": [
+            "New Window",
+            "Cascade",
+            "Tile Horizontally",
+            "Tile Vertically",
+            "Arrange Icons"
+          ]
+        },
+        "help": {
+          "label": "&Help",
+          "items": [
+            "Help Topics",
+            "---",
+            "About Active Directory Users and Computers"
+          ]
+        }
+      }
+    },
+    "toolbarArea": {
+      "type": "QToolBar",
+      "description": "Standard toolbar below menu bar, with configurable visibility via View menu.",
+      "buttons": [
+        "New User",
+        "New Group",
+        "New Computer",
+        "New OU",
+        "Delete",
+        "Move",
+        "Refresh",
+        "Properties",
+        "Find"
+      ],
+      "defaultVisibility": "checked"
+    },
+    "centralPaneArea": {
+      "type": "QSplittingPane",
+      "layout": "Two vertical splitters creating three main panes: Left (tree), Middle (list), Right (action).",
+      "children": [
+        "adContainerTreeView",
+        "adObjectListView",
+        "actionPaneWidget"
+      ]
+    },
+    "adContainerTreeView": {
+      "type": "QTreeView",
+      "location": "Left Pane",
+      "content": "Hierarchical tree view of Active Directory domains, OUs, and built-in containers.",
+      "selectionBehavior": "Single selection of OU/Container. Drives adObjectListView content and Action Pane OU/Container header."
+    },
+    "adObjectListView": {
+      "type": "QListView / QTableView",
+      "location": "Middle Pane (right of tree view)",
+      "content": "Displays objects (Users, Groups, Computers, Contacts) within the selected container from the adContainerTreeView.",
+      "columns": "Configurable via 'Add/Remove Columns...' dialog. Default columns: Name, Type, Description. Sortable by columns.",
+      "interactions": {
+        "doubleClick": "Opens Properties Dialog for the object.",
+        "rightClick": "Opens context menu specific to the object type (same tasks as Action Pane for that object).",
+        "rightClickAndDrag": "Presents 'Move' and 'Cancel' options only."
+      }
+    },
+    "actionPaneWidget": {
+      "type": "QWidget",
+      "location": "Rightmost Pane",
+      "description": "Dynamic, contextual task pane. Visibility toggleable via View menu.",
+      "styling": {
+        "backgroundColor": "white",
+        "headerLabelColor": "black",
+        "headerBarColor": "light blue/gray"
+      },
+      "defaultVisibility": "checked",
+      "structure": {
+        "staticHeader": "QLabel with text 'Actions'",
+        "ouContainerHeaderBar": {
+          "type": "QBar",
+          "alwaysPresent": true,
+          "content": "Name of currently selected OU/Container from left pane.",
+          "leftToggle": "Up/down arrow (default down/expanded), controls visibility of OU/Container tasks below.",
+          "rightMoreActionsToggle": "Right arrow with white background, opens context menu for the selected OU/Container."
+        },
+        "selectedObjectHeaderBar": {
+          "type": "QBar",
+          "conditionalVisibility": "Only appears when an object is selected in adObjectListView.",
+          "content": "Name of currently selected object from right pane.",
+          "leftToggle": "Up/down arrow (default down/expanded), controls visibility of object tasks below.",
+          "rightMoreActionsToggle": "Right arrow with white background, opens context menu for the selected object."
+        }
+      },
+      "contextualTasks": {
+        "containerSelected": [
+          "Delegate Control...",
+          "Pre-create Read-only Domain Controller Account...",
+          "Find...",
+          "---",
+          "New (sub-menu/expanded list: User, Group, Computer, Contact, Organizational Unit)",
+          "All Tasks ->",
+          "---",
+          "View -> (sub-menu/expanded list: Add/Remove Columns..., Filter Options...)",
+          "---",
+          "Refresh",
+          "Export List...",
+          "---",
+          "Properties"
+        ],
+        "userSelected": [
+          "Copy...",
+          "Add to a group...",
+          "Name Mappings...",
+          "Disable Account / Enable Account (toggles)",
+          "Reset Password...",
+          "Move...",
+          "Open Home Page",
+          "Send Mail",
+          "---",
+          "All Tasks ->",
+          "---",
+          "Cut",
+          "Delete",
+          "Rename",
+          "---",
+          "Properties"
+        ],
+        "computerSelected": [
+          "Add to a group...",
+          "Name Mappings...",
+          "Disable Account / Enable Account (toggles)",
+          "Reset Account",
+          "Move...",
+          "---",
+          "All Tasks ->",
+          "---",
+          "Cut",
+          "Delete",
+          "---",
+          "Properties"
+        ],
+        "domainControllerSelected": [
+          "Add to a group...",
+          "Name Mappings...",
+          "Reset Account",
+          "Move...",
+          "---",
+          "All Tasks ->",
+          "---",
+          "Cut",
+          "Delete",
+          "---",
+          "Properties"
+        ],
+        "groupSelected": [
+          "Add to a group...",
+          "Move...",
+          "Send Mail",
+          "---",
+          "All Tasks ->",
+          "---",
+          "Cut",
+          "Delete",
+          "Rename",
+          "---",
+          "Properties"
+        ],
+        "contactSelected": [
+          "Add to a group...",
+          "Move...",
+          "Open Home Page",
+          "Send Mail",
+          "---",
+          "All Tasks ->",
+          "---",
+          "Cut",
+          "Delete",
+          "Rename",
+          "---",
+          "Properties"
+        ]
+      },
+      "exclusions": [
+        "Shared Folder objects (no tasks, not filterable, not displayed)",
+        "Printer objects (no tasks, not filterable, not displayed)",
+        "Service objects (no tasks, not filterable, not displayed)",
+        "Management options for Computer/DC objects (e.g., 'Manage') due to Linux environment limitations."
+      ]
+    },
+    "statusBar": {
+      "type": "QStatusBar",
+      "location": "Bottom of main window",
+      "defaultVisibility": "checked",
+      "content": "Blank by default. Displays brief info on selected items or hovered menu actions.",
+      "dynamicUpdates": {
+        "selectedItem": "e.g., 'Selected: John Doe (User)', 'Selected: 2 items'",
+        "menuHover": "Brief description of the hovered menu item's function."
+      }
+    },
+    "descriptionBar": {
+      "type": "QLabel",
+      "location": "Top of the right pane (above adObjectListView)",
+      "styling": {
+        "backgroundColor": "dark gray",
+        "textColor": "white"
+      },
+      "defaultVisibility": "unchecked",
+      "content": "Displays 'OU/Container Name (Number of objects)', e.g., 'Users (150 objects)'."
+    },
+    "findObjectsDialog": {
+      "type": "QDialog (Wizard-like)",
+      "title": "'Find Users, Contacts, and Groups'",
+      "tabs": {
+        "findNow": {
+          "label": "'Find Now'",
+          "elements": [
+            "Find: dropdown (defaults to 'Users, Contacts, and Groups')",
+            "In: dropdown (defaults to current domain, with 'Browse...' button for OU/container selection)",
+            "Search criteria section (dropdowns for Field, Condition, Value, with Add/Remove buttons, Condition List box)",
+            "Find Now button",
+            "Stop button",
+            "Clear All button"
+          ]
+        },
+        "customSearch": {
+          "label": "'Custom Search'",
+          "elements": [
+            "Query type dropdown ('LDAP Query')",
+            "Field, Condition, Value interface (reused by Filter Options 'Customize...' button)",
+            "Find Now button",
+            "Stop button",
+            "Clear All button"
+          ]
+        }
+      },
+      "searchResultArea": "Displays list of found objects.",
+      "buttons": "OK, Cancel"
+    },
+    "filterOptionsDialog": {
+      "type": "QDialog",
+      "title": "'Filtering Options'",
+      "sections": {
+        "filtering": {
+          "label": "'Filtering'",
+          "radioButtons": [
+            {
+              "label": "'Show all types of objects'",
+              "default": true,
+              "disables": ["checklist", "customizeButton"]
+            },
+            {
+              "label": "'Show only the following types of object:'",
+              "enables": ["checklist"],
+              "disables": ["customizeButton"]
+            },
+            {
+              "label": "'Create custom filter:'",
+              "enables": ["customizeButton"],
+              "disables": ["checklist"]
+            }
+          ],
+          "checklist": [
+            "Users",
+            "Groups",
+            "Computers",
+            "Contacts"
+          ],
+          "customizeButton": {
+            "label": "'Customize...'",
+            "behavior": "Opens Custom Filter Builder Dialog (reuses Find Objects Custom Search interface)."
+          }
+        },
+        "maxItemsDisplayed": {
+          "label": "'Maximum number of items displayed per folder:'",
+          "input": "QSpinBox/QLineEdit",
+          "defaultValue": "2000"
+        }
+      },
+      "buttons": "OK, Cancel",
+      "persistence": "Last-used filter settings are loaded on dialog open and app start."
+    },
+    "copyUserDialog": {
+      "type": "QWizard",
+      "title": "'Copy Object - User'",
+      "pages": {
+        "page1_identity": {
+          "title": "User Identity",
+          "fields": [
+            "First name (blank)",
+            "Last name (blank)",
+            "Full name (blank, autogen/editable)",
+            "User logon name (blank, with @domain.com dropdown)",
+            "User logon name (pre-Windows 2000) (blank, autogen/editable)"
+          ],
+          "createIn": {
+            "label": "'Create in:'",
+            "path": "Non-editable, fixed to source user's container (NO browse button)."
+          },
+          "buttons": "Next >, Cancel"
+        },
+        "page2_passwordOptions": {
+          "title": "Password and Account Options",
+          "fields": [
+            "Password (not pre-populated)",
+            "Confirm password (not pre-populated)"
+          ],
+          "checkboxes": [
+            "User must change password at next logon (pre-populated from source, usually checked for new user)",
+            "User cannot change password (pre-populated from source)",
+            "Password never expires (pre-populated from source)",
+            "Account is disabled (pre-populated from source)"
+          ],
+          "buttons": "< Back, Next >, Cancel"
+        },
+        "page3_confirmation": {
+          "title": "Confirmation",
+          "summary": [
+            "confirmation copy from: [Source User Name]",
+            "Full name: [New Full Name]",
+            "User logon name: [New UPN]",
+            "Selected options from previous dialog: [Summary of account options]"
+          ],
+          "buttons": "< Back, Finish, Cancel"
+        }
+      }
+    },
+    "newUserDialog": {
+      "type": "QWizard",
+      "title": "'New Object - User'",
+      "description": "Identical structure and fields to Copy User Dialog, but without 'confirmation copy from' and checkboxes default to typical new user settings (e.g., 'User must change password at next logon' checked).",
+      "pages": "Same as copyUserDialog, with minor content adjustments."
+    },
+    "renameDialog": {
+      "type": "QDialog",
+      "title": "'Rename Object'",
+      "fields": [
+        "First name (pre-populated)",
+        "Last name (pre-populated)",
+        "Full name (pre-populated, autogen/editable)",
+        "User logon name (pre-populated, with @domain.com dropdown)",
+        "User logon name (pre-Windows 2000) (pre-populated, autogen/editable)"
+      ],
+      "noCreateInSection": true,
+      "buttons": "OK, Cancel"
+    },
+    "containerSelectionDialog": {
+      "type": "QDialog",
+      "usage": "Used for 'Move' operation.",
+      "contextualTitles": {
+        "moveOperation": {
+          "windowTitle": "'Move'",
+          "topLabel": "'Move object into container:'"
+        }
+      },
+      "content": "QTreeView of Active Directory hierarchy. Only TLD expanded initially. Only OUs/Containers selectable.",
+      "buttons": "OK, Cancel"
+    },
+    "newContactDialog": {
+      "type": "QDialog",
+      "title": "'New Object - Contact'",
+      "fields": [
+        "First name:",
+        "Initial:",
+        "Last name:",
+        "Display name:"
+      ],
+      "buttons": "OK, Cancel"
+    },
+    "contactPropertiesDialog": {
+      "type": "QDialog",
+      "title": "'Contact Name Properties'",
+      "tabs": {
+        "topRow": [
+          "Member Of",
+          "Object",
+          "Security",
+          "Attribute Editor (if Advanced View is on)"
+        ],
+        "bottomRow": [
+          "General",
+          "Address",
+          "Telephones",
+          "Organization"
+        ]
+      },
+      "buttons": "OK, Cancel, Apply",
+      "similarity": "Similar to User Properties Dialog, excluding AE for users."
+    }
+  }
+}
+
