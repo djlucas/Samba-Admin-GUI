@@ -31,6 +31,7 @@ class ComputerPropertiesDialog(QDialog):
 
         self.setWindowTitle(self.i18n.get_string("computer_properties.window_title"))
         self.setMinimumSize(500, 400)
+        self.resize(650, 600)
 
         self._create_widgets()
         self._create_layout()
@@ -41,11 +42,17 @@ class ComputerPropertiesDialog(QDialog):
         self.general_tab = QWidget()
         self.os_tab = QWidget()
         self.member_of_tab = QWidget()
+        self.delegation_tab = QWidget()
+        self.location_tab = QWidget()
+        self.managed_by_tab = QWidget()
 
         self.tab_widget.addTab(self.general_tab, self.i18n.get_string("computer_properties.tab.general"))
         self.tab_widget.addTab(self.os_tab, self.i18n.get_string("computer_properties.tab.os"))
         self.tab_widget.addTab(self.member_of_tab, self.i18n.get_string("computer_properties.tab.member_of"))
-
+        self.tab_widget.addTab(self.delegation_tab, self.i18n.get_string("computer_properties.tab.delegation"))
+        self.tab_widget.addTab(self.location_tab, self.i18n.get_string("computer_properties.tab.location"))
+        self.tab_widget.addTab(self.managed_by_tab, self.i18n.get_string("computer_properties.tab.managed_by"))
+       
         # General Tab Widgets
         self.computer_name_edit = QLineEdit()
         self.computer_name_edit.setReadOnly(True)
@@ -65,6 +72,18 @@ class ComputerPropertiesDialog(QDialog):
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
 
+        # Delegation Tab Widgets
+        self.delegation_layout = QVBoxLayout()
+        self.delegation_tab.setLayout(self.delegation_layout)
+
+        # Location Tab Widgets
+        self.location_layout = QVBoxLayout()
+        self.location_tab.setLayout(self.location_layout)
+
+        # Managed By Tab Widgets
+        self.managed_by_layout = QVBoxLayout()
+        self.managed_by_tab.setLayout(self.delegation_layout)
+
     def _create_layout(self):
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self.tab_widget)
@@ -81,6 +100,15 @@ class ComputerPropertiesDialog(QDialog):
         os_layout.addRow(self.i18n.get_string("computer_properties.label.os_name"), self.os_name_edit)
         os_layout.addRow(self.i18n.get_string("computer_properties.label.os_version"), self.os_version_edit)
         os_layout.addRow(self.i18n.get_string("computer_properties.label.os_service_pack"), self.os_service_pack_edit)
+
+        # Delegation Tab Layout
+        delegation_layout = QFormLayout(self.delegation_tab)
+        
+        # Location Tab Layout
+        location_layout = QFormLayout(self.location_tab)
+
+        # Member Of Tab Layout
+        member_of_layout = QFormLayout(self.member_of_tab)
 
     def _load_computer_data(self):
         computer_props = get_computer_properties(self.samba_conn, self.computer_dn)
@@ -100,6 +128,16 @@ class ComputerPropertiesDialog(QDialog):
 
         # Member Of Tab
         # TODO: Populate memberOf list
+
+
+        # Delgation Tab
+        # TODO: Populate Delegate Tab
+
+        # Location Tab
+        # TODO: Populate Location Tab
+
+        # Managed By Tab
+        # TODO: Populate Managed By Tab
 
     def apply_changes(self):
         # This is a placeholder for now

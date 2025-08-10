@@ -1,3 +1,8 @@
+# Authentication Dialog
+dialog.auth.title=Authenticate to Active Directory
+dialog.auth.username=User Name
+dialog.auth.password=Password
+
 # Main Window
 main.window_title=Samba Active Directory Users & Computers
 main.toolbar.main=Main Toolbar
@@ -108,37 +113,123 @@ samba_backend.error.create_user = An error occurred while creating the user: {0}
 samba_backend.error.copy_user = An error occurred while copying the user: {0}
 error.backend.fetch_failed=Failed to fetch objects from the directory. Please check the connection and permissions. Details: {0}
 
-# Authentication Dialog
-dialog.auth.title=Authenticate to Active Directory
-dialog.auth.username=User Name
-dialog.auth.password=Password
-
 # User Properties Dialog
 user_properties.window_title=User Properties
 user_properties.tab.general=General
+user_properties.tab.address=Address
 user_properties.tab.account=Account
+user_properties.tab.profile=Profile
+user_properties.tab.telephones=Telephones
+user_properties.tab.organization=Organization
 user_properties.tab.member_of=Member Of
+
+# User Properties - General Tab
+user_properties.group.personal_info=Personal Information
+user_properties.group.contact_info=Contact Information
+user_properties.label.first_name=First name:
+user_properties.label.initials=Initials:
+user_properties.label.last_name=Last name:
+user_properties.label.display_name=Display name:
+user_properties.label.description=Description:
+user_properties.label.office=Office:
+user_properties.label.telephone=Telephone number:
+user_properties.label.email=E-mail:
+user_properties.label.web_page=Web page:
+
+# User Properties - Address Tab
+user_properties.label.street=Street:
+user_properties.label.po_box=P.O. Box:
+user_properties.label.city=City:
+user_properties.label.state=State/province:
+user_properties.label.zip=Zip/Postal Code:
+user_properties.label.country=Country/region:
+
+# User Properties - Account Tab
+user_properties.group.logon_info=User logon name
+user_properties.group.account_options=Account options
+user_properties.group.account_expires=Account expires
+user_properties.label.user_logon_name=User logon name:
+user_properties.label.user_logon_name_pre2000=User logon name (pre-Windows 2000):
+user_properties.button.logon_hours=Logon hours...
+user_properties.button.log_on_to=Log on to...
+user_properties.checkbox.unlock_account=Unlock account
 user_properties.checkbox.must_change_password=User must change password at next logon
 user_properties.checkbox.cannot_change_password=User cannot change password
 user_properties.checkbox.password_never_expires=Password never expires
 user_properties.checkbox.account_disabled=Account is disabled
-user_properties.label.first_name=First name:
-user_properties.label.last_name=Last name:
-user_properties.label.display_name=Display name:
-user_properties.label.description=Description:
-user_properties.label.user_logon_name=User logon name:
+user_properties.checkbox.smartcard_required=Smart card is required for interactive logon
+user_properties.checkbox.trusted_for_delegation=Account is trusted for delegation
+user_properties.checkbox.account_sensitive=Account is sensitive and cannot be delegated
+user_properties.checkbox.use_des_encryption=Use Kerberos DES encryption types for this account
+user_properties.checkbox.not_require_preauth=Do not require Kerberos preauthentication
+user_properties.radio.never_expires=Never
+user_properties.radio.end_of=End of:
+
+# User Properties - Profile Tab
+user_properties.group.user_profile=User profile
+user_properties.group.home_folder=Home folder
+user_properties.label.profile_path=Profile path:
+user_properties.label.logon_script=Logon script:
+user_properties.checkbox.local_path=Local path:
+user_properties.checkbox.connect=Connect:
+user_properties.label.to=To:
+
+# User Properties - Telephones Tab
+user_properties.label.home_phone=Home:
+user_properties.label.pager=Pager:
+user_properties.label.mobile=Mobile:
+user_properties.label.fax=Fax:
+user_properties.label.ip_phone=IP phone:
+user_properties.label.notes=Notes:
+
+# User Properties - Organization Tab
+user_properties.label.title=Title:
+user_properties.label.department=Department:
+user_properties.label.company=Company:
+user_properties.label.manager=Manager:
+user_properties.label.direct_reports=Direct reports:
+user_properties.button.change=Change...
+
+# User Properties - Member Of Tab
+user_properties.header.name=Name
+user_properties.header.folder=Active Directory Domain Services Folder
+user_properties.button.add=Add...
+user_properties.button.remove=Remove
+user_properties.button.set_primary=Set Primary Group
+user_properties.label.primary_group=Primary group:
+
+# User Properties - COM+ Tab
+user_properties.tab.com_plus=COM+
+user_properties.title.com_partition_set=This user is a member of the following COM+ partition set:
+user_properties.group.com_partition_set=Partition Set
 
 # Computer Properties Dialog
 computer_properties.window_title=Computer Properties
+
+# Computer Properties - General Tab
 computer_properties.tab.general=General
-computer_properties.tab.os=Operating System
-computer_properties.tab.member_of=Member Of
 computer_properties.label.computer_name=Computer name:
 computer_properties.label.dns_name=DNS name:
 computer_properties.label.description=Description:
+
+# Computer Properties - Operating System Tab
+computer_properties.tab.os=Operating System
 computer_properties.label.os_name=Operating System:
 computer_properties.label.os_version=Version:
 computer_properties.label.os_service_pack=Service Pack:
+
+# Computer Properties - Member Of Tab
+computer_properties.tab.member_of=Member Of
+
+# Computer Properties - Delegation Tab
+computer_properties.tab.delegation=Delgation
+
+# Computer Properties - Location Tab
+computer_properties.tab.location=Location
+
+# Computer Properties - Managed By Tab
+computer_properties.tab.managed_by=Managed By
+
 
 # Group Properties Dialog
 group_properties.window_title=Group Properties
@@ -154,3 +245,4 @@ group_properties.radio.security=Security
 group_properties.radio.distribution=Distribution
 group_properties.label.group_name=Group name:
 group_properties.label.description=Description:
+
