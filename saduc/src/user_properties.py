@@ -277,7 +277,7 @@ class UserPropertiesDialog(QDialog):
         
         end_of_layout = QHBoxLayout()
         self.end_of_radio = QRadioButton(self.i18n.get_string("user_properties.radio.end_of"))
-        from PyQt5.QtWidgets import QDateTimeEdit
+        #from PyQt5.QtWidgets import QDateTimeEdit
         self.expire_date_edit = QDateTimeEdit()
         self.expire_date_edit.setCalendarPopup(True)
         self.expire_date_edit.setEnabled(False)
@@ -415,7 +415,7 @@ class UserPropertiesDialog(QDialog):
         layout = QVBoxLayout(self.member_of_tab)
         
         # Member of table with headers
-        from PyQt5.QtWidgets import QHeaderView
+        #from PyQt5.QtWidgets import QHeaderView
         self.member_of_table = QTableWidget()
         self.member_of_table.setColumnCount(2)
         self.member_of_table.setHorizontalHeaderLabels([
