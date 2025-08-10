@@ -252,8 +252,7 @@ def get_all_objects_in_dn(samba_conn, dn):
     logger.debug(f"Fetching all objects in DN: {dn}")
     try:
         search_filter = "(objectclass=*)"
-        # Here, we DO want the displayName for the list view, and now also description
-        attributes = ['cn', 'ou', 'dc', 'displayName', 'description', 'distinguishedName', 'objectClass', 'sAMAccountName']
+        attributes = ['cn', 'ou', 'dc', 'displayName', 'description', 'distinguishedName', 'objectClass', 'sAMAccountName', 'userAccountControl']
 
         res = get_paged_results(samba_conn, dn, ldap.SCOPE_ONELEVEL, search_filter, attributes)
 
@@ -271,6 +270,8 @@ def get_all_objects_in_dn(samba_conn, dn):
                     # Add description if it exists
                     if 'description' in entry:
                         obj_data['description'] = entry['description'][0].decode('utf-8')
+                    if 'userAccountControl' in entry:
+                        obj_data['userAccountControl'] = entry['userAccountControl'][0].decode('utf-8')
                     objects.append(obj_data)
 
         return objects
@@ -286,14 +287,14 @@ def create_user_samba(samba_conn, user_data):
     """Placeholder for Samba user creation logic."""
     logger.info(f"Samba backend: Creating user with data: {user_data}")
     # ... placeholder for backend logic ...
-    return True, "dialog.user.new.success_message"
+    return True, "samba_backend.success.create_user"
 
 
 def copy_user_samba(samba_conn, source_username, new_user_data):
     """Placeholder for Samba user creation logic."""
     logger.info(f"Samba backend: Copying user '{source_username}' to new user with data: {new_user_data}")
     # ... placeholder for backend logic ...
-    return True, "dialog.user.copy.success_message"
+    return True, "samba_backend.success.copy_user"
 
 def get_user_properties(samba_conn, user_dn):
     """Retrieves all properties for a given user."""
@@ -301,7 +302,7 @@ def get_user_properties(samba_conn, user_dn):
     try:
         attributes = [
             'givenName', 'sn', 'displayName', 'description', 'sAMAccountName',
-            'userAccountControl', 'memberOf'
+            'userAccountControl', 'memberOf', 'primaryGroupID', 'userPrincipalName'
         ]
         res = samba_conn.search_s(user_dn, ldap.SCOPE_BASE, '(objectClass=user)', attributes)
 
@@ -325,7 +326,9 @@ def get_computer_properties(samba_conn, computer_dn):
     try:
         attributes = [
             'cn', 'dNSHostName', 'description', 'operatingSystem',
-            'operatingSystemVersion', 'operatingSystemServicePack', 'memberOf'
+            'operatingSystemVersion', 'operatingSystemServicePack', 'memberOf',
+            'primaryGroupID', 'userAccountControl', 'location', 'managedBy',
+            'msDS-AllowedToDelegateTo', 'sAMAccountName'
         ]
         res = samba_conn.search_s(computer_dn, ldap.SCOPE_BASE, '(objectClass=computer)', attributes)
 
@@ -343,13 +346,14 @@ def get_computer_properties(samba_conn, computer_dn):
         logger.error(f"LDAP error fetching computer properties for DN '{computer_dn}': {e}")
         return None
 
-def get_group_properties(samba_conn, group_dn):
-    """Retrieves all properties for a given group."""
+def get_group_properties(samba_conn, group_dn, attributes=None):
+    """Retrieves properties for a given group."""
     logger.debug(f"Fetching properties for group DN: {group_dn}")
-    try:
+    if attributes is None:
         attributes = [
-            'cn', 'description', 'groupType', 'member', 'memberOf'
+            'cn', 'description', 'groupType', 'member', 'memberOf', 'primaryGroupToken', 'displayName'
         ]
+    try:
         res = samba_conn.search_s(group_dn, ldap.SCOPE_BASE, '(objectClass=group)', attributes)
 
         if not res:
@@ -366,3 +370,88 @@ def get_group_properties(samba_conn, group_dn):
         logger.error(f"LDAP error fetching group properties for DN '{group_dn}': {e}")
         return None
 
+def get_group_by_rid(samba_conn, rid):
+    """Finds a group by its primaryGroupToken (RID)."""
+    logger.debug(f"Searching for group with RID: {rid}")
+    
+    root_info = get_forest_root_info(samba_conn)
+    search_base = root_info['dn'] if root_info else BASE_DN
+
+    search_filter = f"(&(objectClass=group)(primaryGroupToken={rid}))"
+    try:
+        res = samba_conn.search_s(search_base, ldap.SCOPE_SUBTREE, search_filter, ['cn', 'displayName'])
+        if res:
+            dn, attrs_data = res[0]
+
+            # Handle referrals, which can appear as (None, ['ldap://...'])
+            if dn is None:
+                logger.warning(f"Ignoring referral result while searching for group with RID {rid}: {attrs_data}")
+                return None
+
+            attrs = attrs_data
+            # The ldap library can sometimes return a list of tuples instead of a dict
+            if isinstance(attrs_data, list):
+                try:
+                    attrs = dict(attrs_data)
+                except (TypeError, ValueError):
+                    logger.error(f"Could not convert attribute list to dict for DN '{dn}'. List was: {attrs_data}")
+                    return None
+
+            cn_values = attrs.get('cn')
+            if not cn_values:
+                logger.error(f"Group with RID {rid} found at DN '{dn}' but has no 'cn' attribute.")
+                return None
+            cn = cn_values[0].decode('utf-8')
+            displayName = attrs.get('displayName', cn_values)[0].decode('utf-8')
+            return {
+                'dn': dn,
+                'cn': cn,
+                'displayName': displayName
+            }
+        return None
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error searching for group with RID {rid}: {e}")
+        return None
+
+def get_upn_suffixes(samba_conn):
+    """
+    Retrieves the UPN suffixes for the forest.
+    """
+    logger.info("Querying for UPN suffixes.")
+    try:
+        # First, find the configuration naming context from the RootDSE
+        root_dse = samba_conn.search_s("", ldap.SCOPE_BASE, "(objectClass=*)", ['configurationNamingContext'])
+        if not root_dse or 'configurationNamingContext' not in root_dse[0][1]:
+            logger.warning("Could not find 'configurationNamingContext' in RootDSE.")
+            return []
+        
+        config_dn = root_dse[0][1]['configurationNamingContext'][0].decode('utf-8')
+        partitions_dn = f"CN=Partitions,{config_dn}"
+        
+        # Now query the partitions container for the upnSuffixes attribute
+        res = samba_conn.search_s(partitions_dn, ldap.SCOPE_BASE, "(objectClass=*)", ['upnSuffixes'])
+        
+        if res and 'upnSuffixes' in res[0][1]:
+            suffixes = [s.decode('utf-8') for s in res[0][1]['upnSuffixes']]
+            logger.info(f"Found UPN Suffixes: {suffixes}")
+            return suffixes
+        
+        logger.info("No additional UPN suffixes found.")
+        return []
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error querying for UPN suffixes: {e}")
+        return []
+
+def update_object_attributes(samba_conn, dn, modifications):
+    """
+    Updates attributes for a given LDAP object.
+    modifications: A list of tuples, e.g., [(ldap.MOD_REPLACE, 'attributeName', b'newValue')]
+    """
+    logger.info(f"Attempting to modify DN: {dn} with changes: {modifications}")
+    try:
+        samba_conn.modify_s(dn, modifications)
+        logger.info(f"Successfully modified DN: {dn}")
+        return True, "Object updated successfully."
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error modifying DN '{dn}': {e}")
+        return False, str(e)

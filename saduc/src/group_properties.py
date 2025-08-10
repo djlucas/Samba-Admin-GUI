@@ -12,13 +12,15 @@
 # -----------------------------------------------------------------------------
 
 import logging
+import ldap.dn
 from PyQt5.QtWidgets import (
     QDialog, QTabWidget, QWidget, QVBoxLayout, QFormLayout, QLineEdit, 
-    QRadioButton, QGroupBox, QHBoxLayout, QDialogButtonBox
+    QRadioButton, QGroupBox, QHBoxLayout, QDialogButtonBox, QTableWidget,
+    QTableWidgetItem, QHeaderView
 )
 
 from i18n_manager import I18nManager
-from samba_backend import get_group_properties
+from samba_backend import get_group_properties, BASE_DN
 
 # Constants for groupType bits
 GROUP_TYPE_SECURITY = 0x80000000
@@ -67,12 +69,10 @@ class GroupPropertiesDialog(QDialog):
         self.distribution_radio = QRadioButton(self.i18n.get_string("group_properties.radio.distribution"))
 
         # Members Tab Widgets
-        self.members_layout = QVBoxLayout()
-        self.members_tab.setLayout(self.members_layout)
+        self.members_table = QTableWidget()
 
         # Member Of Tab Widgets
-        self.member_of_layout = QVBoxLayout()
-        self.member_of_tab.setLayout(self.member_of_layout)
+        self.member_of_table = QTableWidget()
 
         self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Apply)
         self.button_box.accepted.connect(self.accept)
@@ -101,6 +101,70 @@ class GroupPropertiesDialog(QDialog):
         self.group_type_box.setLayout(type_layout)
         general_layout.addRow(self.group_type_box)
 
+        # Members Tab Layout
+        members_layout = QVBoxLayout(self.members_tab)
+        members_layout.addWidget(self.members_table)
+        self.members_table.setColumnCount(2)
+        self.members_table.setHorizontalHeaderLabels([
+            self.i18n.get_string("group_properties.header.name"),
+            self.i18n.get_string("group_properties.header.folder")
+        ])
+        header_members = self.members_table.horizontalHeader()
+        header_members.setSectionResizeMode(0, QHeaderView.Interactive)
+        header_members.setSectionResizeMode(1, QHeaderView.Stretch)
+        self.members_table.resizeColumnToContents(0)
+
+        # Member Of Tab Layout
+        member_of_layout = QVBoxLayout(self.member_of_tab)
+        member_of_layout.addWidget(self.member_of_table)
+        self.member_of_table.setColumnCount(2)
+        self.member_of_table.setHorizontalHeaderLabels([
+            self.i18n.get_string("group_properties.header.name"),
+            self.i18n.get_string("group_properties.header.folder")
+        ])
+        header_member_of = self.member_of_table.horizontalHeader()
+        header_member_of.setSectionResizeMode(0, QHeaderView.Interactive)
+        header_member_of.setSectionResizeMode(1, QHeaderView.Stretch)
+        self.member_of_table.resizeColumnToContents(0)
+
+    def _get_display_path_from_dn(self, dn_string):
+        domain_parts = [p.split('=')[1] for p in BASE_DN.split(',') if p.lower().startswith('dc=')]
+        domain = ".".join(domain_parts)
+
+        try:
+            dn_parts = ldap.dn.str2dn(dn_string)
+            if len(dn_parts) <= 1:
+                return domain
+            
+            parent_dn_parts = dn_parts[1:]
+            parent_dn_string = ldap.dn.dn2str(parent_dn_parts)
+
+            base_dn_parts = ldap.dn.str2dn(BASE_DN)
+
+            len_parent = len(parent_dn_parts)
+            len_base = len(base_dn_parts)
+            
+            if len_parent < len_base:
+                 relative_parts = parent_dn_parts
+            else:
+                if parent_dn_parts[len_parent-len_base:] == base_dn_parts:
+                    relative_parts = parent_dn_parts[:len_parent-len_base]
+                else:
+                    relative_parts = parent_dn_parts
+
+            if not relative_parts:
+                return domain
+
+            path_components = [rdn[0][1] for rdn in reversed(relative_parts)]
+            return f"{domain}/{'/'.join(path_components)}"
+
+        except Exception as e:
+            self.logger.warning(f"Could not parse DN '{dn_string}' to create display path: {e}")
+            try:
+                return ldap.dn.dn2str(ldap.dn.str2dn(dn_string)[1:])
+            except:
+                return dn_string
+
     def _load_group_data(self):
         group_props = get_group_properties(self.samba_conn, self.group_dn)
         if not group_props:
@@ -126,10 +190,26 @@ class GroupPropertiesDialog(QDialog):
             self.domain_local_radio.setChecked(True)
 
         # Members Tab
-        # TODO: Populate members list
+        self.members_table.setRowCount(0)
+        members = group_props.get('member', [])
+        for member_dn in members:
+            cn = member_dn.split(',')[0].replace('CN=', '') if 'CN=' in member_dn else member_dn
+            row = self.members_table.rowCount()
+            self.members_table.insertRow(row)
+            self.members_table.setItem(row, 0, QTableWidgetItem(cn))
+            display_path = self._get_display_path_from_dn(member_dn)
+            self.members_table.setItem(row, 1, QTableWidgetItem(display_path))
 
         # Member Of Tab
-        # TODO: Populate memberOf list
+        self.member_of_table.setRowCount(0)
+        member_of = group_props.get('memberOf', [])
+        for group_dn in member_of:
+            cn = group_dn.split(',')[0].replace('CN=', '') if 'CN=' in group_dn else group_dn
+            row = self.member_of_table.rowCount()
+            self.member_of_table.insertRow(row)
+            self.member_of_table.setItem(row, 0, QTableWidgetItem(cn))
+            display_path = self._get_display_path_from_dn(group_dn)
+            self.member_of_table.setItem(row, 1, QTableWidgetItem(display_path))
 
     def apply_changes(self):
         # This is a placeholder for now

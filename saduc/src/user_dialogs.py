@@ -1,5 +1,6 @@
 # src/user_dialogs.py
 
+import ldap.dn
 from PyQt5.QtWidgets import (
     QWizard, QWizardPage, QFormLayout, QLineEdit, QCheckBox,
     QLabel, QComboBox, QFrame, QHBoxLayout, QMessageBox, QSpacerItem, QVBoxLayout, QGridLayout,
@@ -18,7 +19,7 @@ class NewUserPage1(QWizardPage):
     Contains fields for user name details and logon names.
     This class is now configurable to be reused by the Copy User wizard.
     """
-    def __init__(self, parent=None, page_title_key="dialog.new_user.page1.title", page_subtitle_key="dialog.new_user.page1.subtitle", intro_text_key="dialog.new_user.page1.intro_text", intro_text_args=None, icon_path="src/res/icons/user_add.png"):
+    def __init__(self, parent=None, page_title_key="dialog.new_user.page1.title", page_subtitle_key="dialog.new_user.page1.subtitle", intro_text_key="dialog.new_user.page1.intro_text", intro_text_args=None, icon_path="src/res/icons/user_add.png", container_dn=None):
         super().__init__(parent)
         self.i18n = I18nManager()
 
@@ -40,8 +41,7 @@ class NewUserPage1(QWizardPage):
         introTextLabel = QLabel(intro_text)
         introTextLabel.setStyleSheet("font-weight: bold; font-size: 14pt;")
 
-        # We need a new label for 'Create In' if it's the copy dialog, so we hide it here
-        createInLabel = QLabel(self.i18n.get_string("dialog.new_user.page1.create_in"))
+        createInLabel = QLabel(self._format_dn_for_display(container_dn, BASE_DN))
 
         headerLayout.addWidget(iconLabel)
         headerLayout.addWidget(introTextLabel)
@@ -138,6 +138,30 @@ class NewUserPage1(QWizardPage):
         self.registerField("userLogonName", self.userLogonNameInput)
         self.registerField("upnDomain", self.upnDomainDropdown)
         self.registerField("preWin2kLogon", self.preWin2kLogonInput)
+
+    def _format_dn_for_display(self, dn, base_dn):
+        if not dn:
+            return ""
+        
+        domain_parts = [p.split('=')[1] for p in base_dn.split(',') if p.lower().startswith('dc=')]
+        domain = ".".join(domain_parts)
+
+        try:
+            dn_struct = ldap.dn.str2dn(dn)
+            base_dn_struct = ldap.dn.str2dn(base_dn)
+
+            relative_dn_struct = [rdn for rdn in dn_struct if rdn not in base_dn_struct]
+            
+            path_parts = []
+            for rdn_part in reversed(relative_dn_struct):
+                path_parts.append(rdn_part[0][1])
+
+            if not path_parts:
+                return f"Create in: {domain}"
+            
+            return f"Create in: {domain}/{'/'.join(path_parts)}"
+        except Exception:
+            return f"Create in: {dn}"
 
     def _update_all_fields(self):
         first = self.firstNameInput.text().strip()
@@ -287,7 +311,7 @@ class NewUserPage3(QWizardPage):
         headerLayout = QHBoxLayout()
         iconLabel = QLabel()
         iconLabel.setPixmap(QIcon('src/res/icons/user_add.png').pixmap(32, 32))
-        createInLabel = QLabel(self.i18n.get_string("dialog.new_user.page1.create_in"))
+        createInLabel = QLabel() # Will be set in initializePage
 
         headerLayout.addWidget(iconLabel)
         headerLayout.addWidget(createInLabel)
@@ -343,14 +367,14 @@ class NewUserWizard(QWizard):
     """
     A multi-page wizard for creating a new user account.
     """
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, container_dn=None):
         super().__init__(parent)
         self.i18n = I18nManager()
 
         self.setWindowTitle(self.i18n.get_string("dialog.new_user.title"))
         self.setWizardStyle(QWizard.ModernStyle)
 
-        self.setPage(0, NewUserPage1())
+        self.setPage(0, NewUserPage1(container_dn=container_dn))
         self.setPage(1, NewUserPage2())
         self.setPage(2, NewUserPage3())
 
@@ -382,7 +406,7 @@ class CopyUserWizard(QWizard):
     """
     A wizard for copying a user, reusing the form pages.
     """
-    def __init__(self, parent=None, initial_data=None, source_username=None):
+    def __init__(self, parent=None, initial_data=None, source_username=None, container_dn=None):
         super().__init__(parent)
         self.i18n = I18nManager()
         self.setWindowTitle(self.i18n.get_string("dialog.copy_user.title"))
@@ -394,7 +418,8 @@ class CopyUserWizard(QWizard):
             page_subtitle_key="dialog.copy_user.page1.subtitle",
             intro_text_key="dialog.copy_user.page1.intro_text",
             intro_text_args=[source_username],
-            icon_path="src/res/icons/user_copy.png"
+            icon_path="src/res/icons/user_copy.png",
+            container_dn=container_dn
         ))
         self.setPage(1, NewUserPage2())
         self.setPage(2, NewUserPage3())
@@ -485,4 +510,3 @@ class UsernamePasswordDialog(QDialog):
     def get_credentials(self):
         username = self.usernameInput.text()
         return username, self.passwordInput.text()
-

@@ -25,7 +25,7 @@ from PyQt5.QtCore import Qt, QSize, QTimer
 
 from i18n_manager import I18nManager
 from user_dialogs import NewUserWizard, CopyUserWizard, DeleteUserDialog, DisableUserDialog
-from samba_backend import create_user_samba, copy_user_samba, get_all_objects_in_dn
+from samba_backend import create_user_samba, copy_user_samba, get_all_objects_in_dn, get_user_properties
 from ad_tree_model import ADTreeModel
 from ad_list_model import ADListModel
 from user_properties import UserPropertiesDialog
@@ -359,7 +359,7 @@ class SADUCMainWindow(QMainWindow):
     # --- Action Triggered Slots ---
     def _on_new_user_action_triggered(self):
         self.logger.info("New User action triggered. Opening NewUserWizard.")
-        wizard = NewUserWizard(self)
+        wizard = NewUserWizard(self, container_dn=self.currentContainerDN)
         if wizard.exec_() == QDialog.Accepted:
             self.logger.info("New User wizard was accepted.")
             user_data = wizard.user_data
@@ -379,9 +379,42 @@ class SADUCMainWindow(QMainWindow):
             self.logger.info("New User wizard was rejected.")
 
     def _on_copy_user_action_triggered(self):
-        # This method will need to be updated to fetch live data for the source user
-        self.logger.warning("Copy User action triggered, but backend fetch is not yet implemented.")
-        QMessageBox.information(self, "Not Implemented", "Copying users from live data is not yet implemented.")
+        if not self.current_selected_dn:
+            self.logger.warning("No user selected for copy.")
+            return
+
+        source_user_props = get_user_properties(self.samba_conn, self.current_selected_dn)
+        if not source_user_props:
+            QMessageBox.critical(self, "Error", "Could not fetch properties for the source user.")
+            return
+
+        source_username = source_user_props.get('sAMAccountName', [''])[0]
+        
+        uac = int(source_user_props.get('userAccountControl', ['0'])[0])
+        initial_data = {
+            'user_must_change_password': False,
+            'user_cannot_change_password': bool(uac & 0x0040),
+            'password_never_expires': bool(uac & 0x10000),
+            'account_is_disabled': bool(uac & 0x0002)
+        }
+
+        self.logger.info(f"Copy User action triggered for user: {source_username}.")
+        wizard = CopyUserWizard(self, initial_data=initial_data, source_username=source_username, container_dn=self.currentContainerDN)
+        if wizard.exec_() == QDialog.Accepted:
+            self.logger.info("Copy User wizard was accepted.")
+            user_data = wizard.user_data
+            if user_data:
+                user_data['container_dn'] = self.currentContainerDN
+                self.logger.info(f"Copied user data collected from wizard: {user_data}")
+                success, message_key = copy_user_samba(self.samba_conn, source_username, user_data)
+                message = self.i18n.get_text(message_key, user_data.get('full_name'))
+                if success:
+                    QMessageBox.information(self, self.i18n.get_string("dialog.common.success.title"), message)
+                    self._on_tree_item_clicked(self.treePane.currentIndex())
+                else:
+                    QMessageBox.critical(self, self.i18n.get_string("dialog.common.error.title"), message)
+        else:
+            self.logger.info("Copy User wizard was rejected.")
 
     def _on_delete_user_action_triggered(self):
         if not self.current_selected_dn:
@@ -511,4 +544,3 @@ class SADUCMainWindow(QMainWindow):
 
         self.current_selected_dn = self.tableModel.get_object_data(index).get('dn')
         self._on_properties_action_triggered()
-

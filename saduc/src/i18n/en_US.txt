@@ -57,7 +57,6 @@ dialog.new_user.title=New Object - User
 dialog.new_user.page1.title=Create a new user
 dialog.new_user.page1.subtitle=Fill in the user's name details and logon names.
 dialog.new_user.page1.intro_text=Create a new user
-dialog.new_user.page1.create_in=samba.local/Users
 dialog.new_user.page1.first_name=First Name
 dialog.new_user.page1.initials=Initials
 dialog.new_user.page1.last_name=Last Name
@@ -104,6 +103,7 @@ dialog.disable_user.message=Are you sure you want to disable the user '%s'? The 
 dialog.common.success.title=Success
 dialog.common.error.title=Error
 dialog.common.error.generic=An unexpected error occurred. Check the debug log for details.
+common.unknown=Unknown
 
 samba_backend.success.create_user = User '{0}' created successfully.
 samba_backend.success.copy_user = User '{0}' copied successfully.
@@ -209,7 +209,10 @@ computer_properties.window_title=Computer Properties
 # Computer Properties - General Tab
 computer_properties.tab.general=General
 computer_properties.label.computer_name=Computer name:
+computer_properties.label.computer_name_pre2k=Computer name (pre-Windows 2000):
 computer_properties.label.dns_name=DNS name:
+computer_properties.label.dc_type=DC Type:
+computer_properties.label.site=Site:
 computer_properties.label.description=Description:
 
 # Computer Properties - Operating System Tab
@@ -222,14 +225,25 @@ computer_properties.label.os_service_pack=Service Pack:
 computer_properties.tab.member_of=Member Of
 
 # Computer Properties - Delegation Tab
-computer_properties.tab.delegation=Delgation
+computer_properties.tab.delegation=Delegation
+computer_properties.delegation.info_text=Delegation is a security-sensitive operation, which allows services to act on behalf of another user.
+computer_properties.delegation.radio_dont_trust=Do not trust this computer for delegation
+computer_properties.delegation.radio_trust_any=Trust this computer for delegation to any service (Kerberos only)
+computer_properties.delegation.radio_trust_specified=Trust this computer for delegation to specified services only
+computer_properties.delegation.radio_kerberos_only=Use Kerberos only
+computer_properties.delegation.radio_any_protocol=Use any authentication protocol
+computer_properties.delegation.label_services=Services to which this account can present delegated credentials:
 
 # Computer Properties - Location Tab
 computer_properties.tab.location=Location
+computer_properties.label.location=Location:
+computer_properties.location.button_browse=Browse...
 
 # Computer Properties - Managed By Tab
 computer_properties.tab.managed_by=Managed By
-
+computer_properties.managed_by.button_clear=Clear
+user_properties.label.name=Name:
+user_properties.label.city_state=City, State/province:
 
 # Group Properties Dialog
 group_properties.window_title=Group Properties
@@ -245,4 +259,5 @@ group_properties.radio.security=Security
 group_properties.radio.distribution=Distribution
 group_properties.label.group_name=Group name:
 group_properties.label.description=Description:
-
+group_properties.header.name=Name
+group_properties.header.folder=Active Directory Domain Services Folder

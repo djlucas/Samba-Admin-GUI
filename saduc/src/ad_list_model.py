@@ -18,6 +18,8 @@ from i18n_manager import I18nManager
 import logging
 import os
 
+UAC_ACCOUNT_DISABLED = 0x0002
+
 class ADListModel(QAbstractTableModel):
     """
     A custom QAbstractTableModel for displaying a list of AD objects.
@@ -37,6 +39,7 @@ class ADListModel(QAbstractTableModel):
         ]
         self._icons = {
             "User": "user.png",
+            "Disabled User": "user_disable.png",
             "Security Group": "group.png",
             "Computer": "computer.png",
             "Domain Controller": "dns.png",
@@ -66,12 +69,13 @@ class ADListModel(QAbstractTableModel):
     def columnCount(self, parent=QModelIndex()):
         return len(self._headers)
 
-    def _get_object_type(self, object_classes):
+    def _get_object_type(self, item):
         """
         Determines a user-friendly object type from its list of classes.
         The order of checks is important, as some objects (like DCs) can be
         both a 'user' and a 'computer'.
         """
+        object_classes = item.get('objectClass', [])
         if not object_classes:
             return "Unknown"
 
@@ -84,6 +88,9 @@ class ADListModel(QAbstractTableModel):
             # You can get more specific here by checking userAccountControl flags if needed
             return "Computer"
         if 'user' in object_classes:
+            uac = int(item.get('userAccountControl', '0'))
+            if uac & UAC_ACCOUNT_DISABLED:
+                return "Disabled User"
             return "User"
         if 'organizationalUnit' in object_classes:
             return "Organizational Unit"
@@ -105,12 +112,12 @@ class ADListModel(QAbstractTableModel):
             if column == 0:  # Name column
                 return item.get('name', '')
             elif column == 1:  # Type column
-                return self._get_object_type(item.get('objectClass', []))
+                return self._get_object_type(item)
             elif column == 2:  # Description column
                 return item.get('description', '')
         elif role == Qt.DecorationRole:
             if column == 0:
-                obj_type = self._get_object_type(item.get('objectClass', []))
+                obj_type = self._get_object_type(item)
                 return self.icon_cache.get(obj_type, self.icon_cache.get("Unknown"))
 
         return QVariant()
@@ -120,6 +127,28 @@ class ADListModel(QAbstractTableModel):
             if 0 <= section < len(self._headers):
                 return self._headers[section]
         return QVariant()
+
+    def sort(self, column, order):
+        """Sorts the table by a given column."""
+        self.beginResetModel()
+        
+        reverse = (order == Qt.DescendingOrder)
+        
+        # Define a key function based on the column index
+        if column == 0: # Name
+            key_func = lambda item: item.get('name', '').lower()
+        elif column == 1: # Type
+            key_func = lambda item: self._get_object_type(item).lower()
+        elif column == 2: # Description
+            key_func = lambda item: item.get('description', '').lower()
+        else:
+            # If column is invalid, just end the reset
+            self.endResetModel()
+            return
+
+        self._data.sort(key=key_func, reverse=reverse)
+        
+        self.endResetModel()
 
     def setData(self, data):
         """
@@ -143,4 +172,3 @@ class ADListModel(QAbstractTableModel):
         if index.isValid() and 0 <= index.row() < len(self._data):
             return self._data[index.row()]
         return None
-

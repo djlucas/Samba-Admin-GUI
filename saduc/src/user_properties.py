@@ -12,6 +12,7 @@
 # -----------------------------------------------------------------------------
 
 import logging
+import ldap.dn
 from PyQt5.QtWidgets import (
     QDialog, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, 
     QLineEdit, QCheckBox, QPushButton, QDialogButtonBox, QListWidget,
@@ -23,7 +24,7 @@ from PyQt5.QtCore import Qt, QDateTime
 from PyQt5.QtGui import QIcon, QPixmap
 
 from i18n_manager import I18nManager
-from samba_backend import get_user_properties
+from samba_backend import get_user_properties, BASE_DN, get_group_properties, update_object_attributes, get_group_by_rid, get_upn_suffixes
 
 # Constants for userAccountControl bits
 UAC_ACCOUNT_DISABLED = 0x0002
@@ -414,8 +415,6 @@ class UserPropertiesDialog(QDialog):
         
         layout = QVBoxLayout(self.member_of_tab)
         
-        # Member of table with headers
-        #from PyQt5.QtWidgets import QHeaderView
         self.member_of_table = QTableWidget()
         self.member_of_table.setColumnCount(2)
         self.member_of_table.setHorizontalHeaderLabels([
@@ -423,12 +422,14 @@ class UserPropertiesDialog(QDialog):
             self.i18n.get_string("user_properties.header.folder")
         ])
         
-        # Set column widths
-        header = self.member_of_table.horizontalHeader()
-        header.setStretchLastSection(True)
-        header.resizeSection(0, 150)  # Name column width
+        self.member_of_table.setSortingEnabled(True)
+        self.member_of_table.verticalHeader().hide()
+        self.member_of_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         
-        # Buttons
+        header = self.member_of_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        
         button_layout = QHBoxLayout()
         self.add_to_group_btn = QPushButton(self.i18n.get_string("user_properties.button.add"))
         self.remove_from_group_btn = QPushButton(self.i18n.get_string("user_properties.button.remove"))
@@ -440,7 +441,6 @@ class UserPropertiesDialog(QDialog):
         button_layout.addWidget(self.remove_from_group_btn)
         button_layout.addStretch()
         
-        # Primary group
         primary_layout = QHBoxLayout()
         self.primary_group_label = QLabel()
         self.set_primary_btn = QPushButton(self.i18n.get_string("user_properties.button.set_primary"))
@@ -462,13 +462,11 @@ class UserPropertiesDialog(QDialog):
         
         layout = QVBoxLayout(self.com_plus_tab)
         
-        # COM+ partition set
         partition_header = QLabel(self.i18n.get_string("user_properties.title.com_partition_set"))
         partition_group = QGroupBox(self.i18n.get_string("user_properties.group.com_partition_set"))
         partition_layout = QVBoxLayout(partition_group)
         self.partition_combo = QComboBox()
         partition_layout.addWidget(self.partition_combo)
-        # will be populated later
         
         layout.addWidget(partition_header)
         layout.addWidget(partition_group)
@@ -480,16 +478,42 @@ class UserPropertiesDialog(QDialog):
         main_layout.addWidget(self.tab_widget)
         main_layout.addWidget(self.button_box)
         
+    def _get_display_path_from_dn(self, dn_string):
+        domain_parts = [p.split('=')[1] for p in BASE_DN.split(',') if p.lower().startswith('dc=')]
+        domain = ".".join(domain_parts)
+
+        try:
+            # We want the path of the container, so we strip the first RDN (the object itself)
+            parent_dn_string = ldap.dn.dn2str(ldap.dn.str2dn(dn_string)[1:])
+            
+            # The base DN is also a string
+            base_dn_string = BASE_DN
+
+            # Check if the parent DN ends with the base DN, case-insensitively
+            relative_dn_string = parent_dn_string
+            if parent_dn_string.lower().endswith(base_dn_string.lower()):
+                # Cut off the base DN part
+                end_index = len(parent_dn_string) - len(base_dn_string)
+                relative_dn_string = parent_dn_string[:end_index].rstrip(',')
+
+            if not relative_dn_string:
+                return domain
+
+            # Convert the relative part back to a structure to reverse it
+            relative_parts = ldap.dn.str2dn(relative_dn_string)
+            path_components = [rdn[0][1] for rdn in reversed(relative_parts)]
+            return f"{domain}/{'/'.join(path_components)}"
+
+        except Exception as e:
+            self.logger.warning(f"Could not parse DN '{dn_string}' to create display path: {e}")
+            return dn_string # Fallback to the full DN
+
     def _load_user_data(self):
         """Load user data from Active Directory"""
         self.user_props = get_user_properties(self.samba_conn, self.user_dn)
         if not self.user_props:
             self.logger.error(f"Could not load properties for user: {self.user_dn}")
             return
-            
-        # Get domain from samba connection for UPN dropdown
-        if hasattr(self.samba_conn, 'domain') and self.samba_conn.domain:
-            self.domain_combo.addItem(f"@{self.samba_conn.domain}")
             
         # General Tab
         self.first_name_edit.setText(self.user_props.get('givenName', [''])[0])
@@ -514,18 +538,29 @@ class UserPropertiesDialog(QDialog):
         sam_account_name = self.user_props.get('sAMAccountName', [''])[0]
         upn = self.user_props.get('userPrincipalName', [''])[0]
         
-        # Extract UPN parts
+        # --- UPN Suffix Population ---
+        self.domain_combo.clear()
+        domain_parts = [p.split('=')[1] for p in BASE_DN.split(',') if p.lower().startswith('dc=')]
+        primary_domain = ".".join(domain_parts)
+        all_suffixes = [primary_domain]
+        
+        additional_suffixes = get_upn_suffixes(self.samba_conn)
+        if additional_suffixes:
+            all_suffixes.extend(additional_suffixes)
+            
+        formatted_suffixes = sorted(list(set([f"@{s}" for s in all_suffixes])))
+        self.domain_combo.addItems(formatted_suffixes)
+        
         if '@' in upn:
             upn_name, upn_domain = upn.split('@', 1)
             self.user_logon_name_edit.setText(upn_name)
-            # Add the domain to combo if not already there
             domain_text = f"@{upn_domain}"
-            if self.domain_combo.findText(domain_text) == -1:
-                self.domain_combo.addItem(domain_text)
-            self.domain_combo.setCurrentText(domain_text)
+            if self.domain_combo.findText(domain_text) != -1:
+                self.domain_combo.setCurrentText(domain_text)
         else:
-            # Fallback to sAMAccountName if UPN format is unusual
             self.user_logon_name_edit.setText(sam_account_name)
+            if self.domain_combo.count() > 0:
+                self.domain_combo.setCurrentIndex(0)
             
         self.user_logon_name_pre2000_edit.setText(sam_account_name)
         
@@ -579,70 +614,87 @@ class UserPropertiesDialog(QDialog):
         self.company_edit.setText(self.user_props.get('company', [''])[0])
         self.manager_edit.setText(self.user_props.get('manager', [''])[0])
         
-        # Member Of Tab - populate group memberships with primary group
-        self.member_of_table.setRowCount(0)  # Clear existing rows
+        # Member Of Tab
+        self.member_of_table.setRowCount(0)
         
-        # Add primary group first
-        primary_group_id = self.user_props.get('primaryGroupID', ['513'])[0]  # 513 = Domain Users
-        primary_group_name = "Domain Users"  # Would resolve from RID in real implementation
+        primary_group_id = self.user_props.get('primaryGroupID', ['513'])[0]
+        member_of_dns = self.user_props.get('memberOf', [])
         
-        row = self.member_of_table.rowCount()
-        self.member_of_table.insertRow(row)
-        self.member_of_table.setItem(row, 0, QTableWidgetItem(primary_group_name))
-        self.member_of_table.setItem(row, 1, QTableWidgetItem("Active Directory Domain Services Folder"))
-        
-        # Add other group memberships
-        member_of = self.user_props.get('memberOf', [])
-        for group_dn in member_of:
-            # Extract CN from DN for display
-            cn = group_dn.split(',')[0].replace('CN=', '') if 'CN=' in group_dn else group_dn
+        primary_group_info = get_group_by_rid(self.samba_conn, primary_group_id)
+        if not primary_group_info:
+            primary_group_info = {'dn': f"CN=Domain Users,CN=Users,{BASE_DN}", 'cn': 'Domain Users', 'displayName': 'Domain Users'}
+
+        other_groups = []
+        for group_dn in member_of_dns:
+            group_props = get_group_properties(self.samba_conn, group_dn, ['cn', 'displayName'])
+            if group_props:
+                info = {
+                    'dn': group_dn,
+                    'cn': group_props.get('cn', [group_dn])[0],
+                    'displayName': group_props.get('displayName', [group_props.get('cn', [group_dn])[0]])[0]
+                }
+                if group_dn != primary_group_info['dn']:
+                    other_groups.append(info)
+
+        all_groups = [primary_group_info] + other_groups
+
+        for group_info in all_groups:
             row = self.member_of_table.rowCount()
             self.member_of_table.insertRow(row)
-            self.member_of_table.setItem(row, 0, QTableWidgetItem(cn))
-            self.member_of_table.setItem(row, 1, QTableWidgetItem("Active Directory Domain Services Folder"))
             
-        # Set primary group label
-        self.primary_group_label.setText(f"{primary_group_name} ({primary_group_id})")
+            name = group_info.get('displayName', group_info.get('cn', self.i18n.get_string("common.unknown")))
+            name_item = QTableWidgetItem(name)
+            name_item.setData(Qt.UserRole, group_info['dn'])
+            self.member_of_table.setItem(row, 0, name_item)
+            
+            path_item = QTableWidgetItem(self._get_display_path_from_dn(group_info['dn']))
+            self.member_of_table.setItem(row, 1, path_item)
+
+        self.primary_group_label.setText(primary_group_info.get('displayName', primary_group_info.get('cn', self.i18n.get_string("common.unknown"))))
         
-        # Update window title and display name header
-        self.display_name = self.user_props.get('displayName', [''])[0]
-        if not self.display_name:
-            # Fallback to CN if displayName is empty
-            cn = self.user_props.get('cn', [''])[0]
-            self.display_name = cn if cn else "User"
-            
+        # Update window title
+        self.display_name = self.user_props.get('displayName', [''])[0] or self.user_props.get('cn', ['User'])[0]
         self.setWindowTitle(f"{self.display_name} Properties")
         self.display_name_header.setText(self.display_name)
         
     def _select_manager(self):
-        """Open dialog to select a manager"""
-        # Placeholder - would open object picker dialog
         self.logger.info("Manager selection not implemented yet")
+        QMessageBox.information(self, "Not Implemented", "Selecting a manager is not yet implemented.")
         
     def _add_to_group(self):
-        """Add user to a group"""
-        # Placeholder - would open group picker dialog
         self.logger.info("Add to group not implemented yet")
+        QMessageBox.information(self, "Not Implemented", "Adding users to groups is not yet implemented.")
         
     def _remove_from_group(self):
-        """Remove user from selected group"""
-        current_row = self.member_of_table.currentRow()
-        if current_row >= 0:
-            # Don't allow removing primary group (first row)
-            if current_row == 0:
-                QMessageBox.warning(self, "Warning", "Cannot remove user from primary group.")
-                return
-            self.member_of_table.removeRow(current_row)
+        self.logger.info("Remove from group not implemented yet")
+        QMessageBox.information(self, "Not Implemented", "Removing users from groups is not yet implemented.")
             
     def _set_primary_group(self):
-        """Set primary group"""
-        # Placeholder - would open group picker for primary group
-        self.logger.info("Set primary group not implemented yet")
+        current_row = self.member_of_table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "No Selection", "Please select a group to set as primary.")
+            return
+
+        selected_item = self.member_of_table.item(current_row, 0)
+        group_dn = selected_item.data(Qt.UserRole)
+        
+        group_props = get_group_properties(self.samba_conn, group_dn, ['primaryGroupToken'])
+        if not group_props or 'primaryGroupToken' not in group_props:
+            QMessageBox.critical(self, "Error", f"Could not retrieve the group RID for {group_dn}.")
+            return
+            
+        new_primary_id = group_props['primaryGroupToken'][0]
+        
+        modifications = [(ldap.MOD_REPLACE, 'primaryGroupID', [new_primary_id.encode('utf-8')])]
+        
+        success, message = update_object_attributes(self.samba_conn, self.user_dn, modifications)
+        
+        if success:
+            QMessageBox.information(self, "Success", "Primary group updated successfully.")
+            self._load_user_data() # Refresh the tab
+        else:
+            QMessageBox.critical(self, "Error", f"Failed to update primary group: {message}")
         
     def apply_changes(self):
-        """Apply changes to the user object"""
-        # This would collect all the form data and update the AD object
-        self.logger.info("Apply changes clicked, implementation needed")
-        # TODO: Implement actual LDAP modify operations
+        self.logger.info("Apply changes clicked, but not yet implemented.")
         pass
-

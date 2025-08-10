@@ -140,15 +140,10 @@ class ADTreeModel(QAbstractItemModel):
         """
         forest_root_data = get_forest_root_info(self.samba_conn)
         if forest_root_data:
-            if self.advanced_view:
-                # In advanced view, the root is the domain itself
-                forest_root_item = ADTreeItem(forest_root_data['name'], parent=self.root_item, dn=forest_root_data['dn'], object_class='domainDns')
-                forest_root_item.set_has_sub_containers(True) # Assume it has children to show the expander
-                self.root_item.append_child(forest_root_item)
-            else:
-                # In normal view, we show the children of the root directly
-                self.root_item.set_dn(forest_root_data['dn'])
-                self.fetchMore(QModelIndex()) # Fetch children of the invisible root
+            # The root is always the domain itself, regardless of view
+            forest_root_item = ADTreeItem(forest_root_data['name'], parent=self.root_item, dn=forest_root_data['dn'], object_class='domainDns')
+            forest_root_item.set_has_sub_containers(True) # Assume it has children to show the expander
+            self.root_item.append_child(forest_root_item)
         else:
             self.logger.error("ADTreeModel: Could not retrieve forest root. Tree will be empty.")
 
