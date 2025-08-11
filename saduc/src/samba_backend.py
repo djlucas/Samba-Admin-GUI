@@ -377,38 +377,137 @@ def get_group_by_rid(samba_conn, rid):
     root_info = get_forest_root_info(samba_conn)
     search_base = root_info['dn'] if root_info else BASE_DN
 
-    search_filter = f"(&(objectClass=group)(primaryGroupToken={rid}))"
+    # Convert RID to string if it's not already
+    rid_str = str(rid)
+    
+    search_filter = f"(&(objectClass=group)(primaryGroupToken={rid_str}))"
+    logger.debug(f"Using search filter: {search_filter}")
+    logger.debug(f"Searching in base DN: {search_base}")
+    
     try:
-        res = samba_conn.search_s(search_base, ldap.SCOPE_SUBTREE, search_filter, ['cn', 'displayName'])
-        if res:
-            dn, attrs_data = res[0]
-
+        # Use paged results for better reliability
+        res = get_paged_results(samba_conn, search_base, ldap.SCOPE_SUBTREE, search_filter, ['cn', 'displayName'])
+        
+        logger.debug(f"Search returned {len(res)} results")
+        
+        for dn, attrs_data in res:
             # Handle referrals, which can appear as (None, ['ldap://...'])
             if dn is None:
-                logger.warning(f"Ignoring referral result while searching for group with RID {rid}: {attrs_data}")
-                return None
+                logger.debug(f"Ignoring referral result while searching for group with RID {rid}: {attrs_data}")
+                continue
 
+            logger.debug(f"Processing result: DN='{dn}', attrs={attrs_data}")
+
+            # Handle different response formats from ldap library
             attrs = attrs_data
-            # The ldap library can sometimes return a list of tuples instead of a dict
             if isinstance(attrs_data, list):
                 try:
                     attrs = dict(attrs_data)
                 except (TypeError, ValueError):
                     logger.error(f"Could not convert attribute list to dict for DN '{dn}'. List was: {attrs_data}")
-                    return None
+                    continue
 
             cn_values = attrs.get('cn')
             if not cn_values:
-                logger.error(f"Group with RID {rid} found at DN '{dn}' but has no 'cn' attribute.")
-                return None
-            cn = cn_values[0].decode('utf-8')
-            displayName = attrs.get('displayName', cn_values)[0].decode('utf-8')
+                logger.warning(f"Group with RID {rid} found at DN '{dn}' but has no 'cn' attribute.")
+                continue
+                
+            cn = cn_values[0].decode('utf-8') if isinstance(cn_values[0], bytes) else cn_values[0]
+            
+            # Handle displayName
+            displayName_values = attrs.get('displayName')
+            if displayName_values:
+                displayName = displayName_values[0].decode('utf-8') if isinstance(displayName_values[0], bytes) else displayName_values[0]
+            else:
+                displayName = cn
+            
+            logger.info(f"Found group with RID {rid}: DN='{dn}', cn='{cn}', displayName='{displayName}'")
             return {
                 'dn': dn,
                 'cn': cn,
                 'displayName': displayName
             }
+        
+        # If we get here, no group was found
+        logger.warning(f"No group found with RID {rid}")
+        
+        # Try alternative search - some systems use 'rid' instead of 'primaryGroupToken'
+        alt_filter = f"(&(objectClass=group)(rid={rid_str}))"
+        logger.debug(f"Trying alternative search with filter: {alt_filter}")
+        
+        alt_res = get_paged_results(samba_conn, search_base, ldap.SCOPE_SUBTREE, alt_filter, ['cn', 'displayName'])
+        logger.debug(f"Alternative search returned {len(alt_res)} results")
+        
+        if alt_res:
+            for dn, attrs_data in alt_res:
+                if dn is None:
+                    continue
+                    
+                attrs = attrs_data
+                if isinstance(attrs_data, list):
+                    try:
+                        attrs = dict(attrs_data)
+                    except (TypeError, ValueError):
+                        continue
+
+                cn_values = attrs.get('cn')
+                if cn_values:
+                    cn = cn_values[0].decode('utf-8') if isinstance(cn_values[0], bytes) else cn_values[0]
+                    
+                    displayName_values = attrs.get('displayName')
+                    if displayName_values:
+                        displayName = displayName_values[0].decode('utf-8') if isinstance(displayName_values[0], bytes) else displayName_values[0]
+                    else:
+                        displayName = cn
+                    
+                    logger.info(f"Found group with RID {rid} using alternative search: DN='{dn}', cn='{cn}', displayName='{displayName}'")
+                    return {
+                        'dn': dn,
+                        'cn': cn,
+                        'displayName': displayName
+                    }
+        
+        # If still no results, try searching for well-known groups
+        if rid_str in ['513', '515', '516', '517', '518', '519', '520', '521', '522']:
+            well_known_groups = {
+                '513': 'Domain Users',
+                '515': 'Domain Computers', 
+                '516': 'Domain Controllers',
+                '517': 'Cert Publishers',
+                '518': 'Schema Admins',
+                '519': 'Enterprise Admins',
+                '520': 'Group Policy Creator Owners',
+                '521': 'Read-only Domain Controllers',
+                '522': 'Cloneable Domain Controllers'
+            }
+            
+            group_name = well_known_groups.get(rid_str)
+            if group_name:
+                logger.info(f"Trying to find well-known group '{group_name}' for RID {rid}")
+                name_filter = f"(&(objectClass=group)(cn={group_name}))"
+                name_res = get_paged_results(samba_conn, search_base, ldap.SCOPE_SUBTREE, name_filter, ['cn', 'displayName', 'primaryGroupToken'])
+                
+                for dn, attrs_data in name_res:
+                    if dn is None:
+                        continue
+                    
+                    attrs = attrs_data if isinstance(attrs_data, dict) else dict(attrs_data)
+                    cn_values = attrs.get('cn')
+                    
+                    if cn_values:
+                        cn = cn_values[0].decode('utf-8') if isinstance(cn_values[0], bytes) else cn_values[0]
+                        displayName_values = attrs.get('displayName')
+                        displayName = displayName_values[0].decode('utf-8') if displayName_values and isinstance(displayName_values[0], bytes) else cn
+                        
+                        logger.info(f"Found well-known group: DN='{dn}', cn='{cn}', displayName='{displayName}'")
+                        return {
+                            'dn': dn,
+                            'cn': cn,
+                            'displayName': displayName
+                        }
+        
         return None
+        
     except ldap.LDAPError as e:
         logger.error(f"LDAP error searching for group with RID {rid}: {e}")
         return None
