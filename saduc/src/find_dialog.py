@@ -15,12 +15,12 @@ import logging
 from PyQt5.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, 
     QLineEdit, QPushButton, QComboBox, QLabel, QFrame, QTabWidget,
-    QTableWidget, QHeaderView
+    QTableWidget, QHeaderView, QTableWidgetItem
 )
 import ldap.dn
 
 from i18n_manager import I18nManager
-from samba_backend import BASE_DN
+from samba_backend import BASE_DN, find_objects
 
 class FindObjectsDialog(QDialog):
     """Dialog for finding Active Directory objects."""
@@ -61,6 +61,7 @@ class FindObjectsDialog(QDialog):
         # Buttons on the right
         self.find_now_btn = QPushButton("Find Now")
         self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setEnabled(False)
         self.clear_all_btn = QPushButton("Clear All")
         self.search_icon_label = QLabel() # Placeholder for search icon
 
@@ -118,6 +119,7 @@ class FindObjectsDialog(QDialog):
 
     def _connect_signals(self):
         self.find_combo.currentIndexChanged.connect(self._on_find_type_changed)
+        self.find_now_btn.clicked.connect(self._on_find_now_clicked)
 
     def _initial_setup(self):
         self.find_combo.addItems([
@@ -138,6 +140,27 @@ class FindObjectsDialog(QDialog):
         find_type = self.find_combo.currentText()
         self.setWindowTitle(f"Find {find_type}")
         self.tab_widget.setTabText(0, find_type)
+
+    def _on_find_now_clicked(self):
+        search_base = self.in_combo.currentData()
+        object_type = self.find_combo.currentText()
+        name = self.name_edit.text()
+        description = self.description_edit.text()
+
+        self.stop_btn.setEnabled(True)
+        self.results_table.setRowCount(0) # Clear previous results
+
+        results = find_objects(self.samba_conn, search_base, object_type, name, description)
+
+        for item in results:
+            row_position = self.results_table.rowCount()
+            self.results_table.insertRow(row_position)
+            self.results_table.setItem(row_position, 0, QTableWidgetItem(item.get('name', '')))
+            # A more sophisticated type determination would be needed here
+            self.results_table.setItem(row_position, 1, QTableWidgetItem(item.get('objectClass', [''])[-1]))
+            self.results_table.setItem(row_position, 2, QTableWidgetItem(item.get('description', '')))
+
+        self.stop_btn.setEnabled(False)
 
     def _format_dn_for_display(self, dn_string):
         if not dn_string:

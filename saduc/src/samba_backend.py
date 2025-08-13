@@ -632,10 +632,69 @@ def get_replication_connections(samba_conn, ntds_dn):
     # 'repsFrom' and 'repsTo' attributes.
     return [], [] # from, to
 
-def find_objects(samba_conn, search_base, object_type, criteria):
+def find_objects(samba_conn, search_base, object_type, name, description):
     """
     Finds objects in the directory based on criteria.
-    This is a placeholder for now.
     """
-    logger.info(f"Finding objects in {search_base} of type {object_type} with criteria: {criteria}")
-    return []
+    logger.info(f"Finding objects in {search_base} of type {object_type} with name: {name} and description: {description}")
+
+    # --- Build Object Class Filter ---
+    object_class_filter = ""
+    if object_type == "Users, Contacts, and Groups":
+        object_class_filter = "(|(objectClass=user)(objectClass=contact)(objectClass=group))"
+    elif object_type == "Computers":
+        object_class_filter = "(objectClass=computer)"
+    elif object_type == "Organizational Units":
+        object_class_filter = "(objectClass=organizationalUnit)"
+    else:
+        return [] # Return empty for unsupported types for now
+
+    # --- Build Attribute Filter ---
+    attribute_filter = ""
+    name_filter = ""
+    if name:
+        name_filter = f"(|(cn=*{name}*)(name=*{name}*))"
+
+    description_filter = ""
+    if description:
+        description_filter = f"(description=*{description}*)"
+
+    if name_filter and description_filter:
+        attribute_filter = f"(&{name_filter}{description_filter})"
+    elif name_filter:
+        attribute_filter = name_filter
+    elif description_filter:
+        attribute_filter = description_filter
+    else:
+        attribute_filter = ""
+
+    # --- Combine Filters ---
+    if attribute_filter:
+        search_filter = f"(&{object_class_filter}{attribute_filter})"
+    else:
+        search_filter = object_class_filter
+
+    logger.debug(f"Constructed LDAP search filter: {search_filter}")
+
+    # --- Perform Search ---
+    try:
+        attributes = ['cn', 'ou', 'dc', 'displayName', 'description', 'distinguishedName', 'objectClass']
+        res = get_paged_results(samba_conn, search_base, ldap.SCOPE_SUBTREE, search_filter, attributes)
+
+        objects = []
+        for child_dn, entry in res:
+            if isinstance(entry, dict):
+                name_attr = entry.get('displayName') or entry.get('cn')
+                if name_attr:
+                    obj_data = {
+                        'name': name_attr[0].decode('utf-8'),
+                        'dn': child_dn,
+                        'objectClass': [oc.decode('utf-8') for oc in entry.get('objectClass', [])]
+                    }
+                    if 'description' in entry:
+                        obj_data['description'] = entry['description'][0].decode('utf-8')
+                    objects.append(obj_data)
+        return objects
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error during find operation: {e}")
+        return []
