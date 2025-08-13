@@ -653,7 +653,10 @@ def find_objects(samba_conn, search_base, object_type, name, description):
     attribute_filter = ""
     name_filter = ""
     if name:
-        name_filter = f"(|(cn=*{name}*)(name=*{name}*))"
+        if object_type == "Organizational Units":
+            name_filter = f"(ou=*{name}*)"
+        else:
+            name_filter = f"(|(cn=*{name}*)(name=*{name}*))"
 
     description_filter = ""
     if description:
@@ -684,7 +687,7 @@ def find_objects(samba_conn, search_base, object_type, name, description):
         objects = []
         for child_dn, entry in res:
             if isinstance(entry, dict):
-                name_attr = entry.get('displayName') or entry.get('cn')
+                name_attr = entry.get('displayName') or entry.get('ou') or entry.get('cn')
                 if name_attr:
                     obj_data = {
                         'name': name_attr[0].decode('utf-8'),
