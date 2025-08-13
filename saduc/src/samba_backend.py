@@ -107,14 +107,14 @@ def get_ldap_conn():
             # Kerberos/GSSAPI bind
             sasl_auth = ldap.sasl.gssapi('')
             conn.sasl_interactive_bind_s("", sasl_auth)
-            logger.info("Samba backend: Successfully established LDAP connection.")
-            return conn
+            logger.info(f"Samba backend: Successfully established LDAP connection to {server}.")
+            return conn, server
         except ldap.LDAPError as e:
             logger.warning(f"Failed to connect to {server}: {e}")
             continue
 
     logger.critical("Samba backend: Failed to connect to any LDAP servers.")
-    return None
+    return None, None
 
 def get_paged_results(samba_conn, dn, scope, search_filter, attributes):
     """
@@ -302,7 +302,13 @@ def get_user_properties(samba_conn, user_dn):
     try:
         attributes = [
             'givenName', 'sn', 'displayName', 'description', 'sAMAccountName',
-            'userAccountControl', 'memberOf', 'primaryGroupID', 'userPrincipalName'
+            'userAccountControl', 'memberOf', 'primaryGroupID', 'userPrincipalName',
+            'initials', 'physicalDeliveryOfficeName', 'telephoneNumber', 'mail',
+            'wWWHomePage', 'streetAddress', 'postOfficeBox', 'l', 'st',
+            'postalCode', 'co', 'accountExpires', 'profilePath', 'scriptPath',
+            'homeDirectory', 'homeDrive', 'homePhone', 'pager', 'mobile',
+            'facsimileTelephoneNumber', 'ipPhone', 'info', 'title', 'department',
+            'company', 'manager'
         ]
         res = samba_conn.search_s(user_dn, ldap.SCOPE_BASE, '(objectClass=user)', attributes)
 
@@ -328,7 +334,7 @@ def get_computer_properties(samba_conn, computer_dn):
             'cn', 'dNSHostName', 'description', 'operatingSystem',
             'operatingSystemVersion', 'operatingSystemServicePack', 'memberOf',
             'primaryGroupID', 'userAccountControl', 'location', 'managedBy',
-            'msDS-AllowedToDelegateTo', 'sAMAccountName'
+            'msDS-AllowedToDelegateTo', 'sAMAccountName', 'serverReferenceBL'
         ]
         res = samba_conn.search_s(computer_dn, ldap.SCOPE_BASE, '(objectClass=computer)', attributes)
 

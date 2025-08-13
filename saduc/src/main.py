@@ -41,9 +41,10 @@ def get_authenticated_connection(appLogger, app):
     username/password entry and retries.
     """
     samba_conn = None
+    connected_server = None
     while samba_conn is None:
         try:
-            samba_conn = get_ldap_conn()
+            samba_conn, connected_server = get_ldap_conn()
         except NoKerberosTicketError:
             appLogger.warning(f"No Kerberos ticket found. Presenting manual authentication dialog.")
             
@@ -81,13 +82,13 @@ def get_authenticated_connection(appLogger, app):
                     
                 except Exception as e:
                     appLogger.error(f"An unexpected error occurred during kinit: {e}")
-                    QMessageBox.critical(None, "Application Error", f"An unexpected error occurred during authentication. Check the debug log for details.")
+                    QMessageBox.critical(None, "Application Error", "An unexpected error occurred during authentication. Check the debug log for details.")
                     sys.exit(1)
             else:
                 QMessageBox.information(None, "Authentication Canceled", "Authentication was canceled. Exiting application.")
                 sys.exit(0)
     
-    return samba_conn
+    return samba_conn, connected_server
 
 def main():
     """
@@ -99,7 +100,7 @@ def main():
     app = QApplication(sys.argv)
     
     try:
-        samba_conn = get_authenticated_connection(appLogger, app)
+        samba_conn, connected_server = get_authenticated_connection(appLogger, app)
     except Exception as e:
         appLogger.error(f"Application failed to start. Error: {e}")
         QMessageBox.critical(None, "Application Error", "The application failed to start due to an unexpected error. Check the debug log for details.")
@@ -110,7 +111,7 @@ def main():
         QMessageBox.critical(None, "Application Error", "Failed to establish a connection to Samba. Exiting.")
         sys.exit(1)
         
-    window = SADUCMainWindow(samba_conn)
+    window = SADUCMainWindow(samba_conn, connected_server)
     window.show()
 
     appLogger.info("Application event loop started.")

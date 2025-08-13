@@ -84,16 +84,18 @@ class ADTreeModel(QAbstractItemModel):
     This model uses lazy loading to fetch children on demand, starting
     from the forest root.
     """
-    def __init__(self, samba_conn, advanced_view=False, parent=None):
+    def __init__(self, samba_conn, connected_server, advanced_view=False, parent=None):
         super().__init__(parent)
         self.logger = logging.getLogger("saduc_app." + self.__class__.__name__)
         self.samba_conn = samba_conn
+        self.connected_server = connected_server
         self.advanced_view = advanced_view
 
         # Create an invisible root item for our model
         self.root_item = ADTreeItem(None, dn=None)
 
         self._icons = {
+            "server": "dns.png",
             "domainDns": "domain.png",
             "organizationalUnit": "folder_ou.png",
             "container": "folder.png",
@@ -127,6 +129,9 @@ class ADTreeModel(QAbstractItemModel):
     def _get_icon_for_item(self, item):
         object_class = item.object_class()
         if isinstance(object_class, list):
+            # For server, we have a single object class
+            if object_class and object_class[0] in self.icon_cache:
+                return self.icon_cache[object_class[0]]
             for oc in object_class:
                 if oc in self.icon_cache:
                     return self.icon_cache[oc]
@@ -136,16 +141,23 @@ class ADTreeModel(QAbstractItemModel):
 
     def _setup_model(self):
         """
-        Populates the first level of the tree with the forest root.
+        Populates the first level of the tree with the connected server,
+        and the forest root as its child.
         """
+        # Top-level item is the connected server
+        server_item = ADTreeItem(self.connected_server, parent=self.root_item, dn=f"server://{self.connected_server}", object_class='server')
+        server_item.set_has_sub_containers(True) # It will contain the domain
+        self.root_item.append_child(server_item)
+
         forest_root_data = get_forest_root_info(self.samba_conn)
         if forest_root_data:
-            # The root is always the domain itself, regardless of view
-            forest_root_item = ADTreeItem(forest_root_data['name'], parent=self.root_item, dn=forest_root_data['dn'], object_class='domainDns')
+            # The domain is a child of the server item
+            forest_root_item = ADTreeItem(forest_root_data['name'], parent=server_item, dn=forest_root_data['dn'], object_class='domainDns')
             forest_root_item.set_has_sub_containers(True) # Assume it has children to show the expander
-            self.root_item.append_child(forest_root_item)
+            server_item.append_child(forest_root_item)
+            server_item.set_children_fetched(True) # We've manually added its only child
         else:
-            self.logger.error("ADTreeModel: Could not retrieve forest root. Tree will be empty.")
+            self.logger.error("ADTreeModel: Could not retrieve forest root. Tree will be empty under the server node.")
 
 
     def columnCount(self, parent):
@@ -229,6 +241,8 @@ class ADTreeModel(QAbstractItemModel):
 
         item = parent.internalPointer()
         # We can fetch more if children haven't been fetched AND we know it has children
+        if item.object_class() == 'server':
+            return False
         return not item.children_fetched() and self.hasChildren(parent)
 
     def fetchMore(self, parent_index):
@@ -238,6 +252,11 @@ class ADTreeModel(QAbstractItemModel):
             if not self.canFetchMore(parent_index):
                 return
             parent_item = parent_index.internalPointer()
+
+        if parent_item.object_class() == 'server':
+            self.logger.debug("ADTreeModel: Not fetching children for server item.")
+            return
+
         parent_dn = parent_item.dn()
         self.logger.debug(f"ADTreeModel: Fetching children for '{parent_dn}'.")
         

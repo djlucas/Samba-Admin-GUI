@@ -220,6 +220,11 @@ class ComputerPropertiesDialog(QDialog):
         specified_layout.addLayout(protocol_layout)
 
         specified_layout.addWidget(QLabel(self.i18n.get_string("computer_properties.delegation.label_services")))
+        self.services_table.setColumnCount(2)
+        self.services_table.setHorizontalHeaderLabels(["Service Type", "User or Computer"])
+        header = self.services_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
         specified_layout.addWidget(self.services_table)
 
         service_buttons = QHBoxLayout()
@@ -301,14 +306,30 @@ class ComputerPropertiesDialog(QDialog):
         self.computer_name_header.setText(cn)
         self.computer_name_pre2k.setText(computer_props.get('sAMAccountName', [''])[0].rstrip('$'))
         self.dns_name_edit.setText(computer_props.get('dNSHostName', [''])[0])
+        self.dns_name_edit.setReadOnly(True)
         self.description_edit.setText(computer_props.get('description', [''])[0])
 
         uac = int(computer_props.get('userAccountControl', ['0'])[0])
         if uac & UAC_SERVER_TRUST_ACCOUNT:
             dc_type = "Domain Controller"
+            server_ref_dn = computer_props.get('serverReferenceBL', [None])[0]
+            if server_ref_dn:
+                try:
+                    dn_parts = ldap.dn.str2dn(server_ref_dn)
+                    for i, rdn in enumerate(dn_parts):
+                        if rdn[0][0].lower() == 'cn' and rdn[0][1].lower() == 'sites':
+                            if i > 0:
+                                site_rdn = dn_parts[i-1]
+                                if site_rdn[0][0].lower() == 'cn':
+                                    self.site_edit.setText(site_rdn[0][1])
+                                    break
+                except Exception as e:
+                    self.logger.warning(f"Could not parse site from serverReferenceBL DN '{server_ref_dn}': {e}")
         else:
             dc_type = "Workstation or Server"
         self.dc_type_edit.setText(dc_type)
+        self.dc_type_edit.setReadOnly(True)
+        self.site_edit.setReadOnly(True)
 
         # OS Tab
         self.os_name_edit.setText(computer_props.get('operatingSystem', [''])[0])
@@ -344,6 +365,30 @@ class ComputerPropertiesDialog(QDialog):
             self.member_of_table.setItem(row, 1, path_item)
 
         self.primary_group_label.setText(primary_group_info.get('displayName', primary_group_info.get('cn', self.i18n.get_string("common.unknown"))))
+
+        # Delegation Tab
+        if uac & UAC_TRUSTED_TO_AUTH_FOR_DELEGATION:
+            self.trust_specified_radio.setChecked(True)
+            # Check for protocol transition
+            if uac & UAC_TRUSTED_FOR_DELEGATION:
+                self.any_protocol_radio.setChecked(True)
+            else:
+                self.kerberos_only_radio.setChecked(True)
+        elif uac & UAC_TRUSTED_FOR_DELEGATION:
+            self.trust_any_radio.setChecked(True)
+        else:
+            self.dont_trust_radio.setChecked(True)
+
+        allowed_services = computer_props.get('msDS-AllowedToDelegateTo', [])
+        self.services_table.setRowCount(0)
+        for service in allowed_services:
+            row = self.services_table.rowCount()
+            self.services_table.insertRow(row)
+            parts = service.split('/')
+            service_type = parts[0]
+            user_or_computer = "/".join(parts[1:])
+            self.services_table.setItem(row, 0, QTableWidgetItem(service_type))
+            self.services_table.setItem(row, 1, QTableWidgetItem(user_or_computer))
 
         # Location Tab
         self.location_edit.setText(computer_props.get('location', [''])[0])

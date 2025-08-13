@@ -40,9 +40,10 @@ class SADUCMainWindow(QMainWindow):
     This window will contain the menu bar, toolbar, status bar,
     and the central pane with the tree view, list view, and action pane.
     """
-    def __init__(self, samba_conn, parent=None):
+    def __init__(self, samba_conn, connected_server, parent=None):
         super().__init__(parent)
         self.samba_conn = samba_conn
+        self.connected_server = connected_server
         self.logger = logging.getLogger("saduc_app." + self.__class__.__name__)
         self.i18n = I18nManager()
 
@@ -247,7 +248,7 @@ class SADUCMainWindow(QMainWindow):
         """
         self.logger.debug("SADUCMainWindow: Setting up tree view model.")
         advanced_view_enabled = self.advancedFeaturesAction.isChecked() if self.advancedFeaturesAction else False
-        self.adModel = ADTreeModel(self.samba_conn, advanced_view=advanced_view_enabled)
+        self.adModel = ADTreeModel(self.samba_conn, self.connected_server, advanced_view=advanced_view_enabled)
         self.treePane.setModel(self.adModel)
         self.logger.debug("SADUCMainWindow: Tree view model set.")
 
@@ -271,6 +272,14 @@ class SADUCMainWindow(QMainWindow):
             return
             
         tree_item = index.internalPointer()
+        if tree_item.object_class() == 'server':
+            self.logger.info("DC server item clicked, clearing views.")
+            self.tableModel.clear_data()
+            self._clear_layout(self.listActionLayout)
+            self._clear_layout(self.itemActionLayout)
+            self.statusBar().showMessage(self.i18n.get_string("main.status_bar_ready"))
+            return
+
         self.currentContainerDN = tree_item.dn()
         container_name = tree_item.data()
         self.logger.info(f"Tree item clicked: '{container_name}' (DN: {self.currentContainerDN})")
@@ -482,12 +491,16 @@ class SADUCMainWindow(QMainWindow):
             return
 
         tree_item = index.internalPointer()
-        self.currentContainerDN = tree_item.dn()
-
         menu = QMenu()
-        menu.addAction(self.i18n.get_string("action_pane.menu.new_user"), self._on_new_user_action_triggered)
-        menu.addAction("New Group (stub)")
-        menu.addAction("New Computer (stub)")
+
+        if tree_item.object_class() == 'server':
+            menu.addAction(self.i18n.get_string("action_pane.menu.change_dc"), self._on_change_dc_action_triggered)
+        else:
+            self.currentContainerDN = tree_item.dn()
+            menu.addAction(self.i18n.get_string("action_pane.menu.new_user"), self._on_new_user_action_triggered)
+            menu.addAction("New Group (stub)")
+            menu.addAction("New Computer (stub)")
+
         menu.exec_(self.treePane.viewport().mapToGlobal(position))
 
     def _on_list_context_menu(self, position):
@@ -537,6 +550,10 @@ class SADUCMainWindow(QMainWindow):
         
         if not menu.isEmpty():
             menu.exec_(self.listPane.viewport().mapToGlobal(position))
+
+    def _on_change_dc_action_triggered(self):
+        self.logger.info("Change Domain Controller action triggered.")
+        QMessageBox.information(self, "Not Implemented", "Changing the domain controller is not yet implemented.")
 
     def _on_list_item_double_clicked(self, index):
         if not index.isValid():
