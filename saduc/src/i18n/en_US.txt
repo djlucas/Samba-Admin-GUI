@@ -262,3 +262,19 @@ group_properties.label.group_name=Group name:
 group_properties.label.description=Description:
 group_properties.header.name=Name
 group_properties.header.folder=Active Directory Domain Services Folder
+
+# Context Menus
+context_menu.add_to_group=Add to a group...
+context_menu.reset_password=Reset Password...
+context_menu.move=Move...
+context_menu.open_home_page=Open Home Page
+context_menu.send_mail=Send Mail
+context_menu.all_tasks=All Tasks
+context_menu.cut=Cut
+context_menu.rename=Rename
+context_menu.reset_account=Reset Account
+context_menu.copy=Copy...
+context_menu.delete=Delete
+context_menu.disable_account=Disable Account
+context_menu.enable_account=Enable Account
+context_menu.properties=Properties
