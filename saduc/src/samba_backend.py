@@ -20,6 +20,7 @@ from ldap.controls import SimplePagedResultsControl
 import dns.resolver
 import subprocess
 import sys
+import uuid
 
 # --- Custom Exception ---
 class NoKerberosTicketError(Exception):
@@ -529,18 +530,18 @@ def get_upn_suffixes(samba_conn):
         if not root_dse or 'configurationNamingContext' not in root_dse[0][1]:
             logger.warning("Could not find 'configurationNamingContext' in RootDSE.")
             return []
-        
+
         config_dn = root_dse[0][1]['configurationNamingContext'][0].decode('utf-8')
         partitions_dn = f"CN=Partitions,{config_dn}"
-        
+
         # Now query the partitions container for the upnSuffixes attribute
         res = samba_conn.search_s(partitions_dn, ldap.SCOPE_BASE, "(objectClass=*)", ['upnSuffixes'])
-        
+
         if res and 'upnSuffixes' in res[0][1]:
             suffixes = [s.decode('utf-8') for s in res[0][1]['upnSuffixes']]
             logger.info(f"Found UPN Suffixes: {suffixes}")
             return suffixes
-        
+
         logger.info("No additional UPN suffixes found.")
         return []
     except ldap.LDAPError as e:
@@ -560,3 +561,73 @@ def update_object_attributes(samba_conn, dn, modifications):
     except ldap.LDAPError as e:
         logger.error(f"LDAP error modifying DN '{dn}': {e}")
         return False, str(e)
+
+def get_ntds_settings(samba_conn, ntds_dn):
+    """Retrieves properties for the NTDS Settings object."""
+    logger.debug(f"Fetching properties for NTDS Settings DN: {ntds_dn}")
+    try:
+        attributes = [
+            'description', 'options', 'msDS-AdditionalDnsHostName', 'queryPolicyObject', 'objectGUID'
+        ]
+        res = samba_conn.search_s(ntds_dn, ldap.SCOPE_BASE, '(objectClass=nTDSDSA)', attributes)
+
+        if not res:
+            return None
+
+        entry = res[0][1]
+        properties = {}
+        for key, value in entry.items():
+            if key == 'objectGUID':
+                properties[key] = value # Keep it as raw bytes
+            else:
+                properties[key] = [v.decode('utf-8') for v in value]
+
+        return properties
+
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error fetching NTDS settings for DN '{ntds_dn}': {e}")
+        return None
+
+def format_ldap_guid(guid_bytes_list):
+    """Formats raw LDAP GUID bytes from a list into a standard UUID string."""
+    if not guid_bytes_list:
+        return ""
+    return str(uuid.UUID(bytes_le=guid_bytes_list[0]))
+
+def get_query_policies(samba_conn):
+    """Retrieves all available query policies."""
+    logger.info("Querying for LDAP query policies.")
+    try:
+        # First, find the configuration naming context from the RootDSE
+        root_dse = samba_conn.search_s("", ldap.SCOPE_BASE, "(objectClass=*)", ['configurationNamingContext'])
+        if not root_dse or 'configurationNamingContext' not in root_dse[0][1]:
+            logger.warning("Could not find 'configurationNamingContext' in RootDSE.")
+            return ["Default Query Policy"]
+
+        config_dn = root_dse[0][1]['configurationNamingContext'][0].decode('utf-8')
+        search_base = f"CN=Query-Policies,CN=Directory Service,CN=Windows NT,CN=Services,{config_dn}"
+
+        res = get_paged_results(samba_conn, search_base, ldap.SCOPE_ONELEVEL, '(objectClass=queryPolicy)', ['cn'])
+
+        policies = []
+        for dn, entry in res:
+            if 'cn' in entry:
+                policies.append(entry['cn'][0].decode('utf-8'))
+
+        if "Default Query Policy" not in policies:
+            policies.insert(0, "Default Query Policy")
+
+        logger.info(f"Found query policies: {policies}")
+        return policies
+
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error querying for query policies: {e}")
+        return ["Default Query Policy"]
+
+def get_replication_connections(samba_conn, ntds_dn):
+    """Retrieves replication connections for a DC. Mocked for now."""
+    logger.info(f"Fetching replication connections for {ntds_dn} (mocked).")
+    # This is a placeholder. A real implementation would search for
+    # nTDSConnection objects under this DN and also look at the
+    # 'repsFrom' and 'repsTo' attributes.
+    return [], [] # from, to

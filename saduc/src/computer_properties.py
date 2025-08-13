@@ -24,6 +24,7 @@ from PyQt5.QtGui import QIcon, QPixmap
 
 from i18n_manager import I18nManager
 from samba_backend import get_computer_properties, BASE_DN, get_group_properties, update_object_attributes, get_group_by_rid, get_user_properties
+from ntds_settings_dialog import NtdsSettingsDialog
 
 # Constants for userAccountControl flags
 UAC_ACCOUNT_DISABLED = 0x0002
@@ -70,6 +71,7 @@ class ComputerPropertiesDialog(QDialog):
         self.dc_type_edit = QLineEdit()
         self.site_edit = QLineEdit()
         self.description_edit = QLineEdit()
+        self.ntds_settings_btn = QPushButton("NTDS Settings...")
 
     def _create_os_tab(self):
         self.os_tab = QWidget()
@@ -136,6 +138,7 @@ class ComputerPropertiesDialog(QDialog):
         self.trust_specified_radio.toggled.connect(self.specified_services_group.setEnabled)
         self.manager_name_edit.textChanged.connect(self._update_managed_by_buttons)
         self.change_manager_btn.clicked.connect(self._change_manager)
+        self.ntds_settings_btn.clicked.connect(self._open_ntds_settings_dialog)
 
     def _layout_general_tab(self):
         self.tab_widget.addTab(self.general_tab, self.i18n.get_string("computer_properties.tab.general"))
@@ -164,6 +167,12 @@ class ComputerPropertiesDialog(QDialog):
         layout.addLayout(header_layout)
         layout.addWidget(separator)
         layout.addLayout(form_layout)
+
+        ntds_layout = QHBoxLayout()
+        ntds_layout.addWidget(self.ntds_settings_btn)
+        ntds_layout.addStretch()
+        layout.addLayout(ntds_layout)
+
         layout.addStretch()
 
     def _layout_os_tab(self):
@@ -312,6 +321,7 @@ class ComputerPropertiesDialog(QDialog):
         uac = int(computer_props.get('userAccountControl', ['0'])[0])
         if uac & UAC_SERVER_TRUST_ACCOUNT:
             dc_type = "Domain Controller"
+            self.ntds_settings_btn.show()
             server_ref_dn = computer_props.get('serverReferenceBL', [None])[0]
             if server_ref_dn:
                 try:
@@ -327,6 +337,7 @@ class ComputerPropertiesDialog(QDialog):
                     self.logger.warning(f"Could not parse site from serverReferenceBL DN '{server_ref_dn}': {e}")
         else:
             dc_type = "Workstation or Server"
+            self.ntds_settings_btn.hide()
         self.dc_type_edit.setText(dc_type)
         self.dc_type_edit.setReadOnly(True)
         self.site_edit.setReadOnly(True)
@@ -410,6 +421,16 @@ class ComputerPropertiesDialog(QDialog):
                 self.manager_fax_label.setText(manager_props.get('facsimileTelephoneNumber', [''])[0])
         self._update_managed_by_buttons()
 
+
+    def _open_ntds_settings_dialog(self):
+        computer_props = get_computer_properties(self.samba_conn, self.computer_dn)
+        ntds_dn = "CN=NTDS Settings," + computer_props.get('serverReferenceBL', [None])[0]
+        if not ntds_dn:
+            QMessageBox.warning(self, "Error", "Could not determine the NTDS Settings DN.")
+            return
+
+        dialog = NtdsSettingsDialog(self.samba_conn, ntds_dn, self)
+        dialog.exec_()
 
     def apply_changes(self):
         self.logger.info("Apply changes clicked, but not yet implemented.")
