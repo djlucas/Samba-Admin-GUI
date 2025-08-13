@@ -14,6 +14,7 @@
 # -----------------------------------------------------------------------------
 
 import logging
+from functools import partial
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QSplitter, QSizePolicy,
     QTreeView, QTableView, QAbstractItemView, QHeaderView,
@@ -31,6 +32,7 @@ from ad_list_model import ADListModel
 from user_properties import UserPropertiesDialog
 from computer_properties import ComputerPropertiesDialog
 from group_properties import GroupPropertiesDialog
+from find_dialog import FindObjectsDialog
 
 
 # --- SADUCMainWindow Class ---
@@ -472,9 +474,10 @@ class SADUCMainWindow(QMainWindow):
             dialog = GroupPropertiesDialog(self.samba_conn, self.current_selected_dn, self)
             dialog.exec_()
 
-    def _on_find_user_action_triggered(self):
-        self.logger.info("Find User action triggered. Placeholder.")
-        QMessageBox.information(self, "Not Implemented", "The 'Find' feature is not yet implemented.")
+    def _on_find_user_action_triggered(self, dn):
+        self.logger.info(f"Find action triggered on DN: {dn}")
+        dialog = FindObjectsDialog(self.samba_conn, search_base_dn=dn, parent=self)
+        dialog.exec_()
 
 
     def _on_advanced_features_toggled(self, checked):
@@ -491,12 +494,18 @@ class SADUCMainWindow(QMainWindow):
             return
 
         tree_item = index.internalPointer()
+        dn = tree_item.dn()
         menu = QMenu()
+
+        find_action = QAction(self.i18n.get_string("action_pane.menu.find_user"), self)
+        find_action.triggered.connect(lambda: self._on_find_user_action_triggered(dn))
+        menu.addAction(find_action)
+        menu.addSeparator()
 
         if tree_item.object_class() == 'server':
             menu.addAction(self.i18n.get_string("action_pane.menu.change_dc"), self._on_change_dc_action_triggered)
         else:
-            self.currentContainerDN = tree_item.dn()
+            self.currentContainerDN = dn
             menu.addAction(self.i18n.get_string("action_pane.menu.new_user"), self._on_new_user_action_triggered)
             menu.addAction("New Group (stub)")
             menu.addAction("New Computer (stub)")
