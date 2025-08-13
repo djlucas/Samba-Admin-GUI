@@ -479,6 +479,20 @@ class SADUCMainWindow(QMainWindow):
         dialog = FindObjectsDialog(self.samba_conn, search_base_dn=dn, parent=self)
         dialog.exec_()
 
+    def _on_add_to_group_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Add to a group...' is not yet implemented.")
+
+    def _on_reset_password_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Reset Password...' is not yet implemented.")
+
+    def _on_move_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Move...' is not yet implemented.")
+
+    def _on_rename_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Rename...' is not yet implemented.")
+
+    def _on_stub_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "This feature is not yet implemented.")
 
     def _on_advanced_features_toggled(self, checked):
         self.logger.info(f"Advanced features toggled: {checked}")
@@ -527,16 +541,27 @@ class SADUCMainWindow(QMainWindow):
         menu = QMenu()
 
         if 'user' in obj_classes and 'computer' not in obj_classes:
-            menu.addAction(self.i18n.get_string("action_pane.menu.copy_user"), self._on_copy_user_action_triggered)
-            menu.addAction(self.i18n.get_string("action_pane.menu.delete_user"), self._on_delete_user_action_triggered)
-            menu.addAction(self.i18n.get_string("action_pane.menu.disable_user"), self._on_disable_user_action_triggered)
+            menu.addAction("Copy...", self._on_copy_user_action_triggered)
+            menu.addAction("Add to a group...", self._on_add_to_group_action_triggered)
+            menu.addAction("Disable Account", self._on_disable_user_action_triggered)
+            menu.addAction("Reset Password...", self._on_reset_password_action_triggered)
+            menu.addAction("Move...", self._on_move_action_triggered)
+            menu.addAction("Open Home Page", self._on_stub_action_triggered)
+            menu.addAction("Send Mail", self._on_stub_action_triggered)
             menu.addSeparator()
-            properties_action = QAction(self.i18n.get_string("action_pane.menu.properties"), self)
+            menu.addAction("All Tasks", self._on_stub_action_triggered)
+            menu.addSeparator()
+            menu.addAction("Cut", self._on_stub_action_triggered)
+            menu.addAction("Delete", self._on_delete_user_action_triggered)
+            menu.addAction("Rename...", self._on_rename_action_triggered)
+            menu.addSeparator()
+            properties_action = QAction("Properties", self)
             font = properties_action.font()
             font.setBold(True)
             properties_action.setFont(font)
             properties_action.triggered.connect(self._on_properties_action_triggered)
             menu.addAction(properties_action)
+
         elif 'computer' in obj_classes:
             menu.addAction("Disable Computer (stub)")
             menu.addAction("Reset Computer Account (stub)")
