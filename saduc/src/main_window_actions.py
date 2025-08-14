@@ -7,6 +7,7 @@ from samba_backend import create_user_samba, copy_user_samba, get_user_propertie
 from user_properties import UserPropertiesDialog
 from computer_properties import ComputerPropertiesDialog
 from group_properties import GroupPropertiesDialog
+from container_properties import ContainerPropertiesDialog
 from find_dialog import FindObjectsDialog
 
 def on_new_user_action_triggered(main_window):
@@ -234,8 +235,15 @@ def on_new_query_action_triggered(main_window):
 def on_delete_container_action_triggered(main_window):
     QMessageBox.information(main_window, "Not Implemented", "'Delete' for containers is not yet implemented.")
 
+from container_properties import ContainerPropertiesDialog
+
 def on_container_properties_action_triggered(main_window):
-    QMessageBox.information(main_window, "Not Implemented", "'Properties' for containers is not yet implemented.")
+    if not main_window.currentContainerDN:
+        main_window.logger.warning("No container selected for properties.")
+        return
+
+    dialog = ContainerPropertiesDialog(main_window.samba_conn, main_window.currentContainerDN, main_window)
+    dialog.exec_()
 
 def on_change_dc_action_triggered(main_window):
     main_window.logger.info("Change Domain Controller action triggered.")
