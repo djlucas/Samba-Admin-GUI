@@ -95,6 +95,8 @@ class ADTreeModel(QAbstractItemModel):
         self.root_item = ADTreeItem(None, dn=None)
 
         self._icons = {
+            "saducRoot": "domain.png",
+            "savedQueriesRoot": "folder.png",
             "server": "dns.png",
             "domainDns": "domain.png",
             "organizationalUnit": "folder_ou.png",
@@ -144,20 +146,27 @@ class ADTreeModel(QAbstractItemModel):
         Populates the first level of the tree with the connected server,
         and the forest root as its child.
         """
-        # Top-level item is the connected server
-        server_item = ADTreeItem(self.connected_server, parent=self.root_item, dn=f"server://{self.connected_server}", object_class='server')
-        server_item.set_has_sub_containers(True) # It will contain the domain
-        self.root_item.append_child(server_item)
+        # Top-level item for the domain tree
+        new_label = f"Samba Active Directory Users and Computers [{self.connected_server}]"
+        domain_root_item = ADTreeItem(new_label, parent=self.root_item, dn=f"server://{self.connected_server}", object_class='saducRoot')
+        self.root_item.append_child(domain_root_item)
+
+        # Add Saved Queries as a child of the main root item
+        saved_queries_item = ADTreeItem("Saved Queries", parent=domain_root_item, dn="local://saved-queries", object_class='savedQueriesRoot')
+        saved_queries_item.set_has_sub_containers(True) # Assume it can be expanded
+        domain_root_item.append_child(saved_queries_item)
 
         forest_root_data = get_forest_root_info(self.samba_conn)
         if forest_root_data:
-            # The domain is a child of the server item
-            forest_root_item = ADTreeItem(forest_root_data['name'], parent=server_item, dn=forest_root_data['dn'], object_class='domainDns')
+            # The domain is a child of the main root item
+            forest_root_item = ADTreeItem(forest_root_data['name'], parent=domain_root_item, dn=forest_root_data['dn'], object_class='domainDns')
             forest_root_item.set_has_sub_containers(True) # Assume it has children to show the expander
-            server_item.append_child(forest_root_item)
-            server_item.set_children_fetched(True) # We've manually added its only child
+            domain_root_item.append_child(forest_root_item)
         else:
             self.logger.error("ADTreeModel: Could not retrieve forest root. Tree will be empty under the server node.")
+
+        # Mark the root as having its children fetched
+        domain_root_item.set_children_fetched(True)
 
 
     def columnCount(self, parent):

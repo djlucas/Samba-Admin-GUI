@@ -22,7 +22,7 @@ from PyQt5.QtWidgets import (
     QAction, QDialog, QMessageBox
 )
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QFont
-from PyQt5.QtCore import Qt, QSize, QTimer
+from PyQt5.QtCore import Qt, QSize, QTimer, QModelIndex, QObject
 
 from i18n_manager import I18nManager
 from user_dialogs import NewUserWizard, CopyUserWizard, DeleteUserDialog, DisableUserDialog
@@ -254,6 +254,15 @@ class SADUCMainWindow(QMainWindow):
         self.treePane.setModel(self.adModel)
         self.logger.debug("SADUCMainWindow: Tree view model set.")
 
+        # Expand the top-level items by default
+        saduc_root_index = self.adModel.index(0, 0, QModelIndex())
+        if saduc_root_index.isValid():
+            self.treePane.expand(saduc_root_index)
+            # The domain is the second child (index 1) after "Saved Queries"
+            domain_index = self.adModel.index(1, 0, saduc_root_index)
+            if domain_index.isValid():
+                self.treePane.expand(domain_index)
+
 
     def _setup_table_view_model(self):
         """
@@ -272,16 +281,29 @@ class SADUCMainWindow(QMainWindow):
         """
         if not index.isValid():
             return
-            
+
         tree_item = index.internalPointer()
-        if tree_item.object_class() == 'server':
-            self.logger.info("DC server item clicked, clearing views.")
+        obj_classes = tree_item.object_class() if isinstance(tree_item.object_class(), list) else [tree_item.object_class()]
+
+        # Handle special, non-LDAP nodes first
+        if 'saducRoot' in obj_classes:
+            # Clicked on the top-level root, just clear the views
             self.tableModel.clear_data()
             self._clear_layout(self.listActionLayout)
             self._clear_layout(self.itemActionLayout)
             self.statusBar().showMessage(self.i18n.get_string("main.status_bar_ready"))
             return
 
+        if 'savedQueriesRoot' in obj_classes:
+            self.logger.info("Saved Queries item clicked. This is a local-only feature.")
+            self.tableModel.clear_data() # Clear the list view
+            self._clear_layout(self.listActionLayout)
+            self._clear_layout(self.itemActionLayout)
+            # TODO: Display some info in the action pane later
+            self.statusBar().showMessage("Saved Queries (Not Implemented)")
+            return
+
+        # If it's a real LDAP container, proceed as before
         self.currentContainerDN = tree_item.dn()
         container_name = tree_item.data()
         self.logger.info(f"Tree item clicked: '{container_name}' (DN: {self.currentContainerDN})")
@@ -303,12 +325,12 @@ class SADUCMainWindow(QMainWindow):
                                  self.i18n.get_text("error.backend.fetch_failed", str(e)))
             self.statusBar().showMessage(self.i18n.get_string("main.status_bar_ready"))
             return
-            
+
         # Update Action Pane with context-sensitive actions for the container
         actions = {
             "action_pane.menu.new_user" : self._on_new_user_action_triggered,
-            "action_pane.menu.new_group" : None, # Placeholder
-            "action_pane.menu.new_computer" : None # Placeholder
+            "action_pane.menu.new_group" : self._on_new_group_action_triggered,
+            "action_pane.menu.new_computer" : self._on_new_computer_action_triggered
         }
         self.listActionLayout.addLayout(self._create_action_section(container_name, actions))
 
@@ -497,12 +519,242 @@ class SADUCMainWindow(QMainWindow):
     def _on_reset_account_action_triggered(self):
         QMessageBox.information(self, "Not Implemented", "'Reset Account' is not yet implemented.")
 
+    def _on_change_domain_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Change Domain...' is not yet implemented.")
+
+    def _on_refresh_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Refresh' is not yet implemented.")
+
+    def _on_export_list_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Export List...' is not yet implemented.")
+
+    def _on_import_query_definition_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Import Query Definition...' is not yet implemented.")
+
+    def _on_delegate_control_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Delegate Control...' is not yet implemented.")
+
+    def _on_raise_domain_functional_level_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Raise Domain functional level...' is not yet implemented.")
+
+    def _on_operations_masters_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Operations Masters...' is not yet implemented.")
+
+    def _on_new_folder_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New Folder...' is not yet implemented.")
+
+    def _on_view_add_remove_columns_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Add/Remove Columns...' is not yet implemented.")
+
+    def _on_view_large_icons_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Large Icons' view is not yet implemented.")
+
+    def _on_view_small_icons_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Small Icons' view is not yet implemented.")
+
+    def _on_view_list_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'List' view is not yet implemented.")
+
+    def _on_view_detail_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Detail' view is not yet implemented.")
+
+    def _on_view_filter_options_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Filter options...' is not yet implemented.")
+
+    def _on_view_customize_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Customize...' is not yet implemented.")
+
+    def _on_view_users_as_containers_action_toggled(self, checked):
+        QMessageBox.information(self, "Not Implemented", f"'Users as containers' toggled: {checked}")
+
     def _on_advanced_features_toggled(self, checked):
         self.logger.info(f"Advanced features toggled: {checked}")
         self.adModel.set_advanced_view(checked)
         # We need to rebuild the model, so we create a new one
         self._setup_tree_view_model()
 
+    # --- New stub handlers for context menus ---
+    def _on_new_group_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New Group...' is not yet implemented.")
+
+    def _on_new_computer_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New Computer...' is not yet implemented.")
+
+    def _on_new_ou_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New Organizational Unit...' is not yet implemented.")
+
+    def _on_new_contact_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New Contact...' is not yet implemented.")
+
+    def _on_new_printer_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New Printer...' is not yet implemented.")
+
+    def _on_new_shared_folder_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New Shared Folder...' is not yet implemented.")
+
+    def _on_new_inetorgperson_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New InetOrgPerson...' is not yet implemented.")
+
+    def _on_new_msds_keycredential_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New msDS-KeyCredential...' is not yet implemented.")
+
+    def _on_new_msds_resourcepropertylist_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New msDS-ResourcePropertyList...' is not yet implemented.")
+
+    def _on_new_msds_shadowprincipalcontainer_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New msDS-ShadowPrincipalContainer...' is not yet implemented.")
+
+    def _on_new_msimaging_psps_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New msImaging-PSPs...' is not yet implemented.")
+
+    def _on_new_msmq_queue_alias_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New MSMQ Queue Alias...' is not yet implemented.")
+
+    def _on_new_query_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'New Query...' is not yet implemented.")
+
+    def _on_delete_container_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Delete' for containers is not yet implemented.")
+
+    def _on_container_properties_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Properties' for containers is not yet implemented.")
+
+    def _on_change_domain_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Change Domain...' is not yet implemented.")
+
+    def _on_refresh_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Refresh' is not yet implemented.")
+
+    def _on_export_list_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Export List...' is not yet implemented.")
+
+    def _on_import_query_definition_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Import Query Definition...' is not yet implemented.")
+
+    def _on_delegate_control_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Delegate Control...' is not yet implemented.")
+
+    def _on_raise_domain_functional_level_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Raise Domain functional level...' is not yet implemented.")
+
+    def _on_operations_masters_action_triggered(self):
+        QMessageBox.information(self, "Not Implemented", "'Operations Masters...' is not yet implemented.")
+
+
+    # --- Context Menu Builder Methods ---
+
+    def _build_saduc_root_menu(self, menu, dn):
+        menu.addAction(self.i18n.get_string("context_menu.change_domain"), self._on_change_domain_action_triggered)
+        menu.addAction(self.i18n.get_string("action_pane.menu.change_dc"), self._on_change_dc_action_triggered)
+        menu.addSeparator()
+        all_tasks_menu = menu.addMenu(self.i18n.get_string("context_menu.all_tasks"))
+        all_tasks_menu.setEnabled(False)
+        menu.addSeparator()
+        view_menu = menu.addMenu(self.i18n.get_string("context_menu.view"))
+        view_menu.setEnabled(False)
+        menu.addSeparator()
+        menu.addAction(self.i18n.get_string("context_menu.refresh"), self._on_refresh_action_triggered)
+        menu.addAction(self.i18n.get_string("context_menu.export_list"), self._on_export_list_action_triggered)
+
+    def _build_saved_queries_menu(self, menu, dn):
+        menu.addAction(self.i18n.get_string("context_menu.import_query"), self._on_import_query_definition_action_triggered)
+        menu.addSeparator()
+        new_menu = menu.addMenu(self.i18n.get_string("context_menu.new"))
+        new_menu.addAction(self.i18n.get_string("context_menu.new_query"), self._on_new_query_action_triggered)
+        all_tasks_menu = menu.addMenu(self.i18n.get_string("context_menu.all_tasks"))
+        all_tasks_menu.setEnabled(False)
+        menu.addSeparator()
+        menu.addAction(self.i18n.get_string("context_menu.refresh"), self._on_refresh_action_triggered)
+        menu.addSeparator()
+        menu.addAction(self.i18n.get_string("context_menu.properties"), self._on_container_properties_action_triggered)
+
+    def _build_domain_menu(self, menu, dn):
+        self.currentContainerDN = dn
+        menu.addAction(self.i18n.get_string("context_menu.delegate_control"), self._on_delegate_control_action_triggered)
+        find_action = QAction(self.i18n.get_string("action_pane.menu.find_user"), self)
+        find_action.triggered.connect(lambda: self._on_find_user_action_triggered(dn))
+        menu.addAction(find_action)
+        menu.addAction(self.i18n.get_string("context_menu.change_domain"), self._on_change_domain_action_triggered)
+        menu.addAction(self.i18n.get_string("action_pane.menu.change_dc"), self._on_change_dc_action_triggered)
+        menu.addAction(self.i18n.get_string("context_menu.raise_domain_level"), self._on_raise_domain_functional_level_action_triggered)
+        menu.addAction(self.i18n.get_string("context_menu.operations_masters"), self._on_operations_masters_action_triggered)
+        menu.addSeparator()
+        new_menu = menu.addMenu(self.i18n.get_string("context_menu.new"))
+        new_menu.addAction(self.i18n.get_string("action_pane.menu.new_computer"), self._on_new_computer_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_contact"), self._on_new_contact_action_triggered)
+        new_menu.addAction(self.i18n.get_string("action_pane.menu.new_group"), self._on_new_group_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_inetorgperson"), self._on_new_inetorgperson_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_msimaging_psps"), self._on_new_msimaging_psps_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_msmq_queue_alias"), self._on_new_msmq_queue_alias_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_ou"), self._on_new_ou_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_printer"), self._on_new_printer_action_triggered)
+        new_menu.addAction(self.i18n.get_string("action_pane.menu.new_user"), self._on_new_user_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_shared_folder"), self._on_new_shared_folder_action_triggered)
+        all_tasks_menu = menu.addMenu(self.i18n.get_string("context_menu.all_tasks"))
+        all_tasks_menu.setEnabled(False)
+        menu.addSeparator()
+        menu.addAction(self.i18n.get_string("context_menu.refresh"), self._on_refresh_action_triggered)
+        menu.addSeparator()
+        menu.addAction(self.i18n.get_string("context_menu.properties"), self._on_container_properties_action_triggered)
+
+    def _build_container_menu(self, menu, dn):
+        self.currentContainerDN = dn
+        menu.addAction(self.i18n.get_string("context_menu.delegate_control"), self._on_delegate_control_action_triggered)
+        find_action = QAction(self.i18n.get_string("action_pane.menu.find_user"), self)
+        find_action.triggered.connect(lambda: self._on_find_user_action_triggered(dn))
+        menu.addAction(find_action)
+        menu.addSeparator()
+        new_menu = menu.addMenu(self.i18n.get_string("context_menu.new"))
+        new_menu.addAction(self.i18n.get_string("action_pane.menu.new_computer"), self._on_new_computer_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_contact"), self._on_new_contact_action_triggered)
+        new_menu.addAction(self.i18n.get_string("action_pane.menu.new_group"), self._on_new_group_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_inetorgperson"), self._on_new_inetorgperson_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_msds_keycredential"), self._on_new_msds_keycredential_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_msds_resourcepropertylist"), self._on_new_msds_resourcepropertylist_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_msds_shadowprincipalcontainer"), self._on_new_msds_shadowprincipalcontainer_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_msimaging_psps"), self._on_new_msimaging_psps_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_msmq_queue_alias"), self._on_new_msmq_queue_alias_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_printer"), self._on_new_printer_action_triggered)
+        new_menu.addAction(self.i18n.get_string("action_pane.menu.new_user"), self._on_new_user_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_shared_folder"), self._on_new_shared_folder_action_triggered)
+        all_tasks_menu = menu.addMenu(self.i18n.get_string("context_menu.all_tasks"))
+        all_tasks_menu.setEnabled(False)
+        menu.addSeparator()
+        menu.addAction(self.i18n.get_string("context_menu.properties"), self._on_container_properties_action_triggered)
+
+    def _build_ou_menu(self, menu, dn):
+        self.currentContainerDN = dn
+        menu.addAction(self.i18n.get_string("context_menu.delegate_control"), self._on_delegate_control_action_triggered)
+        menu.addAction(self.i18n.get_string("context_menu.move"), self._on_move_action_triggered)
+        find_action = QAction(self.i18n.get_string("action_pane.menu.find_user"), self)
+        find_action.triggered.connect(lambda: self._on_find_user_action_triggered(dn))
+        menu.addAction(find_action)
+        menu.addSeparator()
+        new_menu = menu.addMenu(self.i18n.get_string("context_menu.new"))
+        new_menu.addAction(self.i18n.get_string("action_pane.menu.new_computer"), self._on_new_computer_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_contact"), self._on_new_contact_action_triggered)
+        new_menu.addAction(self.i18n.get_string("action_pane.menu.new_group"), self._on_new_group_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_inetorgperson"), self._on_new_inetorgperson_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_msimaging_psps"), self._on_new_msimaging_psps_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_msmq_queue_alias"), self._on_new_msmq_queue_alias_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_ou"), self._on_new_ou_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_printer"), self._on_new_printer_action_triggered)
+        new_menu.addAction(self.i18n.get_string("action_pane.menu.new_user"), self._on_new_user_action_triggered)
+        new_menu.addAction(self.i18n.get_string("context_menu.new_shared_folder"), self._on_new_shared_folder_action_triggered)
+        all_tasks_menu = menu.addMenu(self.i18n.get_string("context_menu.all_tasks"))
+        all_tasks_menu.setEnabled(False)
+        menu.addSeparator()
+        menu.addAction(self.i18n.get_string("context_menu.cut"), self._on_stub_action_triggered)
+        menu.addAction(self.i18n.get_string("context_menu.delete"), self._on_delete_container_action_triggered)
+        menu.addAction(self.i18n.get_string("context_menu.rename"), self._on_rename_action_triggered)
+        menu.addAction(self.i18n.get_string("context_menu.refresh"), self._on_refresh_action_triggered)
+        menu.addSeparator()
+        properties_action = QAction(self.i18n.get_string("context_menu.properties"), self)
+        font = properties_action.font()
+        font.setBold(True)
+        properties_action.setFont(font)
+        properties_action.triggered.connect(self._on_container_properties_action_triggered)
+        menu.addAction(properties_action)
 
     def _on_tree_context_menu(self, position):
         self.logger.info("Tree context menu requested.")
@@ -512,22 +764,22 @@ class SADUCMainWindow(QMainWindow):
 
         tree_item = index.internalPointer()
         dn = tree_item.dn()
+        obj_classes = tree_item.object_class() if isinstance(tree_item.object_class(), list) else [tree_item.object_class()]
         menu = QMenu()
 
-        find_action = QAction(self.i18n.get_string("action_pane.menu.find_user"), self)
-        find_action.triggered.connect(lambda: self._on_find_user_action_triggered(dn))
-        menu.addAction(find_action)
-        menu.addSeparator()
+        if 'saducRoot' in obj_classes:
+            self._build_saduc_root_menu(menu, dn)
+        elif 'savedQueriesRoot' in obj_classes:
+            self._build_saved_queries_menu(menu, dn)
+        elif 'domainDns' in obj_classes:
+            self._build_domain_menu(menu, dn)
+        elif 'organizationalUnit' in obj_classes:
+            self._build_ou_menu(menu, dn)
+        elif 'container' in obj_classes or 'builtinDomain' in obj_classes:
+            self._build_container_menu(menu, dn)
 
-        if tree_item.object_class() == 'server':
-            menu.addAction(self.i18n.get_string("action_pane.menu.change_dc"), self._on_change_dc_action_triggered)
-        else:
-            self.currentContainerDN = dn
-            menu.addAction(self.i18n.get_string("action_pane.menu.new_user"), self._on_new_user_action_triggered)
-            menu.addAction("New Group (stub)")
-            menu.addAction("New Computer (stub)")
-
-        menu.exec_(self.treePane.viewport().mapToGlobal(position))
+        if not menu.isEmpty():
+            menu.exec_(self.treePane.viewport().mapToGlobal(position))
 
     def _on_list_context_menu(self, position):
         self.logger.info("List context menu requested.")
