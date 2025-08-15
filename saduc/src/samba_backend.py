@@ -377,6 +377,36 @@ def get_group_properties(samba_conn, group_dn, attributes=None):
         logger.error(f"LDAP error fetching group properties for DN '{group_dn}': {e}")
         return None
 
+def get_container_properties(samba_conn, container_dn, attributes=None):
+    """Retrieves properties for a given container, OU, or built-in domain."""
+    logger.debug(f"Fetching properties for container DN: {container_dn}")
+    if attributes is None:
+        attributes = [
+            'cn', 'ou', 'description', 'objectClass', 'street', 'l', 'st',
+            'postalCode', 'co', 'managedBy'
+        ]
+
+    search_filter = '(|(objectClass=container)(objectClass=organizationalUnit)(objectClass=builtinDomain)(objectClass=domainDNS))'
+
+    try:
+        res = samba_conn.search_s(container_dn, ldap.SCOPE_BASE, search_filter, attributes)
+
+        if not res:
+            logger.warning(f"No container object found at DN: {container_dn}")
+            return None
+
+        entry = res[0][1]
+        properties = {}
+        for key, value in entry.items():
+            properties[key] = [v.decode('utf-8') for v in value]
+
+        return properties
+
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error fetching container properties for DN '{container_dn}': {e}")
+        return None
+
+
 def get_group_by_rid(samba_conn, rid):
     """Finds a group by its primaryGroupToken (RID)."""
     logger.debug(f"Searching for group with RID: {rid}")

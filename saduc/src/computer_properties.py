@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QDialog, QTabWidget, QWidget, QVBoxLayout, QFormLayout, QLineEdit,
     QPushButton, QHBoxLayout, QDialogButtonBox, QTableWidget,
     QTableWidgetItem, QHeaderView, QLabel, QMessageBox, QGroupBox,
-    QRadioButton, QTableWidgetItem, QFrame
+    QRadioButton, QTableWidgetItem, QFrame, QTextEdit
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon, QPixmap
@@ -113,8 +113,9 @@ class ComputerPropertiesDialog(QDialog):
         self.manager_properties_btn = QPushButton(self.i18n.get_string("action_pane.menu.properties"))
         self.clear_manager_btn = QPushButton(self.i18n.get_string("computer_properties.managed_by.button_clear"))
         self.manager_office_label = QLabel()
-        self.manager_street_label = QLabel()
-        self.manager_city_state_label = QLabel()
+        self.manager_street_edit = QTextEdit()
+        self.manager_city_label = QLabel()
+        self.manager_state_label = QLabel()
         self.manager_country_label = QLabel()
         self.manager_telephone_label = QLabel()
         self.manager_fax_label = QLabel()
@@ -276,30 +277,42 @@ class ComputerPropertiesDialog(QDialog):
         layout = QVBoxLayout(self.managed_by_tab)
 
         manager_group = QGroupBox()
-        form_layout = QFormLayout(manager_group)
+        group_layout = QVBoxLayout(manager_group)
 
-        name_layout = QHBoxLayout()
-        name_layout.addWidget(self.manager_name_edit)
-        name_layout.addWidget(self.change_manager_btn)
-        form_layout.addRow(self.i18n.get_string("user_properties.label.name"), name_layout)
+        # Name field
+        name_form_layout = QFormLayout()
+        name_form_layout.addRow(self.i18n.get_string("user_properties.label.name"), self.manager_name_edit)
+        group_layout.addLayout(name_form_layout)
 
+        # Buttons below the name field
         button_layout = QHBoxLayout()
         button_layout.addStretch()
+        button_layout.addWidget(self.change_manager_btn)
         button_layout.addWidget(self.manager_properties_btn)
         button_layout.addWidget(self.clear_manager_btn)
-        form_layout.addRow(button_layout)
+        group_layout.addLayout(button_layout)
 
-        form_layout.addRow(self.i18n.get_string("user_properties.label.office"), self.manager_office_label)
-        form_layout.addRow(self.i18n.get_string("user_properties.label.street"), self.manager_street_label)
-        form_layout.addRow(self.i18n.get_string("user_properties.label.city_state"), self.manager_city_state_label)
-        form_layout.addRow(self.i18n.get_string("user_properties.label.country"), self.manager_country_label)
+        # Spacer
+        group_layout.addSpacing(15)
+
+        # PIM fields
+        pim_form_layout = QFormLayout()
+        pim_form_layout.setVerticalSpacing(10)
+        self.manager_street_edit.setFixedHeight(80) # ~4 lines
+        pim_form_layout.addRow(self.i18n.get_string("user_properties.label.office"), self.manager_office_label)
+        pim_form_layout.addRow(self.i18n.get_string("user_properties.label.street"), self.manager_street_edit)
+        pim_form_layout.addRow(self.i18n.get_string("user_properties.label.city"), self.manager_city_label)
+        pim_form_layout.addRow(self.i18n.get_string("user_properties.label.state"), self.manager_state_label)
+        pim_form_layout.addRow(self.i18n.get_string("user_properties.label.country"), self.manager_country_label)
 
         separator = QFrame()
         separator.setFrameShape(QFrame.HLine)
-        form_layout.addRow(separator)
+        pim_form_layout.addRow(separator)
 
-        form_layout.addRow(self.i18n.get_string("user_properties.label.telephone"), self.manager_telephone_label)
-        form_layout.addRow(self.i18n.get_string("user_properties.label.fax"), self.manager_fax_label)
+        pim_form_layout.addRow(self.i18n.get_string("user_properties.label.telephone"), self.manager_telephone_label)
+        pim_form_layout.addRow(self.i18n.get_string("user_properties.label.fax"), self.manager_fax_label)
+
+        group_layout.addLayout(pim_form_layout)
 
         layout.addWidget(manager_group)
         layout.addStretch()
@@ -412,10 +425,9 @@ class ComputerPropertiesDialog(QDialog):
             if manager_props:
                 self.manager_name_edit.setText(manager_props.get('displayName', [''])[0])
                 self.manager_office_label.setText(manager_props.get('physicalDeliveryOfficeName', [''])[0])
-                self.manager_street_label.setText(manager_props.get('streetAddress', [''])[0])
-                city = manager_props.get('l', [''])[0]
-                state = manager_props.get('st', [''])[0]
-                self.manager_city_state_label.setText(f"{city}, {state}")
+                self.manager_street_edit.setText(manager_props.get('streetAddress', [''])[0])
+                self.manager_city_label.setText(manager_props.get('l', [''])[0])
+                self.manager_state_label.setText(manager_props.get('st', [''])[0])
                 self.manager_country_label.setText(manager_props.get('co', [''])[0])
                 self.manager_telephone_label.setText(manager_props.get('telephoneNumber', [''])[0])
                 self.manager_fax_label.setText(manager_props.get('facsimileTelephoneNumber', [''])[0])

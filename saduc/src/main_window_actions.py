@@ -111,6 +111,9 @@ def on_properties_action_triggered(main_window):
     elif 'group' in obj_classes:
         dialog = GroupPropertiesDialog(main_window.samba_conn, main_window.current_selected_dn, main_window)
         dialog.exec_()
+    elif 'container' in obj_classes or 'organizationalUnit' in obj_classes:
+        dialog = ContainerPropertiesDialog(main_window.samba_conn, main_window.current_selected_dn, main_window)
+        dialog.exec_()
 
 def on_find_user_action_triggered(main_window, dn):
     main_window.logger.info(f"Find action triggered on DN: {dn}")

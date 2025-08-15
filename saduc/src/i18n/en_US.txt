@@ -245,6 +245,7 @@ computer_properties.tab.managed_by=Managed By
 computer_properties.managed_by.button_clear=Clear
 user_properties.label.name=Name:
 user_properties.label.city_state=City, State/province:
+user_properties.label.telephone=Telephone:
 
 # Group Properties Dialog
 group_properties.window_title=Group Properties
@@ -262,6 +263,11 @@ group_properties.label.group_name=Group name:
 group_properties.label.description=Description:
 group_properties.header.name=Name
 group_properties.header.folder=Active Directory Domain Services Folder
+
+# OU/Container Properties Dialog
+container_properties.window_title=Properties
+container_properties.tab.managed_by=Managed By
+container_properties.tab.com_plus=COM+
 
 # Context Menus
 context_menu.new=New

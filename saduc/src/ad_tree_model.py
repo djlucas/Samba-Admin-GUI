@@ -153,7 +153,7 @@ class ADTreeModel(QAbstractItemModel):
 
         # Add Saved Queries as a child of the main root item
         saved_queries_item = ADTreeItem("Saved Queries", parent=domain_root_item, dn="local://saved-queries", object_class='savedQueriesRoot')
-        saved_queries_item.set_has_sub_containers(True) # Assume it can be expanded
+        saved_queries_item.set_has_sub_containers(False) # It cannot be expanded
         domain_root_item.append_child(saved_queries_item)
 
         forest_root_data = get_forest_root_info(self.samba_conn)

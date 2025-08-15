@@ -66,7 +66,12 @@ class TreeMenuManager:
         menu.addSeparator()
         menu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self.main_window))
         menu.addSeparator()
-        menu.addAction(self.i18n.get_string("context_menu.properties"), partial(actions.on_container_properties_action_triggered, self.main_window))
+        properties_action = QAction(self.i18n.get_string("context_menu.properties"), self.main_window)
+        font = properties_action.font()
+        font.setBold(True)
+        properties_action.setFont(font)
+        properties_action.triggered.connect(partial(actions.on_container_properties_action_triggered, self.main_window))
+        menu.addAction(properties_action)
 
     def _build_domain_menu(self, menu, dn):
         self.main_window.currentContainerDN = dn
@@ -86,7 +91,12 @@ class TreeMenuManager:
         menu.addSeparator()
         menu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self.main_window))
         menu.addSeparator()
-        menu.addAction(self.i18n.get_string("context_menu.properties"), partial(actions.on_container_properties_action_triggered, self.main_window))
+        properties_action = QAction(self.i18n.get_string("context_menu.properties"), self.main_window)
+        font = properties_action.font()
+        font.setBold(True)
+        properties_action.setFont(font)
+        properties_action.triggered.connect(partial(actions.on_container_properties_action_triggered, self.main_window))
+        menu.addAction(properties_action)
 
     def _build_container_menu(self, menu, dn):
         self.main_window.currentContainerDN = dn
@@ -100,7 +110,12 @@ class TreeMenuManager:
         all_tasks_menu = menu.addMenu(self.i18n.get_string("context_menu.all_tasks"))
         self._populate_all_tasks_menu(all_tasks_menu, dn, 'container')
         menu.addSeparator()
-        menu.addAction(self.i18n.get_string("context_menu.properties"), partial(actions.on_container_properties_action_triggered, self.main_window))
+        properties_action = QAction(self.i18n.get_string("context_menu.properties"), self.main_window)
+        font = properties_action.font()
+        font.setBold(True)
+        properties_action.setFont(font)
+        properties_action.triggered.connect(partial(actions.on_container_properties_action_triggered, self.main_window))
+        menu.addAction(properties_action)
 
     def _build_ou_menu(self, menu, dn):
         self.main_window.currentContainerDN = dn
