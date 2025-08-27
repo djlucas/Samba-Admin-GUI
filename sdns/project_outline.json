@@ -1,0 +1,553 @@
+{
+  "toolName": "SDNS (Samba DNS Manager)",
+  "description": "A UI specification for a DNS Manager tool for Active Directory integrated DNS zones, running on Linux, leveraging Samba for backend DNS operations.",
+  "components": {
+    "mainWindow": {
+      "type": "QMainWindow",
+      "layout": "Standard application window with menu bar, toolbar area, central widget with splitters for panes, and status bar.",
+      "children": [
+        "menuBar",
+        "toolbarArea", 
+        "centralPaneArea",
+        "statusBar"
+      ]
+    },
+    "menuBar": {
+      "type": "QMenuBar",
+      "menus": {
+        "file": {
+          "label": "&File",
+          "items": [
+            "Exit"
+          ]
+        },
+        "action": {
+          "label": "&Action",
+          "items": [
+            "Connect to DNS Server...",
+            "---",
+            "New Zone...",
+            "New Record...",
+            "Other New Records ->",
+            "---",
+            "Update Server Data Files",
+            "Clear Cache", 
+            "---",
+            "Refresh",
+            "---",
+            "Properties"
+          ]
+        },
+        "view": {
+          "label": "&View",
+          "items": [
+            "Add/Remove Columns...",
+            "Filter...",
+            "---",
+            "Advanced (Checkable)",
+            "---",
+            "Standard Toolbar (Checkable, default checked)",
+            "Status Bar (Checkable, default checked)"
+          ]
+        },
+        "window": {
+          "label": "&Window",
+          "items": [
+            "New Window",
+            "Cascade",
+            "Tile Horizontally", 
+            "Tile Vertically"
+          ]
+        },
+        "help": {
+          "label": "&Help",
+          "items": [
+            "Help Topics",
+            "---",
+            "About DNS"
+          ]
+        }
+      }
+    },
+    "toolbarArea": {
+      "type": "QToolBar",
+      "description": "Standard toolbar below menu bar, with configurable visibility via View menu.",
+      "buttons": [
+        "Connect to DNS Server",
+        "New Zone",
+        "New Record",
+        "Delete",
+        "Refresh",
+        "Properties"
+      ],
+      "defaultVisibility": "checked"
+    },
+    "centralPaneArea": {
+      "type": "QSplittingPane",
+      "layout": "Two vertical splitters creating three main panes: Left (tree), Middle (list), Right (action).",
+      "children": [
+        "dnsServerTreeView",
+        "dnsRecordListView", 
+        "actionPaneWidget"
+      ]
+    },
+    "dnsServerTreeView": {
+      "type": "QTreeView",
+      "location": "Left Pane",
+      "content": "Hierarchical tree view of DNS servers, zones, and subdomains.",
+      "treeStructure": {
+        "dnsServer": {
+          "icon": "server icon",
+          "children": [
+            "forwardLookupZones",
+            "reverseLookupZones",
+            "conditionalForwarders",
+            "trustPoints"
+          ]
+        },
+        "forwardLookupZones": {
+          "label": "Forward Lookup Zones",
+          "children": [
+            "primaryZones",
+            "secondaryZones", 
+            "stubZones"
+          ]
+        },
+        "reverseLookupZones": {
+          "label": "Reverse Lookup Zones",
+          "children": [
+            "reversePrimaryZones",
+            "reverseSecondaryZones"
+          ]
+        }
+      },
+      "selectionBehavior": "Single selection of server/zone/subdomain. Drives dnsRecordListView content and Action Pane header."
+    },
+    "dnsRecordListView": {
+      "type": "QTableView",
+      "location": "Middle Pane (right of tree view)",
+      "content": "Displays DNS records within the selected zone/subdomain from the dnsServerTreeView.",
+      "columns": {
+        "default": ["Name", "Type", "Data"],
+        "configurable": ["Name", "Type", "Data", "TTL", "Timestamp", "Status"]
+      },
+      "recordTypes": {
+        "A": "Host (A) record - IPv4 address",
+        "AAAA": "Host (AAAA) record - IPv6 address", 
+        "CNAME": "Alias (CNAME) record",
+        "MX": "Mail Exchanger (MX) record",
+        "NS": "Name Server (NS) record",
+        "PTR": "Pointer (PTR) record",
+        "SOA": "Start of Authority (SOA) record",
+        "SRV": "Service Location (SRV) record",
+        "TXT": "Text (TXT) record"
+      },
+      "interactions": {
+        "doubleClick": "Opens Properties Dialog for the DNS record.",
+        "rightClick": "Opens context menu specific to the record type.",
+        "rightClickAndDrag": "Presents 'Move' and 'Cancel' options only."
+      }
+    },
+    "actionPaneWidget": {
+      "type": "QWidget", 
+      "location": "Rightmost Pane",
+      "description": "Dynamic, contextual task pane. Visibility toggleable via View menu.",
+      "styling": {
+        "backgroundColor": "white",
+        "headerLabelColor": "black", 
+        "headerBarColor": "light blue/gray"
+      },
+      "defaultVisibility": "checked",
+      "structure": {
+        "staticHeader": "QLabel with text 'Actions'",
+        "serverZoneHeaderBar": {
+          "type": "QBar",
+          "alwaysPresent": true,
+          "content": "Name of currently selected server/zone from left pane.",
+          "leftToggle": "Up/down arrow (default down/expanded), controls visibility of server/zone tasks below.",
+          "rightMoreActionsToggle": "Right arrow with white background, opens context menu for the selected server/zone."
+        },
+        "selectedRecordHeaderBar": {
+          "type": "QBar", 
+          "conditionalVisibility": "Only appears when a DNS record is selected in dnsRecordListView.",
+          "content": "Name and type of currently selected record from middle pane.",
+          "leftToggle": "Up/down arrow (default down/expanded), controls visibility of record tasks below.",
+          "rightMoreActionsToggle": "Right arrow with white background, opens context menu for the selected record."
+        }
+      },
+      "contextualTasks": {
+        "serverSelected": [
+          "Connect to DNS Server...",
+          "---",
+          "Configure a DNS Server...",
+          "Set Aging/Scavenging for All Zones...", 
+          "Scavenge Stale Resource Records",
+          "Update Server Data Files",
+          "Clear Cache",
+          "---",
+          "All Tasks ->",
+          "---", 
+          "View ->",
+          "---",
+          "Refresh",
+          "Export List...",
+          "---",
+          "Properties"
+        ],
+        "zoneSelected": [
+          "New Host (A or AAAA)...",
+          "New Alias (CNAME)...",
+          "New Mail Exchanger (MX)...", 
+          "New Domain (delegation)...",
+          "Other New Records ->",
+          "---",
+          "Update Server Data Files",
+          "Reload from Master",
+          "Transfer from Master",
+          "Reload",
+          "---",
+          "All Tasks ->",
+          "---",
+          "View ->", 
+          "---",
+          "Cut",
+          "Delete",
+          "---",
+          "Properties"
+        ],
+        "recordSelected": [
+          "Delete",
+          "Update Associated PTR Record",
+          "---",
+          "All Tasks ->",
+          "---",
+          "Properties"
+        ]
+      }
+    },
+    "statusBar": {
+      "type": "QStatusBar",
+      "location": "Bottom of main window",
+      "defaultVisibility": "checked",
+      "content": "Blank by default. Displays brief info on selected items or hovered menu actions.",
+      "dynamicUpdates": {
+        "selectedItem": "e.g., 'Selected: example.com (A Record)', 'Selected: 2 records'",
+        "menuHover": "Brief description of the hovered menu item's function."
+      }
+    },
+    "newZoneWizard": {
+      "type": "QWizard",
+      "title": "New Zone Wizard", 
+      "pages": {
+        "page1_zoneType": {
+          "title": "Zone Type",
+          "radioButtons": [
+            {
+              "label": "Primary zone",
+              "description": "Creates a copy of a zone that can be updated directly on this server.",
+              "default": true
+            },
+            {
+              "label": "Secondary zone", 
+              "description": "Creates a copy of a zone that exists on another server. This option helps balance the processing load of primary servers and provides fault tolerance."
+            },
+            {
+              "label": "Stub zone",
+              "description": "Creates a copy of a zone containing only Name Server (NS), Start of Authority (SOA), and possibly glue Host (A) records."
+            }
+          ],
+          "checkbox": {
+            "label": "Store the zone in Active Directory (available only if DNS server is a domain controller)",
+            "default": true,
+            "enabledFor": ["Primary zone"]
+          },
+          "buttons": "Next >, Cancel"
+        },
+        "page2_zoneName": {
+          "title": "Zone Name",
+          "description": "The zone name specifies the portion of the DNS namespace for which this server is authoritative.",
+          "fields": [
+            {
+              "label": "Zone name:",
+              "type": "QLineEdit",
+              "placeholder": "example.com"
+            }
+          ],
+          "buttons": "< Back, Next >, Cancel"
+        },
+        "page3_zoneFile": {
+          "title": "Zone File",
+          "conditionalVisibility": "Only appears if 'Store in Active Directory' is unchecked",
+          "radioButtons": [
+            {
+              "label": "Create a new file with this file name:",
+              "default": true,
+              "enables": "filename input"
+            },
+            {
+              "label": "Use this existing file:",
+              "enables": "file browser"
+            }
+          ],
+          "buttons": "< Back, Next >, Cancel"
+        },
+        "page4_dynamicUpdate": {
+          "title": "Dynamic Update",
+          "description": "Dynamic updates enable DNS client computers to register and dynamically update their resource records with a DNS server whenever changes occur.",
+          "radioButtons": [
+            {
+              "label": "Allow only secure dynamic updates (recommended for Active Directory)",
+              "default": true,
+              "availableFor": "AD-integrated zones"
+            },
+            {
+              "label": "Allow both nonsecure and secure dynamic updates",
+              "description": "Dynamic updates of resource records are accepted from any client."
+            },
+            {
+              "label": "Do not allow dynamic updates",
+              "description": "Dynamic updates of resource records are not accepted by this zone."
+            }
+          ],
+          "buttons": "< Back, Finish, Cancel"
+        }
+      }
+    },
+    "newRecordDialog": {
+      "type": "QDialog",
+      "variants": {
+        "newHostRecord": {
+          "title": "New Host (A or AAAA)",
+          "fields": [
+            {
+              "label": "Name (uses parent domain name if blank):",
+              "type": "QLineEdit"
+            },
+            {
+              "label": "IP address:",
+              "type": "QLineEdit"
+            }
+          ],
+          "checkboxes": [
+            {
+              "label": "Create associated pointer (PTR) record",
+              "default": true
+            }
+          ]
+        },
+        "newCnameRecord": {
+          "title": "New Alias (CNAME)", 
+          "fields": [
+            {
+              "label": "Alias name (uses parent domain name if blank):",
+              "type": "QLineEdit"
+            },
+            {
+              "label": "Fully qualified domain name (FQDN) for target host:",
+              "type": "QLineEdit"
+            }
+          ]
+        },
+        "newMxRecord": {
+          "title": "New Mail Exchanger (MX)",
+          "fields": [
+            {
+              "label": "Host or child domain:",
+              "type": "QLineEdit"
+            },
+            {
+              "label": "Fully qualified domain name (FQDN) of mail server:",
+              "type": "QLineEdit"
+            },
+            {
+              "label": "Mail server priority:",
+              "type": "QSpinBox",
+              "default": 10
+            }
+          ]
+        }
+      },
+      "buttons": "OK, Cancel"
+    },
+    "recordPropertiesDialog": {
+      "type": "QDialog",
+      "variants": {
+        "hostRecordProperties": {
+          "title": "Host (A) Properties",
+          "fields": [
+            {
+              "label": "Parent domain:",
+              "type": "QLabel",
+              "readonly": true
+            },
+            {
+              "label": "Host name:",
+              "type": "QLineEdit"
+            },
+            {
+              "label": "Fully qualified domain name (FQDN):",
+              "type": "QLabel", 
+              "readonly": true
+            },
+            {
+              "label": "IP address:",
+              "type": "QLineEdit"
+            }
+          ],
+          "checkboxes": [
+            {
+              "label": "Update associated pointer (PTR) record"
+            },
+            {
+              "label": "Delete this record when it becomes stale"
+            }
+          ]
+        },
+        "cnameRecordProperties": {
+          "title": "Alias (CNAME) Properties",
+          "fields": [
+            {
+              "label": "Parent domain:",
+              "type": "QLabel",
+              "readonly": true
+            },
+            {
+              "label": "Alias name:",
+              "type": "QLineEdit"
+            },
+            {
+              "label": "Fully qualified domain name (FQDN):",
+              "type": "QLabel",
+              "readonly": true 
+            },
+            {
+              "label": "Fully qualified domain name (FQDN) for target host:",
+              "type": "QLineEdit"
+            }
+          ]
+        }
+      },
+      "tabs": {
+        "general": "General record properties",
+        "security": "Security permissions (AD-integrated zones only)"
+      },
+      "buttons": "OK, Cancel, Apply"
+    },
+    "zonePropertiesDialog": {
+      "type": "QDialog",
+      "title": "Zone Properties",
+      "tabs": {
+        "general": {
+          "label": "General",
+          "fields": [
+            {
+              "label": "Status:",
+              "type": "QLabel",
+              "values": ["Running", "Paused"]
+            },
+            {
+              "label": "Type:",
+              "type": "QLabel", 
+              "values": ["Primary", "Secondary", "Stub"]
+            },
+            {
+              "label": "Zone file name:",
+              "type": "QLineEdit"
+            }
+          ],
+          "buttons": [
+            "Pause/Start",
+            "Browse..."
+          ]
+        },
+        "startOfAuthority": {
+          "label": "Start of Authority (SOA)",
+          "fields": [
+            {
+              "label": "Serial number:",
+              "type": "QSpinBox"
+            },
+            {
+              "label": "Primary server:",
+              "type": "QLineEdit"
+            },
+            {
+              "label": "Responsible person:",
+              "type": "QLineEdit"
+            },
+            {
+              "label": "Refresh interval:",
+              "type": "QSpinBox",
+              "unit": "seconds"
+            },
+            {
+              "label": "Retry interval:",
+              "type": "QSpinBox", 
+              "unit": "seconds"
+            },
+            {
+              "label": "Expires after:",
+              "type": "QSpinBox",
+              "unit": "seconds"
+            },
+            {
+              "label": "Minimum (default) TTL:",
+              "type": "QSpinBox",
+              "unit": "seconds"
+            }
+          ]
+        },
+        "nameServers": {
+          "label": "Name Servers",
+          "description": "List of authoritative name servers for this zone",
+          "listWidget": "QListWidget with Add/Edit/Remove buttons"
+        },
+        "security": {
+          "label": "Security",
+          "conditionalVisibility": "AD-integrated zones only",
+          "description": "Access control permissions for the zone"
+        },
+        "zoneTransfers": {
+          "label": "Zone Transfers",
+          "radioButtons": [
+            {
+              "label": "To any server",
+              "default": false
+            },
+            {
+              "label": "Only to servers listed on the Name Servers tab",
+              "default": true
+            },
+            {
+              "label": "Only to the following servers:",
+              "enables": "server list"
+            }
+          ]
+        }
+      },
+      "buttons": "OK, Cancel, Apply"
+    },
+    "connectToDnsServerDialog": {
+      "type": "QDialog",
+      "title": "Connect to DNS Server",
+      "radioButtons": [
+        {
+          "label": "The local computer",
+          "default": true
+        },
+        {
+          "label": "The following computer:",
+          "enables": "server name input"
+        }
+      ],
+      "fields": [
+        {
+          "label": "Name:",
+          "type": "QLineEdit",
+          "enabledBy": "The following computer"
+        }
+      ],
+      "buttons": "OK, Cancel"
+    }
+  }
+}
