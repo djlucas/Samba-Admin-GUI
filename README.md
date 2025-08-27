@@ -106,10 +106,44 @@ python main.py
 
 ## 🧪 Development Status
 
-| Module   | Status     | Notes                                  |
-|----------|------------|----------------------------------------|
-| saduc    | 🚧 In Progress | Core UI and basic read-only acces to most of ADUC        |
-| sdns     | 🚧 In Progress | Very rough draft in place with partial read funtionality |
-| ssas     | 🕒 Planned     | Pending topology mapping logic                           |
-| sgpoe    | 🕒 Planned     | Requires policy template scaffolding                     |
+### Current Implementation Status (~40% Complete)
+
+**SADUC (Samba Active Directory Users & Computers)** - *~60% Complete*
+- ✅ **Working Features:**
+  - LDAP connectivity and authentication via Kerberos
+  - Complete tree navigation of AD structure
+  - Property dialogs for all major object types (Users, Computers, Groups, etc.)
+  - Advanced search functionality with custom LDAP filters
+  - Attribute editor with schema-aware validation
+  - Read-only access to most ADUC functionality
+
+- ❌ **Critical Missing Features:**
+  - User creation/modification (`create_user_samba()`, `copy_user_samba()` are placeholders)
+  - Object deletion, enable/disable, password reset operations
+  - Write-back functionality for property modifications
+  - Group membership management with proper DN resolution
+  - Move and rename operations for AD objects
+
+**SDNS (Samba DNS Manager)** - *~15% Complete*
+- ✅ Basic GUI structure exists
+- ❌ DNS record management not implemented
+- ❌ Zone management incomplete
+- ❌ Replication management missing
+
+### Module Status Summary
+
+| Module   | Completion | Status     | Notes                                  |
+|----------|------------|------------|----------------------------------------|
+| saduc    | ~60%       | 🚧 Active Development | Reads well, writing operations incomplete |
+| sdns     | ~15%       | 🚧 Early Stage | Basic structure only, core functionality missing |
+| sadss    | 0%         | 🕒 Planned | Pending topology mapping logic |
+| sgpoe    | 0%         | 🕒 Planned | Requires policy template scaffolding |
+
+### Immediate Development Priorities
+
+1. **Complete User Management Backend** - Essential for basic AD administration
+2. **Implement Property Write-Back** - Critical for making changes persistent 
+3. **Fix Search & Query Operations** - Foundation for object discovery
+4. **Add Comprehensive Testing** - No test files currently exist
+5. **Complete Basic Object Operations** - Move, rename, delete functionality
 
