@@ -41,6 +41,7 @@ All future modules will follow the `s<RSAT>` naming convention.
 - **PyQt5** – Modular, scalable GUI framework
 - **python-ldap** - LDAPv3 module for Python
 - **dnspython** - DNS toolkit for Python
+- **impacket** - Pure Python implementation of network protocols for LDAP security descriptors
 - **MIT/Heimdal krb5 utilities** – Backend integration (`kinit`, `klist`, etc.)
 
 ### Optional Dependencies
