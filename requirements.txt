@@ -1,0 +1,5 @@
+# Core dependencies
+PyQt5>=5.12.0
+python-ldap>=3.0.0
+dnspython>=2.0.0
+cryptography>=3.0.0

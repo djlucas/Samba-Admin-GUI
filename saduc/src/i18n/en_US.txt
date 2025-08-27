@@ -1,0 +1,507 @@
+# Authentication Dialog
+dialog.auth.title=Authenticate to Active Directory
+dialog.auth.username=User Name
+dialog.auth.password=Password
+
+# Main Window
+main.window_title=Samba Active Directory Users & Computers
+main.toolbar.main=Main Toolbar
+main.status_bar_ready=Ready
+
+# Menus
+menu.file=File
+menu.file.exit=Exit
+menu.file.exit.shortcut=Ctrl+Q
+menu.file.exit.status_tip=Exit the application
+menu.action=Action
+menu.view=View
+menu.view.advanced=Advanced Features
+menu.view.advanced.status_tip=Show advanced features and objects
+menu.view.objects_as_containers=Users, Contacts, Groups, and Computers as containers
+menu.view.objects_as_containers.status_tip=Show users, contacts, groups, and computers as containers in the tree view
+menu.window=Window
+menu.help=Help
+
+# Tree View Pane
+tree_pane.header=Domain
+
+# Table View Headers (New Standard Headers)
+table.header.name=Name
+table.header.type=Type
+table.header.description=Description
+table.header.business phone=Business Phone
+table.header.city=City
+table.header.company=Company
+table.header.country/region=Country/Region
+table.header.department=Department
+table.header.display name=Display Name
+table.header.e-mail address=E-Mail Address
+table.header.exchange alias=Exchange Alias
+table.header.exchange mailbox store=Exchange Mailbox Store
+table.header.first name=First Name
+table.header.instant messaging home server=Instant Messaging Home Server
+table.header.instant messaging url=Instant Messaging URL
+table.header.job title=Job Title
+table.header.last name=Last Name
+table.header.modified=Modified
+table.header.office=Office
+table.header.phonetic company name=Phonetic Company Name
+table.header.phonetic department=Phonetic Department
+table.header.phonetic display name=Phonetic Display Name
+table.header.phonetic first name=Phonetic First Name
+table.header.phonetic last name=Phonetic Last Name
+table.header.pre-windows 2000 logon name=Pre-Windows 2000 Logon Name
+table.header.state=State
+table.header.target address=Target Address
+table.header.user logon name=User Logon Name
+table.header.x.400 e-mail address=X.400 E-Mail Address
+table.header.zip code=Zip Code
+table.header.value=Value
+table.header.syntax=Syntax
+
+# Status Bar
+status.selected_item=Selected: %s
+status.loading=Loading %s...
+status.loaded_items=%d items in %s
+
+# Action Pane
+action_pane.static_title=Actions
+action_pane.button.actions=Actions
+action_pane.menu.new_user=New User...
+action_pane.menu.find_user=Find...
+action_pane.menu.copy_user=Copy User...
+action_pane.menu.delete_user=Delete
+action_pane.menu.disable_user=Disable Account
+action_pane.menu.new_computer=New Computer...
+action_pane.menu.find_computer=Find...
+action_pane.menu.disable_computer=Disable Account
+action_pane.menu.reset_computer_account=Reset Account
+action_pane.menu.new_group=New Group...
+action_pane.menu.find_group=Find...
+action_pane.menu.delete_group=Delete
+action_pane.menu.properties=Properties
+action_pane.menu.change_dc=Change Domain Controller...
+action_pane.container_header=Actions for '{0}'
+action_pane.object_header=Actions for '{0}'
+
+# New User Wizard
+dialog.new_user.title=New Object - User
+dialog.new_user.page1.title=Create a new user
+dialog.new_user.page1.subtitle=Fill in the user's name details and logon names.
+dialog.new_user.page1.intro_text=Create a new user
+dialog.new_user.page1.first_name=First Name
+dialog.new_user.page1.initials=Initials
+dialog.new_user.page1.last_name=Last Name
+dialog.new_user.page1.full_name=Full Name
+dialog.new_user.page1.user_logon_name=User logon name
+dialog.new_user.page1.pre_win2k_logon_name=User logon name (pre-Windows 2000)
+dialog.new_user.page1.pre_win2k_domain=SAMBA
+dialog.new_user.page1.upn_domain_1=@samba.local
+dialog.new_user.page1.upn_domain_2=@mail.samba.local
+
+dialog.new_user.page2.title=New Object - User
+dialog.new_user.page2.subtitle=Set the password and account options.
+dialog.new_user.page2.password_label=Password
+dialog.new_user.page2.confirm_password_label=Confirm Password
+dialog.new_user.page2.password_mismatch=Passwords do not match.
+dialog.new_user.page2.user_must_change_password=User must change password at next logon
+dialog.new_user.page2.user_cannot_change_password=User cannot change password
+dialog.new_user.page2.password_never_expires=Password never expires
+dialog.new_user.page2.account_disabled=Account is disabled
+
+dialog.new_user.page3.title=Completing the New Object - User Wizard
+dialog.new_user.page3.subtitle=You have successfully created a new user.
+dialog.new_user.page3.summary_intro=Please review the following details for the new user account:
+dialog.new_user.page3.summary_full_name=<br><b>Full Name:</b> %s
+dialog.new_user.page3.summary_user_logon=<br><b>User Logon Name:</b> %s%s
+dialog.new_user.page3.user_must_change_password_option=User must change password at next logon.
+dialog.new_user.page3.user_cannot_change_password_option=User cannot change password.
+dialog.new_user.page3.password_never_expires_option=User never expires.
+dialog.new_user.page3.account_disabled_option=Account is disabled.
+
+# Confirmation Dialogs
+dialog.delete_user.title=Confirm Deletion
+dialog.delete_user.message=Are you sure you want to delete the user '%s'? This action cannot be undone.
+dialog.disable_user.title=Confirm Account Disable
+dialog.disable_user.message=Are you sure you want to disable the user '%s'? The user will not be able to log on.
+
+dialog.enable_user.title=Confirm Account Enable
+dialog.enable_user.message=Are you sure you want to enable the user '%s'? The user will be able to log on.
+
+# Generic Dialogs and Backend Messages
+dialog.common.success.title=Success
+dialog.common.error.title=Error
+dialog.common.error.generic=An unexpected error occurred. Check the debug log for details.
+common.unknown=Unknown
+
+samba_backend.success.create_user = User '{0}' created successfully.
+samba_backend.success.copy_user = User '{0}' copied successfully.
+samba_backend.success.delete_user = User '{0}' has been deleted (simulated).
+samba_backend.success.disable_user = User '{0}' has been disabled (simulated).
+samba_backend.error.create_user = An error occurred while creating the user: {0}
+samba_backend.error.copy_user = An error occurred while copying the user: {0}
+error.backend.fetch_failed=Failed to fetch objects from the directory. Please check the connection and permissions. Details: {0}
+
+# User Properties Dialog
+user_properties.window_title=User Properties
+user_properties.tab.general=General
+user_properties.tab.address=Address
+user_properties.tab.account=Account
+user_properties.tab.profile=Profile
+user_properties.tab.telephones=Telephones
+user_properties.tab.organization=Organization
+user_properties.tab.member_of=Member Of
+user_properties.tab.object=Object
+user_properties.tab.security=Security
+security_tab.groupbox.principals=Group or user names:
+security_tab.groupbox.permissions=Permissions for {0}
+security_tab.button.add=Add...
+security_tab.button.remove=Remove
+security_tab.button.advanced=Advanced
+security_tab.label.note=For special permissions or advanced settings, click Advanced.
+security_tab.permission.full_control=Full Control
+security_tab.permission.read=Read
+security_tab.permission.write=Write
+security_tab.permission.create_all_child_objects=Create all child objects
+security_tab.permission.delete_all_child_objects=Delete all child objects
+security_tab.permission.allowed_to_authenticate=Allowed to authenticate
+security_tab.permission.change_password=Change password
+security_tab.permission.receive_as=Receive as
+security_tab.permission.reset_password=Reset password
+security_tab.permission.send_as=Send as
+security_tab.permission.read_account_restrictions=Read account restrictions
+security_tab.permission.write_account_restrictions=Write account restrictions
+security_tab.permission.read_general_information=Read general information
+security_tab.permission.write_general_information=Write general information
+security_tab.permission.read_group_membership=Read group membership
+security_tab.permission.read_logon_information=Read logon information
+security_tab.permission.write_logon_information=Write logon information
+security_tab.permission.read_personal_information=Read personal information
+security_tab.permission.write_personal_information=Write personal information
+security_tab.permission.read_phone_and_mail_options=Read phone and mail options
+security_tab.permission.write_phone_and_mail_options=Write phone and mail options
+security_tab.permission.read_private_information=Read private information
+security_tab.permission.write_private_information=Write private information
+security_tab.permission.read_public_information=Read public information
+security_tab.permission.write_public_information=Write public information
+security_tab.permission.read_remote_access_information=Read remote access information
+security_tab.permission.write_remote_access_information=Write remote access information
+security_tab.permission.read_terminal_server_license_server=Read Terminal Server license server
+security_tab.permission.write_terminal_server_license_server=Write Terminal Server license server
+security_tab.permission.read_web_information=Read web information
+security_tab.permission.write_web_information=Write web information
+security_tab.permission.special_permissions=Special permissions
+
+# User Properties - General Tab
+user_properties.group.personal_info=Personal Information
+user_properties.group.contact_info=Contact Information
+user_properties.label.first_name=First name:
+user_properties.label.initials=Initials:
+user_properties.label.last_name=Last name:
+user_properties.label.display_name=Display name:
+user_properties.label.description=Description:
+user_properties.label.office=Office:
+user_properties.label.telephone=Telephone number:
+user_properties.label.email=E-mail:
+user_properties.label.web_page=Web page:
+
+# User Properties - Address Tab
+user_properties.label.street=Street:
+user_properties.label.po_box=P.O. Box:
+user_properties.label.city=City:
+user_properties.label.state=State/province:
+user_properties.label.zip=Zip/Postal Code:
+user_properties.label.country=Country/region:
+
+# User Properties - Account Tab
+user_properties.group.logon_info=User logon name
+user_properties.group.account_options=Account options
+user_properties.group.account_expires=Account expires
+user_properties.label.user_logon_name=User logon name:
+user_properties.label.user_logon_name_pre2000=User logon name (pre-Windows 2000):
+user_properties.button.logon_hours=Logon hours...
+user_properties.button.log_on_to=Log on to...
+user_properties.checkbox.unlock_account=Unlock account
+user_properties.checkbox.must_change_password=User must change password at next logon
+user_properties.checkbox.cannot_change_password=User cannot change password
+user_properties.checkbox.password_never_expires=Password never expires
+user_properties.checkbox.reversible_encryption=Store password using reversible encryption
+user_properties.checkbox.account_disabled=Account is disabled
+user_properties.checkbox.smartcard_required=Smart card is required for interactive logon
+user_properties.checkbox.trusted_for_delegation=Account is trusted for delegation
+user_properties.checkbox.account_sensitive=Account is sensitive and cannot be delegated
+user_properties.checkbox.use_des_encryption=Use Kerberos DES encryption types for this account
+user_properties.checkbox.not_require_preauth=Do not require Kerberos preauthentication
+user_properties.radio.never_expires=Never
+user_properties.radio.end_of=End of:
+
+# User Properties - Profile Tab
+user_properties.group.user_profile=User profile
+user_properties.group.home_folder=Home folder
+user_properties.label.profile_path=Profile path:
+user_properties.label.logon_script=Logon script:
+user_properties.checkbox.local_path=Local path:
+user_properties.checkbox.connect=Connect:
+user_properties.label.to=To:
+
+# User Properties - Telephones Tab
+user_properties.label.home_phone=Home:
+user_properties.label.pager=Pager:
+user_properties.label.mobile=Mobile:
+user_properties.label.fax=Fax:
+user_properties.label.ip_phone=IP phone:
+user_properties.label.notes=Notes:
+
+# User Properties - Organization Tab
+user_properties.label.title=Title:
+user_properties.label.department=Department:
+user_properties.label.company=Company:
+user_properties.label.manager=Manager:
+user_properties.label.direct_reports=Direct reports:
+user_properties.button.change=Change...
+
+# User Properties - Member Of Tab
+user_properties.header.name=Name
+user_properties.header.folder=Active Directory Domain Services Folder
+user_properties.button.add=Add...
+user_properties.button.remove=Remove
+user_properties.button.set_primary=Set Primary Group
+user_properties.label.primary_group=Primary group:
+
+# User Properties - COM+ Tab
+user_properties.tab.com_plus=COM+
+user_properties.title.com_partition_set=This user is a member of the following COM+ partition set:
+user_properties.group.com_partition_set=Partition Set
+
+# Computer Properties Dialog
+computer_properties.window_title=Computer Properties
+
+# Computer Properties - General Tab
+computer_properties.tab.general=General
+computer_properties.label.computer_name=Computer name:
+computer_properties.label.computer_name_pre2k=Computer name (pre-Windows 2000):
+computer_properties.label.dns_name=DNS name:
+computer_properties.label.dc_type=DC Type:
+computer_properties.label.site=Site:
+computer_properties.label.description=Description:
+
+# Computer Properties - Operating System Tab
+computer_properties.tab.os=Operating System
+computer_properties.label.os_name=Operating System:
+computer_properties.label.os_version=Version:
+computer_properties.label.os_service_pack=Service Pack:
+
+# Computer Properties - Member Of Tab
+computer_properties.tab.member_of=Member Of
+
+# Computer Properties - Delegation Tab
+computer_properties.tab.delegation=Delegation
+computer_properties.delegation.info_text=Delegation is a security-sensitive operation, which allows services to act on behalf of another user.
+computer_properties.delegation.radio_dont_trust=Do not trust this computer for delegation
+computer_properties.delegation.radio_trust_any=Trust this computer for delegation to any service (Kerberos only)
+computer_properties.delegation.radio_trust_specified=Trust this computer for delegation to specified services only
+computer_properties.delegation.radio_kerberos_only=Use Kerberos only
+computer_properties.delegation.radio_any_protocol=Use any authentication protocol
+computer_properties.delegation.label_services=Services to which this account can present delegated credentials:
+
+# Computer Properties - Location Tab
+computer_properties.tab.location=Location
+computer_properties.label.location=Location:
+computer_properties.location.button_browse=Browse...
+
+# Computer Properties - Managed By Tab
+computer_properties.tab.managed_by=Managed By
+computer_properties.managed_by.button_clear=Clear
+user_properties.label.name=Name:
+user_properties.label.city_state=City, State/province:
+user_properties.label.telephone=Telephone:
+
+# Group Properties Dialog
+group_properties.window_title=Group Properties
+group_properties.tab.general=General
+group_properties.tab.members=Members
+group_properties.tab.member_of=Member Of
+group_properties.groupbox.scope=Group scope
+group_properties.radio.domain_local=Domain local
+group_properties.radio.global=Global
+group_properties.radio.universal=Universal
+group_properties.groupbox.type=Group type
+group_properties.radio.security=Security
+group_properties.radio.distribution=Distribution
+group_properties.label.group_name=Group name:
+group_properties.label.description=Description:
+group_properties.header.name=Name
+group_properties.header.folder=Active Directory Domain Services Folder
+group_properties.button.add=Add
+group_properties.button.remove=Remove
+
+# OU/Container Properties Dialog
+container_properties.window_title=Properties
+container_properties.tab.managed_by=Managed By
+container_properties.tab.com_plus=COM+
+
+# Context Menus
+context_menu.new=New
+context_menu.new_ou=Organizational Unit
+context_menu.new_contact=Contact...
+context_menu.new_printer=Printer...
+context_menu.new_shared_folder=Shared Folder...
+context_menu.new_inetorgperson=InetOrgPerson...
+context_menu.new_msds_keycredential=msDS-KeyCredential...
+context_menu.new_msds_resourcepropertylist=msDS-ResourcePropertyList...
+context_menu.new_msds_shadowprincipalcontainer=msDS-ShadowPrincipalContainer...
+context_menu.new_msimaging_psps=msImaging-PSPs...
+context_menu.new_msmq_queue_alias=MSMQ Queue Alias...
+context_menu.new_query=New Query...
+context_menu.change_domain=Change Domain...
+context_menu.view=View
+context_menu.refresh=Refresh
+context_menu.export_list=Export List...
+context_menu.import_query=Import Query Definition...
+context_menu.delegate_control=Delegate Control...
+context_menu.raise_domain_level=Raise Domain functional level...
+context_menu.operations_masters=Operations Masters...
+context_menu.new_folder=Folder
+context_menu.view_add_remove_columns=Add/Remove Columns...
+context_menu.view_large_icons=Large Icons
+context_menu.view_small_icons=Small Icons
+context_menu.view_list=List
+context_menu.view_detail=Detail
+context_menu.view_filter_options=Filter options...
+context_menu.view_customize=Customize...
+context_menu.view_users_as_containers=Users, Contacts, Groups, and Computers as containers
+context_menu.add_to_group=Add to a group...
+context_menu.reset_password=Reset Password...
+context_menu.move=Move...
+context_menu.open_home_page=Open Home Page
+context_menu.send_mail=Send Mail
+context_menu.all_tasks=All Tasks
+context_menu.cut=Cut
+context_menu.rename=Rename
+context_menu.reset_account=Reset Account
+context_menu.copy=Copy...
+context_menu.delete=Delete
+context_menu.disable_account=Disable Account
+context_menu.enable_account=Enable Account
+context_menu.properties=Properties
+
+# New Group Dialog
+dialog.new_group.title=New Object - Group
+
+# Backend messages for group creation
+samba_backend.success.create_group=Group '{0}' created successfully.
+samba_backend.error.create_group=An error occurred while creating the group: {0}
+samba_backend.error.group_exists=A group with the name '{0}' already exists in this location.
+
+# Attribute Editor
+attribute_editor.edit=Edit
+attribute_editor.filter=Filter
+attribute_editor.not_set=<not set>
+attribute_editor.binary_data=<Binary data: {0} bytes>
+
+# Attribute Editor - Filter Menu
+attribute_editor.filter.show_with_values=Show only attributes with values
+attribute_editor.filter.show_writable=Show only writable attributes
+attribute_editor.filter.show_attributes=Show attributes:
+attribute_editor.filter.mandatory=Mandatory
+attribute_editor.filter.optional=Optional
+attribute_editor.filter.show_ro=Show read-only attributes:
+attribute_editor.filter.constructed=Constructed
+attribute_editor.filter.backlinks=Backlinks
+attribute_editor.filter.system_only=System-only
+
+# Attribute Editor Syntax Map
+attribute_edit_dialog.syntax.undefined=Undefined
+attribute_edit_dialog.syntax.dn=Distinguished Name
+attribute_edit_dialog.syntax.oid=Object Identifier
+attribute_edit_dialog.syntax.css=Case Sensitive String
+attribute_edit_dialog.syntax.cis=Case Insensitive String
+attribute_edit_dialog.syntax.ia5=IA5 String
+attribute_edit_dialog.syntax.numeric=Numeric String
+attribute_edit_dialog.syntax.dnwb=DN with Binary
+attribute_edit_dialog.syntax.bool=Boolean
+attribute_edit_dialog.syntax.int=Integer
+attribute_edit_dialog.syntax.ocs=Octet String
+attribute_edit_dialog.syntax.utc=UTC Coded Time
+attribute_edit_dialog.syntax.us=Unicode String
+attribute_edit_dialog.syntax.pa=Presentation Address
+attribute_edit_dialog.syntax.dns=DN with String
+attribute_edit_dialog.syntax.ntsd=NT Security Descriptor
+attribute_edit_dialog.syntax.lii=Large Integer/Interval
+attribute_edit_dialog.syntax.sid=SID
+attribute_edit_dialog.syntax.dnb=DN Binary
+
+# Attribute Editor Edit Dialog
+attribute_edit_dialog.title.string=String Attribute Editor
+attribute_edit_dialog.title.integer=Integer Attribute Editor
+attribute_edit_dialog.title.octet=Octet String Editor
+attribute_edit_dialog.title.utc_time=UTC Coded Time Editor
+attribute_edit_dialog.title.default=Attribute Editor
+attribute_edit_dialog.title.multi_valued_prefix=Multi-valued 
+attribute_edit_dialog.label.attribute=Attribute:
+
+# View Menu
+view_menu.add_remove_columns=Add/Remove Columns...
+view_menu.large_icons=Large Icons
+view_menu.small_icons=Small Icons
+view_menu.list=List
+view_menu.details=Details
+view_menu.filter_options=Filter options...
+view_menu.customize=Customize...
+
+# Column Editor Dialog
+column_editor.available=Available columns:
+column_editor.displayed=Displayed columns:
+column_editor.add=Add ->
+column_editor.remove=<- Remove
+column_editor.move_up=Move Up
+column_editor.move_down=Move Down
+column_editor.restore_defaults=Restore Defaults
+
+# Object Tab
+object_tab.label.canonical_name=Canonical name of object:
+object_tab.label.object_class=Object class:
+object_tab.label.created=Created:
+object_tab.label.modified=Modified:
+object_tab.groupbox.usn=Update Sequence Numbers (USNs)
+
+object_tab.label.current_usn=Current:
+object_tab.label.original_usn=Original:
+object_tab.checkbox.protect_from_deletion=Protect object from accidental deletion
+
+# Password Replication Tab
+user_properties.tab.password_replication=Password Replication
+password_replication.label.info=Passwords for users and computers are permanently stored on all writeable domain controllers, and can be optionally cached on read-only domain controllers (RODCs). The password for this account is cached on the following RODCs.
+password_replication.header.name=Name
+password_replication.header.site=Site
+
+# Published Certificates Tab
+user_properties.tab.published_certificates=Published Certificates
+published_certificates.label.info=List of X509 certificates published for the user account
+published_certificates.button.add_from_file=Add from File...
+published_certificates.button.remove=Remove
+published_certificates.button.copy_to=Copy to...
+published_certificates.header.issued_to=Issued To
+published_certificates.header.issued_by=Issued By
+published_certificates.header.intended_purposes=Intended Purposes
+published_certificates.header.expiration=Expiration
+
+# Email Tab
+user_properties.tab.email=E-mail
+email.label.primary_smtp=Primary SMTP Address:
+email.label.smtp_aliases=SMTP Aliases:
+email.label.sip=SIP Address:
+email.label.x400=X.400 Address:
+email.label.x500=X.500 Address:
+
+# LAPS Tab
+computer_properties.tab.laps=LAPS
+laps.title=Local Administrator Password Solution
+laps.label.current_expiration=Current LAPS password expiration:
+laps.label.set_expiration=Set new LAPS password expiration:
+laps.label.admin_account=LAPS local admin account name:
+laps.label.admin_password=LAPS local admin account password:
+laps.button.expire_now=Expire now
+laps.button.copy_password=Copy password
+laps.button.show_password=Show password
+laps.button.hide_password=Hide password
