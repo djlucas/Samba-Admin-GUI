@@ -106,9 +106,9 @@ python main.py
 
 ## 🧪 Development Status
 
-### Current Implementation Status (~40% Complete)
+### Current Implementation Status (~45% Complete)
 
-**SADUC (Samba Active Directory Users & Computers)** - *~60% Complete*
+**SADUC (Samba Active Directory Users & Computers)** - *~72% Complete*
 - ✅ **Working Features:**
   - LDAP connectivity and authentication via Kerberos
   - Complete tree navigation of AD structure
