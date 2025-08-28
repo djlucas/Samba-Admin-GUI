@@ -1,6 +1,7 @@
 # src/main.py
 import sys
 import logging
+import os
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from gui import SADUCMainWindow
 from samba_backend import get_ldap_conn, NoKerberosTicketError, BASE_DN, get_forest_root_info
@@ -106,6 +107,16 @@ def main():
 
     app = QApplication(sys.argv)
     
+    # Set application icon
+    from icon_utils import get_saduc_icon
+    appLogger.info("Loading application icon...")
+    icon = get_saduc_icon()
+    if not icon.isNull():
+        app.setWindowIcon(icon)
+        appLogger.info("Application icon set successfully")
+    else:
+        appLogger.warning("Failed to load application icon")
+    
     try:
         samba_conn, connected_server = get_authenticated_connection(appLogger, app)
     except Exception as e:
@@ -119,6 +130,17 @@ def main():
         sys.exit(1)
         
     window = SADUCMainWindow(samba_conn, connected_server)
+    
+    # Ensure the window icon is properly set
+    from icon_utils import get_saduc_icon
+    appLogger.info("Setting window icon...")
+    icon = get_saduc_icon()
+    if not icon.isNull():
+        window.setWindowIcon(icon)
+        appLogger.info("Window icon set successfully")
+    else:
+        appLogger.warning("Failed to set window icon")
+    
     window.show()
 
     appLogger.info("Application event loop started.")

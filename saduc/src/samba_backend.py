@@ -517,11 +517,22 @@ def get_all_objects_in_dn(samba_conn, dn, attributes=None):
                 'description', 'sAMAccountName', 'userAccountControl'
             }))
 
+        logger.info(f"Requesting attributes: {attributes_to_fetch}")
         res = get_paged_results(samba_conn, dn, ldap.SCOPE_ONELEVEL, search_filter, attributes_to_fetch)
+        logger.info(f"Got {len(res)} objects from LDAP")
 
         objects = []
         for child_dn, entry in res:
             if isinstance(entry, dict):
+                # Debug: log what attributes we actually received
+                if 'user' in [oc.decode('utf-8').lower() for oc in entry.get('objectClass', [])]:
+                    cn = entry.get('cn', [b'Unknown'])[0].decode('utf-8') if entry.get('cn') else 'Unknown'
+                    logger.info(f"User '{cn}': received attributes = {list(entry.keys())}")
+                    if 'userAccountControl' in entry:
+                        logger.info(f"User '{cn}': userAccountControl = {entry['userAccountControl']}")
+                    else:
+                        logger.warning(f"User '{cn}': userAccountControl attribute missing!")
+                
                 obj_data = {
                     'dn': child_dn,
                     'objectClass': [oc.decode('utf-8') for oc in entry.get('objectClass', [])]
@@ -539,6 +550,21 @@ def get_all_objects_in_dn(samba_conn, dn, attributes=None):
                 for key, val in obj_data.items():
                     if isinstance(val, list) and len(val) == 1:
                         obj_data[key] = val[0]
+                
+                # Special handling for user and computer objects that didn't get userAccountControl
+                if ('user' in obj_data.get('objectClass', []) or 'computer' in obj_data.get('objectClass', [])) and 'userAccountControl' not in obj_data:
+                    try:
+                        # Make a specific query for this object's userAccountControl
+                        object_filter = '(|(objectClass=user)(objectClass=computer))'
+                        obj_res = samba_conn.search_s(child_dn, ldap.SCOPE_BASE, object_filter, ['userAccountControl'])
+                        if obj_res and len(obj_res) > 0 and 'userAccountControl' in obj_res[0][1]:
+                            uac_values = obj_res[0][1]['userAccountControl']
+                            obj_data['userAccountControl'] = uac_values[0].decode('utf-8') if uac_values else '0'
+                            obj_type = 'user' if 'user' in obj_data.get('objectClass', []) else 'computer'
+                            logger.debug(f"Retrieved userAccountControl={obj_data['userAccountControl']} for {obj_type} {child_dn}")
+                    except ldap.LDAPError as e:
+                        logger.warning(f"Failed to get userAccountControl for {child_dn}: {e}")
+                        obj_data['userAccountControl'] = '0'
 
                 # Special handling for showInAdvancedViewOnly to be a boolean
                 if 'showInAdvancedViewOnly' in obj_data:
@@ -559,10 +585,79 @@ def get_all_objects_in_dn(samba_conn, dn, attributes=None):
 
 
 def create_user_samba(samba_conn, user_data):
-    """Placeholder for Samba user creation logic."""
+    """Creates a new user in Samba AD."""
     logger.info(f"Samba backend: Creating user with data: {user_data}")
-    # ... placeholder for backend logic ...
-    return True, "samba_backend.success.create_user"
+    
+    # Construct user DN
+    cn_value = user_data.get('full_name') or user_data.get('user_logon_name')
+    if not cn_value:
+        logger.error("Cannot create user: missing both full_name and user_logon_name")
+        return False, "samba_backend.error.missing_username"
+        
+    dn = f"CN={cn_value},{user_data['container_dn']}"
+    
+    # Build userAccountControl value
+    uac_value = 0x0200  # NORMAL_ACCOUNT
+    
+    if user_data.get('account_is_disabled', False):
+        uac_value |= 0x0002  # UAC_ACCOUNT_DISABLED
+    if user_data.get('password_never_expires', False):
+        uac_value |= 0x10000  # UAC_DONT_EXPIRE_PASSWORD
+    if user_data.get('user_cannot_change_password', False):
+        uac_value |= 0x0040  # UAC_PASSWORD_CANT_CHANGE
+    if user_data.get('user_must_change_password', True):
+        # When user must change password, set password expired
+        uac_value |= 0x800000  # UAC_PASSWORD_EXPIRED
+
+    # Build attributes list
+    attrs = []
+    attrs.append(('objectClass', [b'top', b'person', b'organizationalPerson', b'user']))
+    attrs.append(('cn', [cn_value.encode('utf-8')]))
+    attrs.append(('sAMAccountName', [user_data['pre_win2k_logon'].encode('utf-8')]))
+    attrs.append(('userAccountControl', [str(uac_value).encode('utf-8')]))
+    
+    # Add optional attributes
+    if user_data.get('first_name'):
+        attrs.append(('givenName', [user_data['first_name'].encode('utf-8')]))
+    if user_data.get('last_name'):
+        attrs.append(('sn', [user_data['last_name'].encode('utf-8')]))
+    if user_data.get('initials'):
+        attrs.append(('initials', [user_data['initials'].encode('utf-8')]))
+    if user_data.get('full_name'):
+        attrs.append(('displayName', [user_data['full_name'].encode('utf-8')]))
+    
+    # Set UPN
+    if user_data.get('user_logon_name') and user_data.get('upn_domain'):
+        upn = f"{user_data['user_logon_name']}@{user_data['upn_domain']}"
+        attrs.append(('userPrincipalName', [upn.encode('utf-8')]))
+
+    try:
+        # Create the user object first
+        samba_conn.add_s(dn, attrs)
+        logger.info(f"Successfully created user object: {dn}")
+        
+        # Set password if provided
+        password = user_data.get('password')
+        if password:
+            try:
+                # Format password for unicodePwd (UTF-16LE with quotes)
+                password_utf16 = f'"{password}"'.encode('utf-16le')
+                mod_list = [(ldap.MOD_REPLACE, 'unicodePwd', password_utf16)]
+                samba_conn.modify_s(dn, mod_list)
+                logger.info(f"Successfully set password for user: {cn_value}")
+            except ldap.LDAPError as e:
+                logger.warning(f"Failed to set password for user {cn_value}: {e}")
+                # Don't fail the entire user creation if password fails
+                # The user can be created and password set later
+        
+        return True, "samba_backend.success.create_user", [cn_value]
+        
+    except ldap.ALREADY_EXISTS:
+        logger.error(f"User '{dn}' already exists.")
+        return False, "samba_backend.error.user_exists", [cn_value]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error creating user '{dn}': {e}")
+        return False, "samba_backend.error.create_user", [str(e)]
 
 
 def create_group_samba(samba_conn, group_data):
@@ -600,11 +695,140 @@ def create_group_samba(samba_conn, group_data):
         return False, "samba_backend.error.create_group", [str(e)]
 
 
-def copy_user_samba(samba_conn, source_username, new_user_data):
-    """Placeholder for Samba user creation logic."""
-    logger.info(f"Samba backend: Copying user '{source_username}' to new user with data: {new_user_data}")
-    # ... placeholder for backend logic ...
-    return True, "samba_backend.success.copy_user"
+def copy_user_samba(samba_conn, source_user_dn, new_user_data):
+    """Creates a new user by copying properties from an existing user."""
+    logger.info(f"Samba backend: Copying user from DN '{source_user_dn}' to new user with data: {new_user_data}")
+    
+    try:
+        # First, get the source user's properties
+        source_user_props = get_user_properties(samba_conn, source_user_dn)
+        if not source_user_props:
+            logger.error(f"Could not find source user: {source_user_dn}")
+            return False, "samba_backend.error.source_user_not_found", [source_user_dn]
+        
+        # Attributes to copy from source user (excluding unique/system attributes)
+        copyable_attributes = [
+            'description', 'department', 'company', 'manager', 'memberOf',
+            'physicalDeliveryOfficeName', 'telephoneNumber', 'facsimileTelephoneNumber',
+            'mail', 'wWWHomePage', 'streetAddress', 'postOfficeBox', 'l', 'st',
+            'postalCode', 'co', 'profilePath', 'scriptPath', 'homeDirectory',
+            'homeDrive', 'title', 'employeeID', 'employeeNumber', 'employeeType'
+        ]
+        
+        # Start with the user data from the wizard
+        cn_value = new_user_data.get('full_name') or new_user_data.get('user_logon_name')
+        if not cn_value:
+            logger.error("Cannot create user: missing both full_name and user_logon_name")
+            return False, "samba_backend.error.missing_username"
+            
+        dn = f"CN={cn_value},{new_user_data['container_dn']}"
+        
+        # Build userAccountControl value (start with NORMAL_ACCOUNT)
+        uac_value = 0x0200  # NORMAL_ACCOUNT
+        
+        # Copy certain UAC flags from source user
+        source_uac = int(source_user_props.get('userAccountControl', ['0'])[0])
+        
+        # Copy these flags if they exist in source
+        flags_to_copy = [
+            (0x0040, 'user_cannot_change_password'),  # UAC_PASSWORD_CANT_CHANGE
+            (0x10000, 'password_never_expires'),       # UAC_DONT_EXPIRE_PASSWORD
+            (0x0080, None),                           # UAC_ENCRYPTED_TEXT_PASSWORD_ALLOWED
+            (0x40000, None),                          # UAC_SMARTCARD_REQUIRED
+            (0x80000, None),                          # UAC_TRUSTED_FOR_DELEGATION
+            (0x100000, None),                         # UAC_NOT_DELEGATED
+            (0x200000, None),                         # UAC_USE_DES_KEY_ONLY
+            (0x400000, None),                         # UAC_DONT_REQUIRE_PREAUTH
+            (0x1000000, None)                         # UAC_TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION
+        ]
+        
+        for flag_value, override_key in flags_to_copy:
+            if override_key and override_key in new_user_data:
+                # Use wizard value if explicitly set
+                if new_user_data[override_key]:
+                    uac_value |= flag_value
+            elif source_uac & flag_value:
+                # Copy from source user if not overridden
+                uac_value |= flag_value
+        
+        # Apply wizard overrides for standard flags
+        if new_user_data.get('account_is_disabled', False):
+            uac_value |= 0x0002  # UAC_ACCOUNT_DISABLED
+        if new_user_data.get('user_must_change_password', True):
+            uac_value |= 0x800000  # UAC_PASSWORD_EXPIRED
+
+        # Build basic attributes
+        attrs = []
+        attrs.append(('objectClass', [b'top', b'person', b'organizationalPerson', b'user']))
+        attrs.append(('cn', [cn_value.encode('utf-8')]))
+        attrs.append(('sAMAccountName', [new_user_data['pre_win2k_logon'].encode('utf-8')]))
+        attrs.append(('userAccountControl', [str(uac_value).encode('utf-8')]))
+        
+        # Add attributes from wizard (these override any copied values)
+        if new_user_data.get('first_name'):
+            attrs.append(('givenName', [new_user_data['first_name'].encode('utf-8')]))
+        if new_user_data.get('last_name'):
+            attrs.append(('sn', [new_user_data['last_name'].encode('utf-8')]))
+        if new_user_data.get('initials'):
+            attrs.append(('initials', [new_user_data['initials'].encode('utf-8')]))
+        if new_user_data.get('full_name'):
+            attrs.append(('displayName', [new_user_data['full_name'].encode('utf-8')]))
+        
+        # Set UPN
+        if new_user_data.get('user_logon_name') and new_user_data.get('upn_domain'):
+            upn = f"{new_user_data['user_logon_name']}@{new_user_data['upn_domain']}"
+            attrs.append(('userPrincipalName', [upn.encode('utf-8')]))
+        
+        # Copy applicable attributes from source user
+        for attr_name in copyable_attributes:
+            if attr_name in source_user_props and source_user_props[attr_name]:
+                # Skip memberOf for now - group membership should be handled separately
+                if attr_name == 'memberOf':
+                    continue
+                
+                # Convert to bytes and add to attributes
+                attr_values = []
+                for value in source_user_props[attr_name]:
+                    if isinstance(value, str):
+                        attr_values.append(value.encode('utf-8'))
+                    elif isinstance(value, bytes):
+                        attr_values.append(value)
+                
+                if attr_values:
+                    attrs.append((attr_name, attr_values))
+
+        try:
+            # Create the user object
+            samba_conn.add_s(dn, attrs)
+            logger.info(f"Successfully created user object: {dn}")
+            
+            # Set password if provided
+            password = new_user_data.get('password')
+            if password:
+                try:
+                    # Format password for unicodePwd (UTF-16LE with quotes)
+                    password_utf16 = f'"{password}"'.encode('utf-16le')
+                    mod_list = [(ldap.MOD_REPLACE, 'unicodePwd', password_utf16)]
+                    samba_conn.modify_s(dn, mod_list)
+                    logger.info(f"Successfully set password for user: {cn_value}")
+                except ldap.LDAPError as e:
+                    logger.warning(f"Failed to set password for user {cn_value}: {e}")
+            
+            # TODO: Copy group memberships from source user
+            # This would require additional implementation to handle group membership
+            
+            return True, "samba_backend.success.copy_user", [cn_value]
+            
+        except ldap.ALREADY_EXISTS:
+            logger.error(f"User '{dn}' already exists.")
+            return False, "samba_backend.error.user_exists", [cn_value]
+        except ldap.LDAPError as e:
+            logger.error(f"LDAP error creating user '{dn}': {e}")
+            return False, "samba_backend.error.create_user", [str(e)]
+            
+    except Exception as e:
+        logger.error(f"Error copying user {source_user_dn}: {e}")
+        return False, "samba_backend.error.copy_user", [str(e)]
 
 def get_schema_attributes(samba_conn, object_classes):
     """

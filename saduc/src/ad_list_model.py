@@ -68,7 +68,7 @@ class ADListModel(QAbstractTableModel):
         }
         self._icons = {
             "User": "user.png", "Disabled User": "user_disable.png",
-            "Security Group": "group.png", "Computer": "computer.png",
+            "Security Group": "group.png", "Computer": "computer.png", "Disabled Computer": "computer_disabled.png",
             "Domain Controller": "dns.png", "Organizational Unit": "folder_ou.png",
             "Container": "folder.png", "Contact": "contact.png",
             "Group Policy Object": "group_policy.png", "Printer": "printer.png",
@@ -96,12 +96,34 @@ class ADListModel(QAbstractTableModel):
         if 'groupPolicyContainer' in object_classes: return "Group Policy Object"
         if 'foreignSecurityPrincipal' in object_classes: return "Foreign Security Principal"
         if 'group' in object_classes: return "Security Group"
-        if 'computer' in object_classes: return "Computer"
+        if 'computer' in object_classes:
+            try:
+                uac_value = item.get('userAccountControl', '0')
+                # Handle both string and int values
+                if isinstance(uac_value, list):
+                    uac_value = uac_value[0] if uac_value else '0'
+                uac = int(uac_value)
+                is_disabled = bool(uac & UAC_ACCOUNT_DISABLED)
+                return "Disabled Computer" if is_disabled else "Computer"
+            except (ValueError, TypeError) as e:
+                computer_name = item.get('cn', item.get('sAMAccountName', 'Unknown'))
+                self.logger.warning(f"Could not parse userAccountControl for computer '{computer_name}': {e}")
+                return "Computer"
         if 'printQueue' in object_classes: return "Printer"
         if 'contact' in object_classes: return "Contact"
         if 'user' in object_classes:
-            uac = int(item.get('userAccountControl', '0'))
-            return "Disabled User" if uac & UAC_ACCOUNT_DISABLED else "User"
+            try:
+                uac_value = item.get('userAccountControl', '0')
+                # Handle both string and int values
+                if isinstance(uac_value, list):
+                    uac_value = uac_value[0] if uac_value else '0'
+                uac = int(uac_value)
+                is_disabled = bool(uac & UAC_ACCOUNT_DISABLED)
+                return "Disabled User" if is_disabled else "User"
+            except (ValueError, TypeError) as e:
+                user_name = item.get('cn', item.get('sAMAccountName', 'Unknown'))
+                self.logger.warning(f"Could not parse userAccountControl for user '{user_name}': {e}")
+                return "User"
         if 'organizationalUnit' in object_classes: return "Organizational Unit"
         if 'container' in object_classes: return "Container"
         return object_classes[-1]

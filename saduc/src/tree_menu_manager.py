@@ -22,6 +22,8 @@ class TreeMenuManager:
             self._build_saduc_root_menu(menu, dn)
         elif 'savedQueriesRoot' in obj_classes:
             self._build_saved_queries_menu(menu, dn)
+        elif 'savedQuery' in obj_classes:
+            self._build_saved_query_item_menu(menu, dn, tree_item)
         elif 'domainDns' in obj_classes:
             self._build_domain_menu(menu, dn)
         elif 'organizationalUnit' in obj_classes:
@@ -173,3 +175,111 @@ class TreeMenuManager:
             all_tasks_menu.addAction(self.i18n.get_string("context_menu.import_query"), partial(actions.on_import_query_definition_action_triggered, self.main_window))
             new_query_action = all_tasks_menu.addAction(self.i18n.get_string("context_menu.new_query"))
             new_query_action.triggered.connect(partial(actions.on_new_query_action_triggered, self.main_window))
+    
+    def _build_saved_query_item_menu(self, menu, dn, tree_item):
+        """Build context menu for individual saved query items."""
+        search_name = tree_item.data()
+        
+        # Execute action (bold, default)
+        execute_action = QAction(f"Execute '{search_name}'", self.main_window)
+        font = execute_action.font()
+        font.setBold(True)
+        execute_action.setFont(font)
+        execute_action.triggered.connect(lambda: self.main_window._execute_saved_query_from_tree(tree_item))
+        menu.addAction(execute_action)
+        
+        menu.addSeparator()
+        
+        # Management actions
+        menu.addAction("Rename...", lambda: self._rename_saved_query(search_name))
+        menu.addAction("Delete", lambda: self._delete_saved_query(search_name))
+        
+        menu.addSeparator()
+        menu.addAction("Properties", lambda: self._show_saved_query_properties(search_name))
+    
+    def _rename_saved_query(self, old_name):
+        """Rename a saved query."""
+        from PyQt5.QtWidgets import QInputDialog
+        from sagui_config import config_manager
+        
+        new_name, ok = QInputDialog.getText(
+            self.main_window, "Rename Saved Query",
+            f"Enter new name for '{old_name}':",
+            text=old_name
+        )
+        
+        if ok and new_name.strip() and new_name != old_name:
+            new_name = new_name.strip()
+            try:
+                # Load search data
+                search_data = config_manager.load_search(old_name)
+                if search_data:
+                    # Save with new name
+                    search_data['name'] = new_name
+                    if config_manager.save_search(new_name, search_data):
+                        # Delete old search
+                        config_manager.delete_search(old_name)
+                        
+                        # Refresh tree
+                        self.main_window.treeModel.reset_and_fetch_root_info()
+                        
+                        self.main_window.statusBar().showMessage(f"Renamed saved query to '{new_name}'")
+                    else:
+                        from PyQt5.QtWidgets import QMessageBox
+                        QMessageBox.warning(self.main_window, "Error", "Failed to rename saved query.")
+                        
+            except Exception as e:
+                from PyQt5.QtWidgets import QMessageBox
+                self.main_window.logger.error(f"Failed to rename saved query '{old_name}': {e}")
+                QMessageBox.critical(self.main_window, "Error", f"Failed to rename saved query: {e}")
+    
+    def _delete_saved_query(self, search_name):
+        """Delete a saved query."""
+        from PyQt5.QtWidgets import QMessageBox
+        from sagui_config import config_manager
+        
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self.main_window, "Confirm Delete",
+            f"Are you sure you want to delete the saved query '{search_name}'?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                if config_manager.delete_search(search_name):
+                    # Refresh tree
+                    self.main_window.treeModel.reset_and_fetch_root_info()
+                    self.main_window.statusBar().showMessage(f"Deleted saved query '{search_name}'")
+                else:
+                    QMessageBox.warning(self.main_window, "Error", "Failed to delete saved query.")
+            except Exception as e:
+                self.main_window.logger.error(f"Failed to delete saved query '{search_name}': {e}")
+                QMessageBox.critical(self.main_window, "Error", f"Failed to delete saved query: {e}")
+    
+    def _show_saved_query_properties(self, search_name):
+        """Show properties dialog for a saved query."""
+        from PyQt5.QtWidgets import QMessageBox
+        from sagui_config import config_manager
+        
+        try:
+            search_data = config_manager.load_search(search_name)
+            if search_data:
+                # Create a simple properties message
+                props = f"""Name: {search_data.get('name', 'Unknown')}
+Description: {search_data.get('description', 'No description')}
+Object Class: {search_data.get('objectClass', 'Unknown')}
+Search Base: {search_data.get('searchBase', 'Unknown')}
+LDAP Filter: {search_data.get('filter', 'No filter')}
+Attributes: {', '.join(search_data.get('attributes', []))}
+Created: {search_data.get('created', 'Unknown')}
+Last Used: {search_data.get('lastUsed', 'Unknown')}"""
+                
+                QMessageBox.information(self.main_window, f"Properties: {search_name}", props)
+            else:
+                QMessageBox.warning(self.main_window, "Error", "Could not load saved query properties.")
+                
+        except Exception as e:
+            self.main_window.logger.error(f"Failed to show properties for '{search_name}': {e}")
+            QMessageBox.critical(self.main_window, "Error", f"Failed to show properties: {e}")

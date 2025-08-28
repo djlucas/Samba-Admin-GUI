@@ -17,6 +17,7 @@ import os
 from PyQt5.QtCore import QAbstractItemModel, QModelIndex, Qt
 from PyQt5.QtGui import QIcon
 from samba_backend import get_forest_root_info, get_expandable_children, has_expandable_children
+from sagui_config import config_manager
 
 # --- ADTreeItem Class ---
 class ADTreeItem:
@@ -96,8 +97,9 @@ class ADTreeModel(QAbstractItemModel):
         self.root_item = ADTreeItem(None, dn=None)
 
         self._icons = {
-            "saducRoot": "domain.png",
+            "saducRoot": "saduc.png",
             "savedQueriesRoot": "folder.png",
+            "savedQuery": "saduc-search.png",
             "server": "dns.png",
             "domainDns": "domain.png",
             "organizationalUnit": "folder_ou.png",
@@ -167,7 +169,7 @@ class ADTreeModel(QAbstractItemModel):
 
         # Add Saved Queries as a child of the main root item
         saved_queries_item = ADTreeItem("Saved Queries", parent=domain_root_item, dn="local://saved-queries", object_class='savedQueriesRoot')
-        saved_queries_item.set_has_sub_containers(False) # It cannot be expanded
+        saved_queries_item.set_has_sub_containers(True) # It can be expanded to show saved queries
         domain_root_item.append_child(saved_queries_item)
 
         forest_root_data = get_forest_root_info(self.samba_conn)
@@ -285,15 +287,19 @@ class ADTreeModel(QAbstractItemModel):
             return
 
         parent_dn = parent_item.dn()
-        self.logger.debug(f"ADTreeModel: Fetching children for '{parent_dn}'.")
-        
         object_class = parent_item.object_class()
         
-        child_data_list = []
-        if self.objects_as_containers and object_class and any(c in object_class for c in ['user', 'group', 'contact', 'computer']):
-            child_data_list = get_expandable_children(self.samba_conn, parent_dn, self.advanced_view, object_class=object_class, objects_as_containers=self.objects_as_containers)
+        # Special handling for saved queries
+        if object_class == 'savedQueriesRoot':
+            self.logger.debug("ADTreeModel: Fetching saved queries.")
+            child_data_list = self._get_saved_queries_children()
         else:
-            child_data_list = get_expandable_children(self.samba_conn, parent_dn, self.advanced_view, objects_as_containers=self.objects_as_containers)
+            self.logger.debug(f"ADTreeModel: Fetching children for '{parent_dn}'.")
+            child_data_list = []
+            if self.objects_as_containers and object_class and any(c in object_class for c in ['user', 'group', 'contact', 'computer']):
+                child_data_list = get_expandable_children(self.samba_conn, parent_dn, self.advanced_view, object_class=object_class, objects_as_containers=self.objects_as_containers)
+            else:
+                child_data_list = get_expandable_children(self.samba_conn, parent_dn, self.advanced_view, objects_as_containers=self.objects_as_containers)
 
         if child_data_list:
             self.beginInsertRows(parent_index, 0, len(child_data_list) - 1)
@@ -306,4 +312,27 @@ class ADTreeModel(QAbstractItemModel):
         
         parent_item.set_children_fetched(True)
         self.logger.debug(f"ADTreeModel: Fetched and added {len(child_data_list)} children for '{parent_dn}'.")
+    
+    def _get_saved_queries_children(self):
+        """Get saved queries as child data for the tree model."""
+        try:
+            searches = config_manager.list_saved_searches()
+            child_data_list = []
+            
+            for search_meta in searches:
+                child_data = {
+                    'name': search_meta['name'],
+                    'dn': f"local://saved-query:{search_meta['name']}",
+                    'objectClass': 'savedQuery',
+                    'has_sub_containers': False,
+                    'description': search_meta.get('description', '')
+                }
+                child_data_list.append(child_data)
+            
+            self.logger.debug(f"ADTreeModel: Found {len(child_data_list)} saved queries.")
+            return child_data_list
+            
+        except Exception as e:
+            self.logger.error(f"ADTreeModel: Failed to load saved queries: {e}")
+            return []
 

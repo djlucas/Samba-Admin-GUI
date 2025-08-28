@@ -22,7 +22,7 @@ def on_new_user_action_triggered(main_window):
         if user_data:
             user_data['container_dn'] = main_window.currentContainerDN
             main_window.logger.info(f"User data collected from wizard: {user_data}")
-            success, message_key = create_user_samba(main_window.samba_conn, user_data)
+            success, message_key, extra = create_user_samba(main_window.samba_conn, user_data)
             message = main_window.i18n.get_string(message_key)
             if success:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
@@ -43,6 +43,7 @@ def on_copy_user_action_triggered(main_window):
         return
 
     source_username = source_user_props.get('sAMAccountName', [''])[0]
+    source_display_name = source_user_props.get('displayName', [source_username])[0] or source_username
     
     uac = int(source_user_props.get('userAccountControl', ['0'])[0])
     initial_data = {
@@ -52,15 +53,15 @@ def on_copy_user_action_triggered(main_window):
         'account_is_disabled': bool(uac & 0x0002)
     }
 
-    main_window.logger.info(f"Copy User action triggered for user: {source_username}.")
-    wizard = CopyUserWizard(main_window, initial_data=initial_data, source_username=source_username, container_dn=main_window.currentContainerDN)
+    main_window.logger.info(f"Copy User action triggered for user: {source_display_name} ({source_username}).")
+    wizard = CopyUserWizard(main_window, initial_data=initial_data, source_username=source_username, source_display_name=source_display_name, container_dn=main_window.currentContainerDN)
     if wizard.exec_() == QDialog.Accepted:
         main_window.logger.info("Copy User wizard was accepted.")
         user_data = wizard.user_data
         if user_data:
             user_data['container_dn'] = main_window.currentContainerDN
             main_window.logger.info(f"Copied user data collected from wizard: {user_data}")
-            success, message_key = copy_user_samba(main_window.samba_conn, source_username, user_data)
+            success, message_key, extra = copy_user_samba(main_window.samba_conn, main_window.current_selected_dn, user_data)
             message = main_window.i18n.get_text(message_key, user_data.get('full_name'))
             if success:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)

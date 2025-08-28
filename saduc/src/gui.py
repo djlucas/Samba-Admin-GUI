@@ -22,7 +22,7 @@ from PyQt5.QtWidgets import (
     QAction, QActionGroup, QMessageBox, QStackedWidget, QListView, QStyledItemDelegate, QStyle
 )
 from PyQt5.QtCore import Qt, QSize, QTimer, QModelIndex, QRect
-from PyQt5.QtGui import QFontMetrics
+from PyQt5.QtGui import QFontMetrics, QIcon
 
 from i18n_manager import I18nManager
 from samba_backend import get_all_objects_in_dn
@@ -32,6 +32,8 @@ from ad_list_model import ADListModel
 from tree_menu_manager import TreeMenuManager
 from list_menu_manager import ListMenuManager
 import main_window_actions as actions
+from saved_searches_dialog import SavedSearchesDialog
+from sagui_config import config_manager
 
 class SmallIconDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
@@ -111,6 +113,10 @@ class SADUCMainWindow(QMainWindow):
 
         self.setWindowTitle(self.i18n.get_string("main.window_title"))
         self.setGeometry(100, 100, 1200, 800)
+        
+        # Set window icon
+        from icon_utils import set_window_icon
+        set_window_icon(self, use_search_icon=False)
 
         self.advancedFeaturesAction = None
         self.tree_menu_manager = TreeMenuManager(self)
@@ -461,11 +467,16 @@ class SADUCMainWindow(QMainWindow):
             return
 
         if 'savedQueriesRoot' in obj_classes:
-            self.logger.info("Saved Queries item clicked. This is a local-only feature.")
+            self.logger.info("Saved Queries root item clicked. Showing empty list.")
             self.tableModel.clear_data()
             self._clear_layout(self.listActionLayout)
             self._clear_layout(self.itemActionLayout)
-            self.statusBar().showMessage("Saved Queries (Not Implemented)")
+            self.statusBar().showMessage("Select a saved query to execute it.")
+            return
+        
+        if 'savedQuery' in obj_classes:
+            self.logger.info(f"Saved query item clicked: {tree_item.data()}")
+            self._execute_saved_query_from_tree(tree_item)
             return
 
         self.currentContainerDN = tree_item.dn()
@@ -554,4 +565,127 @@ class SADUCMainWindow(QMainWindow):
         
         if action_map:
             self.itemActionLayout.addLayout(self._create_action_section(name, action_map))
+    
+    def _open_saved_searches_dialog(self):
+        """Open the saved searches dialog."""
+        try:
+            dialog = SavedSearchesDialog(self)
+            dialog.execute_search.connect(self._execute_saved_search)
+            dialog.show()
+        except Exception as e:
+            self.logger.error(f"Failed to open saved searches dialog: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to open saved searches dialog: {e}")
+    
+    def _execute_saved_search(self, search_data):
+        """Execute a saved search from the saved searches dialog."""
+        try:
+            from find_dialog import FindObjectsDialog
+            
+            # Create a find dialog and populate it with the search data
+            find_dialog = FindObjectsDialog(self.samba_conn, self.currentContainerDN or "", self)
+            
+            # TODO: Set the search parameters in the find dialog
+            # This would require extending FindObjectsDialog to accept search data
+            find_dialog.show()
+            
+            self.logger.info(f"Executing saved search: {search_data.get('name', 'Unknown')}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to execute saved search: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to execute saved search: {e}")
+    
+    def _execute_saved_query_from_tree(self, tree_item):
+        """Execute a saved query directly from tree selection."""
+        try:
+            # Extract search name from the DN
+            search_name = tree_item.data()
+            
+            # Load the search data
+            search_data = config_manager.load_search(search_name)
+            if not search_data:
+                QMessageBox.warning(self, "Error", f"Could not load saved search '{search_name}'.")
+                return
+            
+            # Execute the search and display results in the main list
+            self._execute_search_in_main_list(search_data)
+            
+            # Update status bar
+            self.statusBar().showMessage(f"Executed saved query: {search_name}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to execute saved query from tree: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to execute saved query: {e}")
+    
+    def _execute_search_in_main_list(self, search_data):
+        """Execute a search and display results in the main object list."""
+        try:
+            from samba_backend import get_paged_results
+            import ldap
+            
+            # Extract search parameters
+            ldap_filter = search_data.get('filter', '(objectClass=*)')
+            search_base = search_data.get('searchBase', 'auto')
+            attributes = search_data.get('attributes', ['cn', 'displayName', 'description', 'distinguishedName', 'objectClass'])
+            
+            # Ensure objectClass is always included for proper type detection
+            if 'objectClass' not in attributes:
+                attributes.append('objectClass')
+            
+            # Use current domain base if search_base is 'auto'
+            if search_base == 'auto':
+                from samba_backend import get_base_dn
+                search_base = get_base_dn(self.samba_conn)
+            
+            self.logger.info(f"Executing search: filter='{ldap_filter}', base='{search_base}'")
+            
+            # Perform the search
+            results = get_paged_results(self.samba_conn, search_base, ldap.SCOPE_SUBTREE, ldap_filter, attributes)
+            
+            # Process results for display
+            objects = []
+            for dn, attrs in results:
+                if dn is None:
+                    continue
+                    
+                obj = {'dn': dn}
+                for attr, values in attrs.items():
+                    if isinstance(values, list) and values:
+                        # Decode bytes values
+                        decoded_values = []
+                        for value in values:
+                            if isinstance(value, bytes):
+                                try:
+                                    decoded_values.append(value.decode('utf-8'))
+                                except UnicodeDecodeError:
+                                    decoded_values.append(str(value))
+                            else:
+                                decoded_values.append(str(value))
+                        obj[attr] = decoded_values[0] if len(decoded_values) == 1 else decoded_values
+                    elif values:
+                        obj[attr] = values
+                
+                # Add proper name field that ADListModel expects
+                obj['name'] = obj.get('cn', obj.get('displayName', obj.get('sAMAccountName', 'Unknown')))
+                
+                # Ensure objectClass is a list for ADListModel._get_object_type()
+                object_classes = obj.get('objectClass', [])
+                if isinstance(object_classes, str):
+                    obj['objectClass'] = [object_classes]
+                elif not isinstance(object_classes, list):
+                    obj['objectClass'] = []
+                
+                
+                objects.append(obj)
+            
+            # Update the table model with search results
+            self.tableModel.setData(objects)
+            self.logger.info(f"Search completed: found {len(objects)} objects")
+            
+            # Clear action panes since we're showing search results
+            self._clear_layout(self.listActionLayout)
+            self._clear_layout(self.itemActionLayout)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to execute search in main list: {e}")
+            QMessageBox.critical(self, "Error", f"Search failed: {e}")
 

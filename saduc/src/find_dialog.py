@@ -12,17 +12,21 @@
 # -----------------------------------------------------------------------------
 
 import logging
+import os
 from PyQt5.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, 
     QLineEdit, QPushButton, QComboBox, QLabel, QFrame, QTabWidget,
-    QTableWidget, QHeaderView, QTableWidgetItem, QTextEdit, QGroupBox
+    QTableWidget, QHeaderView, QTableWidgetItem, QTextEdit, QGroupBox,
+    QInputDialog, QMessageBox
 )
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon
 import ldap
 import ldap.dn
 
 from i18n_manager import I18nManager
 from samba_backend import BASE_DN, find_objects, get_base_dn
+from sagui_config import config_manager
 
 class FindObjectsDialog(QDialog):
     """Dialog for finding Active Directory objects."""
@@ -34,6 +38,10 @@ class FindObjectsDialog(QDialog):
         self.i18n = I18nManager()
 
         self.setMinimumSize(750, 500)
+        
+        # Set dialog icon
+        from icon_utils import set_window_icon
+        set_window_icon(self, use_search_icon=True)
 
         self._create_widgets()
         self._create_layout()
@@ -95,6 +103,7 @@ class FindObjectsDialog(QDialog):
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.setEnabled(False)
         self.clear_all_btn = QPushButton("Clear All")
+        self.save_search_btn = QPushButton("Save Search...")
         self.search_icon_label = QLabel() # Placeholder for search icon
 
         # Results table
@@ -152,6 +161,7 @@ class FindObjectsDialog(QDialog):
         right_panel_layout.addWidget(self.find_now_btn)
         right_panel_layout.addWidget(self.stop_btn)
         right_panel_layout.addWidget(self.clear_all_btn)
+        right_panel_layout.addWidget(self.save_search_btn)
         right_panel_layout.addStretch()
         right_panel_layout.addWidget(self.search_icon_label)
         right_panel_layout.addStretch()
@@ -168,6 +178,7 @@ class FindObjectsDialog(QDialog):
     def _connect_signals(self):
         self.find_combo.currentIndexChanged.connect(self._on_find_type_changed)
         self.find_now_btn.clicked.connect(self._on_find_now_clicked)
+        self.save_search_btn.clicked.connect(self._on_save_search_clicked)
         self.sample_queries_combo.currentTextChanged.connect(self._on_sample_query_selected)
         
         # Add Enter key handling for search fields
@@ -368,3 +379,82 @@ class FindObjectsDialog(QDialog):
         if name_item:
             return name_item.data(Qt.UserRole)
         return None
+    
+    def _on_save_search_clicked(self):
+        """Handle save search button click."""
+        # Get current search parameters
+        search_data = self._get_current_search_data()
+        if not search_data:
+            QMessageBox.warning(self, "Warning", "No search criteria to save.")
+            return
+        
+        # Get search name from user
+        name, ok = QInputDialog.getText(
+            self, "Save Search", 
+            "Enter a name for this search:", 
+            text=""
+        )
+        
+        if ok and name.strip():
+            name = name.strip()
+            try:
+                if config_manager.save_search(name, search_data):
+                    QMessageBox.information(self, "Success", f"Search '{name}' saved successfully.")
+                else:
+                    QMessageBox.warning(self, "Error", "Failed to save search.")
+            except Exception as e:
+                self.logger.error(f"Failed to save search '{name}': {e}")
+                QMessageBox.critical(self, "Error", f"Failed to save search: {e}")
+    
+    def _get_current_search_data(self):
+        """Get current search parameters as a dictionary."""
+        current_tab = self.tabs.currentWidget()
+        
+        if current_tab == self.find_details_tab:
+            # Simple search
+            name = self.name_edit.text().strip()
+            description = self.description_edit.text().strip()
+            
+            if not name and not description:
+                return None
+            
+            # Build LDAP filter based on find type
+            find_type = self.find_combo.currentText()
+            if "Users" in find_type:
+                base_filter = "(objectClass=user)"
+                object_class = "user"
+            elif "Groups" in find_type:
+                base_filter = "(objectClass=group)" 
+                object_class = "group"
+            elif "Computers" in find_type:
+                base_filter = "(objectClass=computer)"
+                object_class = "computer"
+            else:
+                base_filter = "(objectClass=*)"
+                object_class = "*"
+            
+            conditions = []
+            if name:
+                conditions.append(f"(cn=*{name}*)")
+            if description:
+                conditions.append(f"(description=*{description}*)")
+            
+            if conditions:
+                ldap_filter = f"(&{base_filter}{''.join(conditions)})"
+            else:
+                ldap_filter = base_filter
+            
+        else:  # Advanced tab
+            ldap_filter = self.ldap_filter_edit.toPlainText().strip()
+            if not ldap_filter:
+                return None
+            object_class = "*"
+        
+        return {
+            'description': f"Search for {self.find_combo.currentText()}",
+            'objectClass': object_class,
+            'filter': ldap_filter,
+            'searchBase': self.in_combo.currentText(),
+            'scope': 'subtree',
+            'attributes': ['cn', 'displayName', 'description', 'distinguishedName', 'objectClass', 'sAMAccountName']
+        }

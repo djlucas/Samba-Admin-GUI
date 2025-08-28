@@ -1,6 +1,7 @@
 # src/user_dialogs.py
 
 import ldap.dn
+import logging
 import os
 from PyQt5.QtWidgets import (
     QWizard, QWizardPage, QFormLayout, QLineEdit, QCheckBox,
@@ -20,9 +21,11 @@ class NewUserPage1(QWizardPage):
     Contains fields for user name details and logon names.
     This class is now configurable to be reused by the Copy User wizard.
     """
-    def __init__(self, parent=None, page_title_key="dialog.new_user.page1.title", page_subtitle_key="dialog.new_user.page1.subtitle", intro_text_key="dialog.new_user.page1.intro_text", intro_text_args=None, icon_path="src/res/icons/user_add.png", container_dn=None):
+    def __init__(self, parent=None, page_title_key="dialog.new_user.page1.title", page_subtitle_key="dialog.new_user.page1.subtitle", intro_text_key="dialog.new_user.page1.intro_text", intro_text_args=None, icon_path="src/res/icons/user_add.png", container_dn=None, samba_conn=None):
         super().__init__(parent)
         self.i18n = I18nManager()
+        self.logger = logging.getLogger("saduc_app.NewUserPage1")
+        self.samba_conn = samba_conn
 
         self.setTitle(self.i18n.get_string(page_title_key))
         self.setSubTitle(self.i18n.get_string(page_subtitle_key))
@@ -40,7 +43,12 @@ class NewUserPage1(QWizardPage):
 
         intro_text = self.i18n.get_string(intro_text_key)
         if intro_text_args:
-            intro_text = intro_text % tuple(intro_text_args)
+            try:
+                intro_text = intro_text.format(*intro_text_args)
+            except (IndexError, KeyError, ValueError) as e:
+                # If formatting fails, use the raw text
+                self.logger.warning(f"String formatting failed for {intro_text_key}: {e}")
+                pass
 
         introTextLabel = QLabel(intro_text)
         introTextLabel.setStyleSheet("font-weight: bold; font-size: 14pt;")
@@ -105,8 +113,7 @@ class NewUserPage1(QWizardPage):
 
         self.userLogonNameInput = QLineEdit()
         self.upnDomainDropdown = QComboBox()
-        self.upnDomainDropdown.addItem(self.i18n.get_string("dialog.new_user.page1.upn_domain_1"))
-        self.upnDomainDropdown.addItem(self.i18n.get_string("dialog.new_user.page1.upn_domain_2"))
+        self._populate_upn_domains()
 
         self.userLogonNameInput.textChanged.connect(self.completeChanged)
         self.preWin2kLogonInput = QLineEdit()
@@ -142,13 +149,78 @@ class NewUserPage1(QWizardPage):
         self.registerField("lastName", self.lastNameInput)
         self.registerField("fullName", self.fullNameInput)
         self.registerField("userLogonName", self.userLogonNameInput)
-        self.registerField("upnDomain", self.upnDomainDropdown)
+        self.registerField("upnDomain", self.upnDomainDropdown, "currentText")
         self.registerField("preWin2kLogon", self.preWin2kLogonInput)
+
+    def _populate_upn_domains(self):
+        """Populate UPN domain dropdown with actual domain names from AD."""
+        try:
+            # Try to get domain info from multiple sources
+            domain_dn = None
+            
+            # First try BASE_DN
+            if BASE_DN:
+                domain_dn = BASE_DN
+                self.logger.debug(f"Using BASE_DN: {BASE_DN}")
+            else:
+                # Try to get forest root info directly using the connection
+                if self.samba_conn:
+                    try:
+                        forest_info = get_forest_root_info(self.samba_conn)
+                        if forest_info and forest_info.get('dn'):
+                            domain_dn = forest_info['dn']
+                            self.logger.debug(f"Got domain DN from forest info: {domain_dn}")
+                    except Exception as e:
+                        self.logger.debug(f"Could not get forest info: {e}")
+                else:
+                    self.logger.debug("No samba connection available")
+            
+            if domain_dn:
+                # Extract domain from DN (e.g., "DC=home,DC=lucasit,DC=com" -> "home.lucasit.com")
+                domain_parts = [p.split('=')[1] for p in domain_dn.split(',') if p.lower().startswith('dc=')]
+                primary_domain = ".".join(domain_parts)
+                
+                if primary_domain:
+                    self.upnDomainDropdown.addItem(f"@{primary_domain}")
+                    self.logger.debug(f"Added primary domain: @{primary_domain}")
+                    
+                    # Try to get additional UPN suffixes from forest info
+                    if self.samba_conn:
+                        try:
+                            forest_info = get_forest_root_info(self.samba_conn)
+                            if forest_info and forest_info.get('name') and forest_info['name'] != primary_domain:
+                                # Add forest root domain if different
+                                self.upnDomainDropdown.addItem(f"@{forest_info['name']}")
+                                self.logger.debug(f"Added forest domain: @{forest_info['name']}")
+                        except Exception as e:
+                            self.logger.debug(f"Could not get additional forest info: {e}")
+                        
+                else:
+                    # No domain parts found - this is a serious problem
+                    self.logger.error(f"Could not extract domain from DN '{domain_dn}' - AD connection may be broken")
+                    self._add_error_indicator()
+            else:
+                # No domain info available - this is a serious problem
+                self.logger.error("No domain information available - AD connection may be broken")
+                self._add_error_indicator()
+                
+        except Exception as e:
+            self.logger.error(f"Failed to populate UPN domains - AD connection may be broken: {e}")
+            self._add_error_indicator()
+    
+    def _add_error_indicator(self):
+        """Add error indicator when domain information cannot be retrieved."""
+        self.upnDomainDropdown.addItem("@ERROR - Cannot retrieve domain info")
+        self.upnDomainDropdown.setEnabled(False)
 
     def _format_dn_for_display(self, dn, base_dn):
         if not dn:
             return ""
         
+        if not base_dn:
+            # If base_dn is None, just return the container DN as-is
+            return dn
+            
         domain_parts = [p.split('=')[1] for p in base_dn.split(',') if p.lower().startswith('dc=')]
         domain = ".".join(domain_parts)
 
@@ -220,11 +292,11 @@ class NewUserPage2(QWizardPage):
     The second page of the New User Wizard.
     Contains password fields and options.
     """
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, page_title_key="dialog.new_user.page2.title", page_subtitle_key="dialog.new_user.page2.subtitle"):
         super().__init__(parent)
         self.i18n = I18nManager()
-        self.setTitle(self.i18n.get_string("dialog.new_user.page2.title"))
-        self.setSubTitle(self.i18n.get_string("dialog.new_user.page2.subtitle"))
+        self.setTitle(self.i18n.get_string(page_title_key))
+        self.setSubTitle(self.i18n.get_string(page_subtitle_key))
 
         layout = QFormLayout()
         layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
@@ -306,18 +378,22 @@ class NewUserPage2(QWizardPage):
 
 # --- New User Wizard Page 3 (Final Summary Page) ---
 class NewUserPage3(QWizardPage):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, page_title_key="dialog.new_user.page3.title", page_subtitle_key="dialog.new_user.page3.subtitle", summary_intro_key="dialog.new_user.page3.summary_intro", summary_full_name_key="dialog.new_user.page3.summary_full_name", summary_user_logon_key="dialog.new_user.page3.summary_user_logon", icon_path="src/res/icons/user_add.png"):
         super().__init__(parent)
         self.i18n = I18nManager()
-        self.setTitle(self.i18n.get_string("dialog.new_user.page3.title"))
-        self.setSubTitle(self.i18n.get_string("dialog.new_user.page3.subtitle"))
+        self.summary_intro_key = summary_intro_key
+        self.summary_full_name_key = summary_full_name_key
+        self.summary_user_logon_key = summary_user_logon_key
+        self.setTitle(self.i18n.get_string(page_title_key))
+        self.setSubTitle(self.i18n.get_string(page_subtitle_key))
 
         mainLayout = QVBoxLayout()
 
         headerLayout = QHBoxLayout()
         iconLabel = QLabel()
-        icon_path = os.path.join(os.path.dirname(__file__), 'res', 'icons', 'user_add.png')
-        iconLabel.setPixmap(QIcon(icon_path).pixmap(32, 32))
+        # Use an absolute path for the icon
+        abs_icon_path = os.path.join(os.path.dirname(__file__), 'res', 'icons', os.path.basename(icon_path))
+        iconLabel.setPixmap(QIcon(abs_icon_path).pixmap(32, 32))
         createInLabel = QLabel() # Will be set in initializePage
 
         headerLayout.addWidget(iconLabel)
@@ -348,9 +424,9 @@ class NewUserPage3(QWizardPage):
         account_disabled_checked = self.wizard().field("accountDisabled")
 
         summary_text_parts = [
-            self.i18n.get_string("dialog.new_user.page3.summary_intro"),
-            self.i18n.get_text("dialog.new_user.page3.summary_full_name", full_name),
-            self.i18n.get_text("dialog.new_user.page3.summary_user_logon", user_logon_name, upn_domain)
+            self.i18n.get_string(self.summary_intro_key),
+            self.i18n.get_text(self.summary_full_name_key, full_name),
+            self.i18n.get_text(self.summary_user_logon_key, user_logon_name, upn_domain)
         ]
 
         password_options = []
@@ -381,7 +457,10 @@ class NewUserWizard(QWizard):
         self.setWindowTitle(self.i18n.get_string("dialog.new_user.title"))
         self.setWizardStyle(QWizard.ModernStyle)
 
-        self.setPage(0, NewUserPage1(container_dn=container_dn))
+        # Get samba connection from parent (main window)
+        samba_conn = getattr(parent, 'samba_conn', None) if parent else None
+
+        self.setPage(0, NewUserPage1(container_dn=container_dn, samba_conn=samba_conn))
         self.setPage(1, NewUserPage2())
         self.setPage(2, NewUserPage3())
 
@@ -413,23 +492,45 @@ class CopyUserWizard(QWizard):
     """
     A wizard for copying a user, reusing the form pages.
     """
-    def __init__(self, parent=None, initial_data=None, source_username=None, container_dn=None):
+    def __init__(self, parent=None, initial_data=None, source_username=None, source_display_name=None, container_dn=None):
         super().__init__(parent)
         self.i18n = I18nManager()
-        self.setWindowTitle(self.i18n.get_string("dialog.copy_user.title"))
+        
+        # Use display name for the UI, fallback to username if not provided
+        display_name_for_ui = source_display_name or source_username
+        
+        # Set window title with display name
+        title = self.i18n.get_string("dialog.copy_user.title")
+        if display_name_for_ui:
+            title += f" - {display_name_for_ui}"
+        self.setWindowTitle(title)
         self.setWizardStyle(QWizard.ModernStyle)
+
+        # Get samba connection from parent (main window)
+        samba_conn = getattr(parent, 'samba_conn', None) if parent else None
 
         # Use the same pages but with different titles/subtitles
         self.setPage(0, NewUserPage1(
             page_title_key="dialog.copy_user.page1.title",
             page_subtitle_key="dialog.copy_user.page1.subtitle",
             intro_text_key="dialog.copy_user.page1.intro_text",
-            intro_text_args=[source_username],
+            intro_text_args=[display_name_for_ui],
             icon_path="src/res/icons/user_copy.png",
-            container_dn=container_dn
+            container_dn=container_dn,
+            samba_conn=samba_conn
         ))
-        self.setPage(1, NewUserPage2())
-        self.setPage(2, NewUserPage3())
+        self.setPage(1, NewUserPage2(
+            page_title_key="dialog.copy_user.page2.title",
+            page_subtitle_key="dialog.copy_user.page2.subtitle"
+        ))
+        self.setPage(2, NewUserPage3(
+            page_title_key="dialog.copy_user.page3.title",
+            page_subtitle_key="dialog.copy_user.page3.subtitle",
+            summary_intro_key="dialog.copy_user.page3.summary_intro",
+            summary_full_name_key="dialog.copy_user.page3.summary_full_name",
+            summary_user_logon_key="dialog.copy_user.page3.summary_user_logon",
+            icon_path="src/res/icons/user_copy.png"
+        ))
 
         self.user_data = {}
 

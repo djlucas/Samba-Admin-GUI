@@ -112,21 +112,34 @@ dialog.new_user.page2.account_disabled=Account is disabled
 dialog.new_user.page3.title=Completing the New Object - User Wizard
 dialog.new_user.page3.subtitle=You have successfully created a new user.
 dialog.new_user.page3.summary_intro=Please review the following details for the new user account:
-dialog.new_user.page3.summary_full_name=<br><b>Full Name:</b> %s
-dialog.new_user.page3.summary_user_logon=<br><b>User Logon Name:</b> %s%s
+dialog.new_user.page3.summary_full_name=<br><b>Full Name:</b> {0}
+dialog.new_user.page3.summary_user_logon=<br><b>User Logon Name:</b> {0}{1}
 dialog.new_user.page3.user_must_change_password_option=User must change password at next logon.
 dialog.new_user.page3.user_cannot_change_password_option=User cannot change password.
 dialog.new_user.page3.password_never_expires_option=User never expires.
 dialog.new_user.page3.account_disabled_option=Account is disabled.
 
+# Copy User Dialog
+dialog.copy_user.title=Copy user
+dialog.copy_user.page1.title=Copy user
+dialog.copy_user.page1.subtitle=Fill in the user's name details and logon names.
+dialog.copy_user.page1.intro_text=Copy user - {0}
+dialog.copy_user.page2.title=Copy Object - User
+dialog.copy_user.page2.subtitle=Set the password and account options.
+dialog.copy_user.page3.title=Completing the Copy User Wizard
+dialog.copy_user.page3.subtitle=You have successfully configured the copy user settings.
+dialog.copy_user.page3.summary_intro=Please review the following details for the new user account:
+dialog.copy_user.page3.summary_full_name=<br><b>Full Name:</b> {0}
+dialog.copy_user.page3.summary_user_logon=<br><b>User Logon Name:</b> {0}{1}
+
 # Confirmation Dialogs
 dialog.delete_user.title=Confirm Deletion
-dialog.delete_user.message=Are you sure you want to delete the user '%s'? This action cannot be undone.
+dialog.delete_user.message=Are you sure you want to delete the user '{0}'? This action cannot be undone.
 dialog.disable_user.title=Confirm Account Disable
-dialog.disable_user.message=Are you sure you want to disable the user '%s'? The user will not be able to log on.
+dialog.disable_user.message=Are you sure you want to disable the user '{0}'? The user will not be able to log on.
 
 dialog.enable_user.title=Confirm Account Enable
-dialog.enable_user.message=Are you sure you want to enable the user '%s'? The user will be able to log on.
+dialog.enable_user.message=Are you sure you want to enable the user '{0}'? The user will be able to log on.
 
 # Generic Dialogs and Backend Messages
 dialog.common.success.title=Success
