@@ -116,9 +116,9 @@ python main.py
   - Advanced search functionality with custom LDAP filters
   - Attribute editor with schema-aware validation
   - Read-only access to most ADUC functionality
+  - User creation/copy
 
 - ❌ **Critical Missing Features:**
-  - User creation/modification (`create_user_samba()`, `copy_user_samba()` are placeholders)
   - Object deletion, enable/disable, password reset operations
   - Write-back functionality for property modifications
   - Group membership management with proper DN resolution
@@ -134,7 +134,7 @@ python main.py
 
 | Module   | Completion | Status     | Notes                                  |
 |----------|------------|------------|----------------------------------------|
-| saduc    | ~60%       | 🚧 Active Development | Reads well, writing operations incomplete |
+| saduc    | ~72%       | 🚧 Active Development | Reads well, writing operations incomplete |
 | sdns     | ~15%       | 🚧 Early Stage | Basic structure only, core functionality missing |
 | sadss    | 0%         | 🕒 Planned | Pending topology mapping logic |
 | sgpoe    | 0%         | 🕒 Planned | Requires policy template scaffolding |
@@ -143,7 +143,6 @@ python main.py
 
 1. **Complete User Management Backend** - Essential for basic AD administration
 2. **Implement Property Write-Back** - Critical for making changes persistent 
-3. **Fix Search & Query Operations** - Foundation for object discovery
-4. **Add Comprehensive Testing** - No test files currently exist
-5. **Complete Basic Object Operations** - Move, rename, delete functionality
+3. **Add Comprehensive Testing** - No test files currently exist
+4. **Complete Basic Object Operations** - Move, rename, delete functionality
 
