@@ -106,21 +106,23 @@ python main.py
 
 ## 🧪 Development Status
 
-### Current Implementation Status (~45% Complete)
+### Current Implementation Status (~55% Complete)
 
-**SADUC (Samba Active Directory Users & Computers)** - *~72% Complete*
+**SADUC (Samba Active Directory Users & Computers)** - *~80% Complete*
 - ✅ **Working Features:**
   - LDAP connectivity and authentication via Kerberos
   - Complete tree navigation of AD structure
   - Property dialogs for all major object types (Users, Computers, Groups, etc.)
   - Advanced search functionality with custom LDAP filters
   - Attribute editor with schema-aware validation
-  - Read-only access to most ADUC functionality
-  - User creation/copy
+  - User creation/copy with full UPN and password support
+  - **Object deletion** for users, computers, groups, contacts, printers, and OUs
+  - **Enable/disable functionality** for user and computer accounts
+  - **Password reset** with "user must change password at next logon" support
+  - Context menus with dynamic enable/disable options based on object state
 
 - ❌ **Critical Missing Features:**
-  - Object deletion, enable/disable, password reset operations
-  - Write-back functionality for property modifications
+  - Write-back functionality for property dialog modifications
   - Group membership management with proper DN resolution
   - Move and rename operations for AD objects
 
@@ -134,15 +136,15 @@ python main.py
 
 | Module   | Completion | Status     | Notes                                  |
 |----------|------------|------------|----------------------------------------|
-| saduc    | ~72%       | 🚧 Active Development | Reads well, writing operations incomplete |
+| saduc    | ~80%       | 🚧 Active Development | Core CRUD operations complete, property write-back pending |
 | sdns     | ~15%       | 🚧 Early Stage | Basic structure only, core functionality missing |
 | sadss    | 0%         | 🕒 Planned | Pending topology mapping logic |
 | sgpoe    | 0%         | 🕒 Planned | Requires policy template scaffolding |
 
 ### Immediate Development Priorities
 
-1. **Complete User Management Backend** - Essential for basic AD administration
-2. **Implement Property Write-Back** - Critical for making changes persistent 
-3. **Add Comprehensive Testing** - No test files currently exist
-4. **Complete Basic Object Operations** - Move, rename, delete functionality
+1. **Implement Property Write-Back** - Critical for making property dialog changes persistent 
+2. **Group Membership Management** - Add/remove users from groups with proper DN resolution
+3. **Move and Rename Operations** - Complete basic object manipulation functionality
+4. **Add Comprehensive Testing** - No test files currently exist
 

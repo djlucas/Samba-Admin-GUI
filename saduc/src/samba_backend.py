@@ -524,14 +524,6 @@ def get_all_objects_in_dn(samba_conn, dn, attributes=None):
         objects = []
         for child_dn, entry in res:
             if isinstance(entry, dict):
-                # Debug: log what attributes we actually received
-                if 'user' in [oc.decode('utf-8').lower() for oc in entry.get('objectClass', [])]:
-                    cn = entry.get('cn', [b'Unknown'])[0].decode('utf-8') if entry.get('cn') else 'Unknown'
-                    logger.info(f"User '{cn}': received attributes = {list(entry.keys())}")
-                    if 'userAccountControl' in entry:
-                        logger.info(f"User '{cn}': userAccountControl = {entry['userAccountControl']}")
-                    else:
-                        logger.warning(f"User '{cn}': userAccountControl attribute missing!")
                 
                 obj_data = {
                     'dn': child_dn,
@@ -628,7 +620,9 @@ def create_user_samba(samba_conn, user_data):
     
     # Set UPN
     if user_data.get('user_logon_name') and user_data.get('upn_domain'):
-        upn = f"{user_data['user_logon_name']}@{user_data['upn_domain']}"
+        # Strip @ prefix if present (UI includes @ in dropdown)
+        upn_domain = user_data['upn_domain'].lstrip('@')
+        upn = f"{user_data['user_logon_name']}@{upn_domain}"
         attrs.append(('userPrincipalName', [upn.encode('utf-8')]))
 
     try:
@@ -645,8 +639,18 @@ def create_user_samba(samba_conn, user_data):
                 mod_list = [(ldap.MOD_REPLACE, 'unicodePwd', password_utf16)]
                 samba_conn.modify_s(dn, mod_list)
                 logger.info(f"Successfully set password for user: {cn_value}")
+            except ldap.INSUFFICIENT_ACCESS as e:
+                logger.error(f"Insufficient access to set password for {cn_value}: {e}")
+                logger.error("Service account may lack 'Reset Password' permissions")
+            except ldap.CONSTRAINT_VIOLATION as e:
+                logger.error(f"Password constraint violation for {cn_value}: {e}")
+                logger.error("Password may not meet complexity requirements")
+            except ldap.UNWILLING_TO_PERFORM as e:
+                logger.error(f"Server unwilling to perform password change for {cn_value}: {e}")
+                logger.error("This often indicates SSL/TLS is required but not active")
             except ldap.LDAPError as e:
-                logger.warning(f"Failed to set password for user {cn_value}: {e}")
+                logger.error(f"LDAP error setting password for {cn_value}: {e}")
+                logger.error(f"Error type: {type(e).__name__}")
                 # Don't fail the entire user creation if password fails
                 # The user can be created and password set later
         
@@ -776,7 +780,9 @@ def copy_user_samba(samba_conn, source_user_dn, new_user_data):
         
         # Set UPN
         if new_user_data.get('user_logon_name') and new_user_data.get('upn_domain'):
-            upn = f"{new_user_data['user_logon_name']}@{new_user_data['upn_domain']}"
+            # Strip @ prefix if present (UI includes @ in dropdown)
+            upn_domain = new_user_data['upn_domain'].lstrip('@')
+            upn = f"{new_user_data['user_logon_name']}@{upn_domain}"
             attrs.append(('userPrincipalName', [upn.encode('utf-8')]))
         
         # Copy applicable attributes from source user
@@ -810,9 +816,19 @@ def copy_user_samba(samba_conn, source_user_dn, new_user_data):
                     password_utf16 = f'"{password}"'.encode('utf-16le')
                     mod_list = [(ldap.MOD_REPLACE, 'unicodePwd', password_utf16)]
                     samba_conn.modify_s(dn, mod_list)
-                    logger.info(f"Successfully set password for user: {cn_value}")
+                    logger.info(f"Successfully set password for copied user: {cn_value}")
+                except ldap.INSUFFICIENT_ACCESS as e:
+                    logger.error(f"Insufficient access to set password for {cn_value}: {e}")
+                    logger.error("Service account may lack 'Reset Password' permissions")
+                except ldap.CONSTRAINT_VIOLATION as e:
+                    logger.error(f"Password constraint violation for {cn_value}: {e}")
+                    logger.error("Password may not meet complexity requirements")
+                except ldap.UNWILLING_TO_PERFORM as e:
+                    logger.error(f"Server unwilling to perform password change for {cn_value}: {e}")
+                    logger.error("This often indicates SSL/TLS is required but not active")
                 except ldap.LDAPError as e:
-                    logger.warning(f"Failed to set password for user {cn_value}: {e}")
+                    logger.error(f"LDAP error setting password for {cn_value}: {e}")
+                    logger.error(f"Error type: {type(e).__name__}")
             
             # TODO: Copy group memberships from source user
             # This would require additional implementation to handle group membership
@@ -829,6 +845,226 @@ def copy_user_samba(samba_conn, source_user_dn, new_user_data):
     except Exception as e:
         logger.error(f"Error copying user {source_user_dn}: {e}")
         return False, "samba_backend.error.copy_user", [str(e)]
+
+
+# Legacy function - now uses generic implementation
+def delete_user_samba(samba_conn, user_dn):
+    """Deletes a user from Samba AD."""
+    return delete_object_samba(samba_conn, user_dn, 'user')
+
+
+def delete_object_samba(samba_conn, object_dn, object_type="object"):
+    """Generic function to delete any AD object (user, computer, contact, printer, OU)."""
+    logger.info(f"Samba backend: Deleting {object_type} with DN: {object_dn}")
+    
+    # Object type configurations
+    object_configs = {
+        'user': {'filter': '(objectClass=user)', 'name_attrs': ['cn', 'sAMAccountName']},
+        'computer': {'filter': '(objectClass=computer)', 'name_attrs': ['cn', 'sAMAccountName']},
+        'contact': {'filter': '(objectClass=contact)', 'name_attrs': ['cn', 'displayName']},
+        'printer': {'filter': '(objectClass=printQueue)', 'name_attrs': ['cn', 'printerName']},
+        'organizationalUnit': {'filter': '(objectClass=organizationalUnit)', 'name_attrs': ['ou', 'name']},
+        'object': {'filter': '(objectClass=*)', 'name_attrs': ['cn', 'name', 'ou']}
+    }
+    
+    config = object_configs.get(object_type, object_configs['object'])
+    
+    try:
+        # Get object name for success message
+        res = samba_conn.search_s(object_dn, ldap.SCOPE_BASE, config['filter'], config['name_attrs'])
+        if not res:
+            logger.error(f"{object_type.title()} not found: {object_dn}")
+            return False, f"samba_backend.error.{object_type}_not_found", [object_dn]
+        
+        obj_attrs = res[0][1]
+        obj_name = "Unknown"
+        for attr in config['name_attrs']:
+            if attr in obj_attrs:
+                obj_name = obj_attrs[attr][0].decode('utf-8')
+                break
+        
+        # Delete the object
+        samba_conn.delete_s(object_dn)
+        logger.info(f"Successfully deleted {object_type}: {object_dn}")
+        return True, f"samba_backend.success.delete_{object_type}", [obj_name]
+        
+    except ldap.NO_SUCH_OBJECT:
+        logger.error(f"{object_type.title()} '{object_dn}' does not exist.")
+        return False, f"samba_backend.error.{object_type}_not_found", [object_dn]
+    except ldap.NOT_ALLOWED_ON_NONLEAF:
+        logger.error(f"Cannot delete {object_type} '{object_dn}': object has child objects.")
+        return False, "samba_backend.error.object_has_children", [obj_name if 'obj_name' in locals() else object_dn]
+    except ldap.INSUFFICIENT_ACCESS:
+        logger.error(f"Insufficient access to delete {object_type} '{object_dn}'.")
+        return False, "samba_backend.error.insufficient_access", [obj_name if 'obj_name' in locals() else object_dn]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error deleting {object_type} '{object_dn}': {e}")
+        return False, f"samba_backend.error.delete_{object_type}", [str(e)]
+    except Exception as e:
+        logger.error(f"Unexpected error deleting {object_type} {object_dn}: {e}")
+        return False, f"samba_backend.error.delete_{object_type}", [str(e)]
+
+
+# Legacy function - now uses generic implementation
+def disable_user_samba(samba_conn, user_dn):
+    """Disables a user account in Samba AD."""
+    return enable_disable_account_samba(samba_conn, user_dn, enable=False, object_type='user')
+
+
+# Legacy function - now uses generic implementation  
+def enable_user_samba(samba_conn, user_dn):
+    """Enables a user account in Samba AD."""
+    return enable_disable_account_samba(samba_conn, user_dn, enable=True, object_type='user')
+
+
+def enable_disable_account_samba(samba_conn, object_dn, enable=True, object_type="user"):
+    """Generic function to enable/disable user or computer accounts."""
+    action = "Enabling" if enable else "Disabling"
+    logger.info(f"Samba backend: {action} {object_type} with DN: {object_dn}")
+    
+    # Both users and computers use userAccountControl
+    object_filter = '(|(objectClass=user)(objectClass=computer))'
+    
+    try:
+        # Get current object attributes
+        res = samba_conn.search_s(object_dn, ldap.SCOPE_BASE, object_filter, ['cn', 'userAccountControl', 'objectClass'])
+        if not res:
+            logger.error(f"{object_type.title()} not found: {object_dn}")
+            return False, f"samba_backend.error.{object_type}_not_found", [object_dn]
+        
+        obj_attrs = res[0][1]
+        cn_value = obj_attrs.get('cn', [b'Unknown'])[0].decode('utf-8')
+        current_uac = int(obj_attrs.get('userAccountControl', [b'0'])[0].decode('utf-8'))
+        
+        # Determine actual object type from objectClass
+        obj_classes = [oc.decode('utf-8').lower() for oc in obj_attrs.get('objectClass', [])]
+        if 'computer' in obj_classes:
+            actual_type = 'computer'
+        else:
+            actual_type = 'user'
+        
+        # Modify UAC flag
+        if enable:
+            new_uac = current_uac & ~0x0002  # Remove UAC_ACCOUNT_DISABLED
+            success_key = f"samba_backend.success.enable_{actual_type}"
+            error_key = f"samba_backend.error.enable_{actual_type}"
+        else:
+            new_uac = current_uac | 0x0002   # Set UAC_ACCOUNT_DISABLED
+            success_key = f"samba_backend.success.disable_{actual_type}"
+            error_key = f"samba_backend.error.disable_{actual_type}"
+        
+        # Update userAccountControl
+        mod_list = [(ldap.MOD_REPLACE, 'userAccountControl', [str(new_uac).encode('utf-8')])]
+        samba_conn.modify_s(object_dn, mod_list)
+        
+        action_past = "enabled" if enable else "disabled"
+        logger.info(f"Successfully {action_past} {actual_type}: {object_dn}")
+        return True, success_key, [cn_value]
+        
+    except ldap.NO_SUCH_OBJECT:
+        logger.error(f"{object_type.title()} '{object_dn}' does not exist.")
+        return False, f"samba_backend.error.{object_type}_not_found", [object_dn]
+    except ldap.INSUFFICIENT_ACCESS:
+        logger.error(f"Insufficient access to {action.lower()} {object_type} '{object_dn}'.")
+        return False, "samba_backend.error.insufficient_access", [cn_value if 'cn_value' in locals() else object_dn]
+    except ldap.LDAPError as e:
+        action_key = "enable" if enable else "disable"
+        logger.error(f"LDAP error {action.lower()} {object_type} '{object_dn}': {e}")
+        return False, f"samba_backend.error.{action_key}_{object_type}", [str(e)]
+    except Exception as e:
+        action_key = "enable" if enable else "disable"
+        logger.error(f"Unexpected error {action.lower()} {object_type} {object_dn}: {e}")
+        return False, f"samba_backend.error.{action_key}_{object_type}", [str(e)]
+
+
+# Convenience wrapper functions for different object types
+def delete_computer_samba(samba_conn, computer_dn):
+    """Deletes a computer from Samba AD."""
+    return delete_object_samba(samba_conn, computer_dn, 'computer')
+
+def delete_contact_samba(samba_conn, contact_dn):
+    """Deletes a contact from Samba AD."""
+    return delete_object_samba(samba_conn, contact_dn, 'contact')
+
+def delete_printer_samba(samba_conn, printer_dn):
+    """Deletes a printer from Samba AD."""
+    return delete_object_samba(samba_conn, printer_dn, 'printer')
+
+def delete_ou_samba(samba_conn, ou_dn):
+    """Deletes an organizational unit from Samba AD."""
+    return delete_object_samba(samba_conn, ou_dn, 'organizationalUnit')
+
+def disable_computer_samba(samba_conn, computer_dn):
+    """Disables a computer account in Samba AD."""
+    return enable_disable_account_samba(samba_conn, computer_dn, enable=False, object_type='computer')
+
+def enable_computer_samba(samba_conn, computer_dn):
+    """Enables a computer account in Samba AD."""
+    return enable_disable_account_samba(samba_conn, computer_dn, enable=True, object_type='computer')
+
+
+def reset_password_samba(samba_conn, user_dn, new_password, must_change_password=True):
+    """Resets a user's password in Samba AD."""
+    logger.info(f"Samba backend: Resetting password for user with DN: {user_dn}")
+    
+    try:
+        # Get user's common name for success message
+        res = samba_conn.search_s(user_dn, ldap.SCOPE_BASE, '(objectClass=user)', ['cn', 'userAccountControl'])
+        if not res:
+            return False, "samba_backend.error.user_not_found", [user_dn]
+        
+        user_attrs = res[0][1]
+        cn_value = user_attrs.get('cn', [b'Unknown'])[0].decode('utf-8')
+        
+        # Set new password
+        password_utf16 = f'"{new_password}"'.encode('utf-16le')
+        modifications = [(ldap.MOD_REPLACE, 'unicodePwd', password_utf16)]
+        
+        if must_change_password:
+            # Clear pwdLastSet to force password change
+            modifications.append((ldap.MOD_REPLACE, 'pwdLastSet', [b'0']))
+            
+            # Update userAccountControl: clear DONT_EXPIRE_PASSWORD flag
+            current_uac = int(user_attrs.get('userAccountControl', [b'0'])[0].decode('utf-8'))
+            new_uac = current_uac & ~0x10000  # Clear UAC_DONT_EXPIRE_PASSWORD
+            
+            modifications.append((ldap.MOD_REPLACE, 'userAccountControl', [str(new_uac).encode('utf-8')]))
+        
+        samba_conn.modify_s(user_dn, modifications)
+        return True, "samba_backend.success.reset_password", [cn_value]
+        
+    except ldap.NO_SUCH_OBJECT:
+        logger.error(f"User '{user_dn}' does not exist.")
+        return False, "samba_backend.error.user_not_found", [user_dn]
+    except ldap.INSUFFICIENT_ACCESS:
+        logger.error(f"Insufficient access to reset password for user '{user_dn}'.")
+        return False, "samba_backend.error.insufficient_access", [cn_value if 'cn_value' in locals() else user_dn]
+    except ldap.CONSTRAINT_VIOLATION as e:
+        logger.error(f"Password constraint violation for {cn_value}: {e}")
+        error_info = str(e).lower()
+        if 'complexity criteria' in error_info or 'complexity requirements' in error_info:
+            logger.error("Password does not meet domain complexity requirements")
+            return False, "samba_backend.error.password_complexity", []
+        elif 'password history' in error_info or 'recently used' in error_info:
+            logger.error("Password was recently used and cannot be reused")
+            return False, "samba_backend.error.password_history", []
+        elif 'minimum age' in error_info or 'too soon' in error_info:
+            logger.error("Password was changed too recently")
+            return False, "samba_backend.error.password_age", []
+        else:
+            logger.error("Password constraint violation - general policy issue")
+            return False, "samba_backend.error.password_constraint", [str(e)]
+    except ldap.UNWILLING_TO_PERFORM as e:
+        logger.error(f"Server unwilling to perform password reset for {user_dn}: {e}")
+        logger.error("This often indicates SSL/TLS is required but not active")
+        return False, "samba_backend.error.password_ssl_required", [str(e)]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error resetting password for user '{user_dn}': {e}")
+        return False, "samba_backend.error.reset_password", [str(e)]
+    except Exception as e:
+        logger.error(f"Unexpected error resetting password for user {user_dn}: {e}")
+        return False, "samba_backend.error.reset_password", [str(e)]
+
 
 def get_schema_attributes(samba_conn, object_classes):
     """
@@ -911,6 +1147,7 @@ def get_all_user_attributes_with_schema_info(samba_conn, user_dn):
             return None, None
 
         user_attributes = res[0][1]
+        
         object_classes = [oc.decode('utf-8') for oc in user_attributes.get('objectClass', [])]
         
         schema_info = get_schema_attributes(samba_conn, object_classes)

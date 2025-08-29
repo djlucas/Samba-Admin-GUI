@@ -68,10 +68,15 @@ class ListMenuManager:
     def _build_computer_menu(self, menu, selected_object_data):
         uac = int(selected_object_data.get('userAccountControl', '0'))
         is_dc = bool(uac & 8192)  # UAC_SERVER_TRUST_ACCOUNT
+        is_disabled = bool(uac & UAC_ACCOUNT_DISABLED)
 
         menu.addAction(self.i18n.get_string("context_menu.add_to_group"), partial(actions.on_add_to_group_action_triggered, self.main_window))
+        
         if not is_dc:
-            menu.addAction(self.i18n.get_string("context_menu.disable_account"), partial(actions.on_disable_user_action_triggered, self.main_window))
+            if is_disabled:
+                menu.addAction(self.i18n.get_string("context_menu.enable_account"), partial(actions.on_enable_computer_action_triggered, self.main_window))
+            else:
+                menu.addAction(self.i18n.get_string("context_menu.disable_account"), partial(actions.on_disable_computer_action_triggered, self.main_window))
         menu.addAction(self.i18n.get_string("context_menu.reset_account"), partial(actions.on_reset_account_action_triggered, self.main_window))
         menu.addAction(self.i18n.get_string("context_menu.move"), partial(actions.on_move_action_triggered, self.main_window))
         menu.addSeparator()

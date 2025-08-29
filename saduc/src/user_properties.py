@@ -455,6 +455,12 @@ class UserPropertiesDialog(QDialog):
 
         uac = int(self.user_props.get('userAccountControl', ['0'])[0])
         self.account_disabled_check.setChecked(bool(uac & UAC_ACCOUNT_DISABLED))
+        
+        # "User must change password at next logon" is determined by pwdLastSet=0, not UAC flag
+        pwd_last_set = self.user_props.get('pwdLastSet', ['1'])[0]
+        must_change_password = (pwd_last_set == '0')
+        
+        self.user_must_change_password_check.setChecked(must_change_password)
         self.password_never_expires_check.setChecked(bool(uac & UAC_DONT_EXPIRE_PASSWORD))
         self.reversible_encryption_check.setChecked(bool(uac & UAC_ENCRYPTED_TEXT_PASSWORD_ALLOWED))
         self.user_cannot_change_password_check.setChecked(bool(uac & UAC_PASSWORD_CANT_CHANGE))

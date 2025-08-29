@@ -140,19 +140,69 @@ dialog.disable_user.message=Are you sure you want to disable the user '{0}'? The
 
 dialog.enable_user.title=Confirm Account Enable
 dialog.enable_user.message=Are you sure you want to enable the user '{0}'? The user will be able to log on.
+dialog.disable_computer.title=Confirm Account Disable
+dialog.disable_computer.message=Are you sure you want to disable the computer '{0}'? The computer will not be able to authenticate.
+dialog.enable_computer.title=Confirm Account Enable
+dialog.enable_computer.message=Are you sure you want to enable the computer '{0}'? The computer will be able to authenticate.
+
+dialog.reset_password.title=Reset Password
+dialog.reset_password.header=Reset password for user: {0}
+dialog.reset_password.new_password=New password:
+dialog.reset_password.confirm_password=Confirm password:
+dialog.reset_password.must_change=User must change password at next logon
+dialog.reset_password.error.empty_password=Password cannot be empty.
+dialog.reset_password.error.password_mismatch=Passwords do not match.
+dialog.reset_password.error.password_too_short=Password must be at least 3 characters long.
 
 # Generic Dialogs and Backend Messages
 dialog.common.success.title=Success
 dialog.common.error.title=Error
+dialog.common.ok=OK
+dialog.common.cancel=Cancel
 dialog.common.error.generic=An unexpected error occurred. Check the debug log for details.
 common.unknown=Unknown
 
 samba_backend.success.create_user = User '{0}' created successfully.
 samba_backend.success.copy_user = User '{0}' copied successfully.
-samba_backend.success.delete_user = User '{0}' has been deleted (simulated).
-samba_backend.success.disable_user = User '{0}' has been disabled (simulated).
+samba_backend.success.delete_user = User '{0}' has been deleted successfully.
+samba_backend.success.delete_computer = Computer '{0}' has been deleted successfully.
+samba_backend.success.delete_contact = Contact '{0}' has been deleted successfully.
+samba_backend.success.delete_printer = Printer '{0}' has been deleted successfully.
+samba_backend.success.delete_organizationalUnit = Organizational Unit '{0}' has been deleted successfully.
+samba_backend.success.delete_object = Object '{0}' has been deleted successfully.
+samba_backend.success.disable_user = User '{0}' has been disabled successfully.
+samba_backend.success.disable_computer = Computer '{0}' has been disabled successfully.
+samba_backend.success.enable_user = User '{0}' has been enabled successfully.
+samba_backend.success.enable_computer = Computer '{0}' has been enabled successfully.
+samba_backend.success.reset_password = Password has been reset for user '{0}' successfully.
 samba_backend.error.create_user = An error occurred while creating the user: {0}
 samba_backend.error.copy_user = An error occurred while copying the user: {0}
+samba_backend.error.delete_user = An error occurred while deleting the user: {0}
+samba_backend.error.delete_computer = An error occurred while deleting the computer: {0}
+samba_backend.error.delete_contact = An error occurred while deleting the contact: {0}
+samba_backend.error.delete_printer = An error occurred while deleting the printer: {0}
+samba_backend.error.delete_organizationalUnit = An error occurred while deleting the organizational unit: {0}
+samba_backend.error.delete_object = An error occurred while deleting the object: {0}
+samba_backend.error.disable_user = An error occurred while disabling the user: {0}
+samba_backend.error.disable_computer = An error occurred while disabling the computer: {0}
+samba_backend.error.enable_user = An error occurred while enabling the user: {0}
+samba_backend.error.enable_computer = An error occurred while enabling the computer: {0}
+samba_backend.error.reset_password = An error occurred while resetting the password: {0}
+samba_backend.error.password_constraint = Password does not meet complexity requirements: {0}
+samba_backend.error.password_complexity = Password does not meet domain complexity requirements. Please ensure the password contains uppercase letters, lowercase letters, numbers, and special characters, and meets the minimum length requirement.
+samba_backend.error.password_history = This password was recently used and cannot be reused. Please choose a different password.
+samba_backend.error.password_age = Password was changed too recently. Please wait before changing it again.
+samba_backend.error.password_ssl_required = SSL/TLS connection required for password changes: {0}
+samba_backend.error.user_not_found = User not found: {0}
+samba_backend.error.computer_not_found = Computer not found: {0}
+samba_backend.error.contact_not_found = Contact not found: {0}
+samba_backend.error.printer_not_found = Printer not found: {0}
+samba_backend.error.organizationalUnit_not_found = Organizational Unit not found: {0}
+samba_backend.error.object_not_found = Object not found: {0}
+samba_backend.error.user_has_children = Cannot delete user '{0}': object has child objects.
+samba_backend.error.object_has_children = Cannot delete '{0}': object has child objects.
+samba_backend.error.ou_has_children = Cannot delete OU '{0}': contains {1} child objects.
+samba_backend.error.insufficient_access = Insufficient access to delete user '{0}'.
 error.backend.fetch_failed=Failed to fetch objects from the directory. Please check the connection and permissions. Details: {0}
 
 # User Properties Dialog

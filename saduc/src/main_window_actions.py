@@ -3,7 +3,9 @@ import logging
 from PyQt5.QtWidgets import QDialog, QMessageBox
 from PyQt5.QtCore import Qt
 from user_dialogs import NewUserWizard, CopyUserWizard, DeleteUserDialog, DisableUserDialog, NewGroupDialog, EnableUserDialog
-from samba_backend import create_user_samba, copy_user_samba, get_user_properties, create_group_samba
+from computer_dialogs import DisableComputerDialog, EnableComputerDialog
+from password_reset_dialog import PasswordResetDialog
+from samba_backend import create_user_samba, copy_user_samba, get_user_properties, create_group_samba, delete_user_samba, disable_user_samba, enable_user_samba, disable_computer_samba, enable_computer_samba, reset_password_samba
 from user_properties import UserPropertiesDialog
 from computer_properties import ComputerPropertiesDialog
 from group_properties import GroupPropertiesDialog
@@ -23,7 +25,7 @@ def on_new_user_action_triggered(main_window):
             user_data['container_dn'] = main_window.currentContainerDN
             main_window.logger.info(f"User data collected from wizard: {user_data}")
             success, message_key, extra = create_user_samba(main_window.samba_conn, user_data)
-            message = main_window.i18n.get_string(message_key)
+            message = main_window.i18n.get_text(message_key, *extra)
             if success:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
                 main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
@@ -80,7 +82,13 @@ def on_delete_user_action_triggered(main_window):
     main_window.logger.info(f"Delete User action triggered for user: {username}.")
     if DeleteUserDialog(main_window, username) == QMessageBox.Yes:
         main_window.logger.info(f"User confirmed deletion of: {username}")
-        QMessageBox.information(main_window, "Not Implemented", f"Backend logic to delete '{username}' is not yet implemented.")
+        success, message_key, extra = delete_user_samba(main_window.samba_conn, main_window.current_selected_dn)
+        message = main_window.i18n.get_text(message_key, *extra)
+        if success:
+            QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
+            main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+        else:
+            QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
     else:
         main_window.logger.info(f"User cancelled deletion of: {username}")
 
@@ -93,7 +101,13 @@ def on_disable_user_action_triggered(main_window):
     main_window.logger.info(f"Disable User action triggered for user: {username}.")
     if DisableUserDialog(main_window, username) == QMessageBox.Yes:
         main_window.logger.info(f"User confirmed disabling account for: {username}")
-        QMessageBox.information(main_window, "Not Implemented", f"Backend logic to disable '{username}' is not yet implemented.")
+        success, message_key, extra = disable_user_samba(main_window.samba_conn, main_window.current_selected_dn)
+        message = main_window.i18n.get_text(message_key, *extra)
+        if success:
+            QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
+            main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+        else:
+            QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
     else:
         main_window.logger.info(f"User cancelled disabling account for: {username}")
 
@@ -106,9 +120,43 @@ def on_enable_user_action_triggered(main_window):
     main_window.logger.info(f"Enable User action triggered for user: {username}.")
     if EnableUserDialog(main_window, username) == QMessageBox.Yes:
         main_window.logger.info(f"User confirmed enabling account for: {username}")
-        QMessageBox.information(main_window, "Not Implemented", f"Backend logic to enable '{username}' is not yet implemented.")
+        success, message_key, extra = enable_user_samba(main_window.samba_conn, main_window.current_selected_dn)
+        message = main_window.i18n.get_text(message_key, *extra)
+        if success:
+            QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
+            main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+        else:
+            QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
     else:
         main_window.logger.info(f"User cancelled enabling account for: {username}")
+
+def on_disable_computer_action_triggered(main_window):
+    if not main_window.current_selected_dn:
+        main_window.logger.warning("No computer selected for disabling.")
+        return
+    computer_name = main_window.tableModel.data(main_window.listPane.selectionModel().currentIndex(), Qt.DisplayRole)
+    if DisableComputerDialog(main_window, computer_name) == QMessageBox.Yes:
+        success, message_key, extra = disable_computer_samba(main_window.samba_conn, main_window.current_selected_dn)
+        message = main_window.i18n.get_text(message_key, *extra)
+        if success:
+            QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
+            main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+        else:
+            QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
+
+def on_enable_computer_action_triggered(main_window):
+    if not main_window.current_selected_dn:
+        main_window.logger.warning("No computer selected for enabling.")
+        return
+    computer_name = main_window.tableModel.data(main_window.listPane.selectionModel().currentIndex(), Qt.DisplayRole)
+    if EnableComputerDialog(main_window, computer_name) == QMessageBox.Yes:
+        success, message_key, extra = enable_computer_samba(main_window.samba_conn, main_window.current_selected_dn)
+        message = main_window.i18n.get_text(message_key, *extra)
+        if success:
+            QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
+            main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+        else:
+            QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
 
 def on_properties_action_triggered(main_window):
     if not main_window.current_selected_dn:
@@ -146,7 +194,18 @@ def on_add_to_group_action_triggered(main_window):
     QMessageBox.information(main_window, "Not Implemented", "'Add to a group...' is not yet implemented.")
 
 def on_reset_password_action_triggered(main_window):
-    QMessageBox.information(main_window, "Not Implemented", "'Reset Password...' is not yet implemented.")
+    if not main_window.current_selected_dn:
+        return
+    username = main_window.tableModel.data(main_window.listPane.selectionModel().currentIndex(), Qt.DisplayRole)
+    dialog = PasswordResetDialog(main_window, username)
+    if dialog.exec_() == QDialog.Accepted:
+        success, message_key, extra = reset_password_samba(main_window.samba_conn, main_window.current_selected_dn, dialog.password, dialog.must_change_password)
+        message = main_window.i18n.get_text(message_key, *extra)
+        if success:
+            QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
+            main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+        else:
+            QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
 
 def on_move_action_triggered(main_window):
     QMessageBox.information(main_window, "Not Implemented", "'Move...' is not yet implemented.")
