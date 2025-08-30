@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QListWidget, QCheckBox, QListWidgetItem,
     QDateTimeEdit, QApplication
 )
-from PyQt5.QtCore import Qt, QDateTime, QLocale
+from PyQt5.QtCore import Qt, QDateTime, QLocale, pyqtSignal
 from i18n_manager import I18nManager
 from samba_backend import (
     get_user_properties, get_group_properties, get_group_by_rid, 
@@ -28,15 +28,20 @@ from samba_backend import (
     get_all_user_attributes_with_schema_info,
     get_all_group_attributes_with_schema_info,
     get_all_computer_attributes_with_schema_info,
+    get_all_printer_attributes_with_schema_info,
+    get_all_container_attributes_with_schema_info,
+    get_all_contact_attributes_with_schema_info,
     get_nt_security_descriptor,
     get_rodc_password_replication_status,
     get_laps_info, set_laps_expiration,
     resolve_sid
 )
+from acl_utils import check_protection_from_deletion
 
 
 class ObjectTab(QWidget):
     """A reusable Object tab for properties dialogs."""
+    
     def __init__(self, samba_conn, object_dn, parent_props, parent=None):
         super().__init__(parent)
         self.samba_conn = samba_conn
@@ -60,6 +65,9 @@ class ObjectTab(QWidget):
         self.protect_deletion_checkbox = QCheckBox(
             self.i18n.get_string("object_tab.checkbox.protect_from_deletion")
         )
+        
+        # Connect the checkbox to track changes (not apply immediately)
+        self.protect_deletion_checkbox.stateChanged.connect(self._on_protection_checkbox_changed)
 
     def _create_layout(self):
         layout = QVBoxLayout(self)
@@ -146,6 +154,12 @@ class ObjectTab(QWidget):
             obj_attrs, _ = get_all_group_attributes_with_schema_info(self.samba_conn, self.object_dn)
         elif 'computer' in object_class:
             obj_attrs, _ = get_all_computer_attributes_with_schema_info(self.samba_conn, self.object_dn)
+        elif 'printQueue' in object_class:
+            obj_attrs, _ = get_all_printer_attributes_with_schema_info(self.samba_conn, self.object_dn)
+        elif 'organizationalUnit' in object_class or 'container' in object_class:
+            obj_attrs, _ = get_all_container_attributes_with_schema_info(self.samba_conn, self.object_dn)
+        elif 'contact' in object_class:
+            obj_attrs, _ = get_all_contact_attributes_with_schema_info(self.samba_conn, self.object_dn)
         else:
             obj_attrs = None
 
@@ -156,10 +170,79 @@ class ObjectTab(QWidget):
             self.modified_label.setText(self._format_timestamp(obj_attrs.get('whenChanged', [''])[0]))
             self.current_usn_label.setText(obj_attrs.get('uSNChanged', [''])[0])
             self.original_usn_label.setText(obj_attrs.get('uSNCreated', [''])[0])
-            # The 'protect from accidental deletion' is not a standard LDAP attribute.
-            # This is often handled by permissions, but we'll make the checkbox functional
-            # if we find a way to implement this. For now, it's a UI element.
-            self.protect_deletion_checkbox.setChecked(False) # Placeholder
+            # Check for protection from accidental deletion using real ACL analysis
+            try:
+                import ldap
+                res = self.samba_conn.search_s(self.object_dn, ldap.SCOPE_BASE, '(objectClass=*)', ['nTSecurityDescriptor'])
+                
+                if res and 'nTSecurityDescriptor' in res[0][1]:
+                    sd_data = res[0][1]['nTSecurityDescriptor'][0]
+                    is_protected = check_protection_from_deletion(sd_data)
+                    # Temporarily block signals to avoid triggering _on_protection_changed during loading
+                    self.protect_deletion_checkbox.blockSignals(True)
+                    self.protect_deletion_checkbox.setChecked(is_protected)
+                    self.protect_deletion_checkbox.blockSignals(False)
+                    self.logger.debug(f"Protection status for {self.object_dn}: {is_protected}")
+                else:
+                    self.protect_deletion_checkbox.blockSignals(True)
+                    self.protect_deletion_checkbox.setChecked(False)
+                    self.protect_deletion_checkbox.blockSignals(False)
+                    self.logger.warning(f"Could not retrieve security descriptor for {self.object_dn}")
+            except Exception as e:
+                self.logger.error(f"Error checking protection status for {self.object_dn}: {e}")
+                self.protect_deletion_checkbox.blockSignals(True)
+                self.protect_deletion_checkbox.setChecked(False)
+                self.protect_deletion_checkbox.blockSignals(False)
+
+    def _on_protection_checkbox_changed(self, state):
+        """Handle protection checkbox state changes - just track the change."""
+        protect = (state == 2)  # Qt.Checked = 2
+        self.logger.debug(f"Protection checkbox changed for {self.object_dn}: {'enabled' if protect else 'disabled'}")
+        # The change will be applied when the parent dialog applies all changes
+    
+    def apply_protection_changes(self):
+        """Apply protection changes if the checkbox state differs from current AD state.
+        
+        Returns:
+            tuple: (success: bool, message: str) - Success status and user-friendly message
+        """
+        from acl_utils import set_protection_from_deletion, check_protection_from_deletion
+        
+        try:
+            # Get current protection state from AD
+            current_protected = False
+            try:
+                res = self.samba_conn.search_s(self.object_dn, ldap.SCOPE_BASE, '(objectClass=*)', ['nTSecurityDescriptor'])
+                if res and 'nTSecurityDescriptor' in res[0][1]:
+                    sd_data = res[0][1]['nTSecurityDescriptor'][0]
+                    current_protected = check_protection_from_deletion(sd_data)
+            except Exception as e:
+                self.logger.warning(f"Could not check current protection state: {e}")
+                
+            # Get desired state from checkbox
+            desired_protected = self.protect_deletion_checkbox.isChecked()
+            
+            # Apply change if needed
+            if current_protected != desired_protected:
+                self.logger.info(f"Applying protection change for {self.object_dn}: {current_protected} -> {desired_protected}")
+                success = set_protection_from_deletion(self.samba_conn, self.object_dn, desired_protected)
+                
+                if success:
+                    action = "enabled" if desired_protected else "disabled"
+                    message = f"Protection from accidental deletion has been {action}."
+                    self.logger.info(f"Successfully {action} protection for {self.object_dn}")
+                    return True, message
+                else:
+                    self.logger.error(f"Failed to change protection for {self.object_dn}")
+                    return False, "Failed to change protection from accidental deletion."
+            else:
+                # No change needed
+                self.logger.debug(f"No protection change needed for {self.object_dn}")
+                return True, None  # None means no change was made
+                
+        except Exception as e:
+            self.logger.error(f"Exception applying protection changes for {self.object_dn}: {e}")
+            return False, f"Error changing protection: {str(e)}"
 
 
 class SecurityTab(QWidget):
@@ -944,7 +1027,7 @@ class LAPSTab(QWidget):
         self.computer_dn = computer_dn
         self.logger = logging.getLogger("saduc_app." + self.__class__.__name__)
         self.i18n = I18nManager()
-        self.password_visible = False
+        self.is_password_visible = False
 
         self._create_widgets()
         self._create_layout()
@@ -1070,11 +1153,11 @@ class LAPSTab(QWidget):
 
     def _toggle_password_visibility(self):
         """Toggle between showing and hiding the password."""
-        if self.password_visible:
+        if self.is_password_visible:
             self.admin_password_edit.setEchoMode(QLineEdit.Password)
             self.show_password_btn.setText(self.i18n.get_string("laps.button.show_password"))
-            self.password_visible = False
+            self.is_password_visible = False
         else:
             self.admin_password_edit.setEchoMode(QLineEdit.Normal)
             self.show_password_btn.setText(self.i18n.get_string("laps.button.hide_password"))
-            self.password_visible = True
+            self.is_password_visible = True

@@ -39,7 +39,7 @@ class ContactPropertiesDialog(QDialog):
         super().__init__(parent)
         self.samba_conn = samba_conn
         self.contact_dn = contact_dn
-        self.advanced_view = advanced_view
+        self.is_advanced_view = advanced_view
         self.logger = logging.getLogger("saduc_app." + self.__class__.__name__)
         self.i18n = I18nManager()
 
@@ -67,7 +67,7 @@ class ContactPropertiesDialog(QDialog):
         self.tab_widget.addTab(OrganizationTab(self.contact_props), self.i18n.get_string("user_properties.tab.organization"))
         self.tab_widget.addTab(MemberOfTab(self.samba_conn, self.contact_dn, self.contact_props), self.i18n.get_string("user_properties.tab.member_of"))
 
-        if self.advanced_view:
+        if self.is_advanced_view:
             self.tab_widget.addTab(ObjectTab(self.samba_conn, self.contact_dn, self.contact_props), "Object")
             self.tab_widget.addTab(SecurityTab(self.samba_conn, self.contact_dn), "Security")
             self.tab_widget.addTab(AttributeEditorTab(self.samba_conn, self.contact_dn), "Attribute Editor")
@@ -176,18 +176,86 @@ class ContactPropertiesDialog(QDialog):
         self.button_box.button(QDialogButtonBox.Apply).clicked.connect(self.apply_changes)
 
     def apply_changes(self):
-        """Apply the changes made in the dialog to the local contact object."""
-        self.logger.info("Applying changes for contact object (read-only mode)")
+        """Apply the changes made in the dialog to Active Directory."""
+        self.logger.info("Applying changes for contact to Active Directory")
         
-        # Update local properties from UI (contact doesn't have real-time updates yet)
+        # Update local properties from UI first
         self._update_local_properties_from_ui()
         
-        # Show read-only dialog but keep dialog open
-        QMessageBox.information(
-            self, 
-            "Read-Only Mode", 
-            "This application is currently in read-only mode. Changes cannot be saved to Active Directory."
-        )
+        # Build LDAP modifications
+        modifications = []
+        READ_ONLY_ATTRIBUTES = {
+            'objectGUID', 'objectSid', 'whenCreated', 'whenChanged',
+            'uSNCreated', 'uSNChanged', 'systemFlags', 'instanceType', 
+            'objectClass', 'objectCategory', 'distinguishedName'
+        }
+        
+        # Required attributes for contacts
+        REQUIRED_ATTRIBUTES = {'cn', 'objectClass', 'objectCategory'}
+        
+        # Validate required attributes first
+        validation_errors = []
+        for attr_name, new_values in getattr(self, 'contact_props', {}).items():
+            # Check for attempts to modify read-only attributes
+            if attr_name in READ_ONLY_ATTRIBUTES:
+                validation_errors.append(f"'{attr_name}' is a system attribute and cannot be modified")
+                continue
+                
+            # Check required attributes are not empty
+            if attr_name in REQUIRED_ATTRIBUTES:
+                if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
+                    validation_errors.append(f"'{attr_name}' is required and cannot be empty")
+        
+        if validation_errors:
+            error_msg = "The following errors must be corrected before saving:\n\n" + "\n".join(validation_errors)
+            QMessageBox.warning(
+                self, 
+                self.i18n.get_string("dialog.common.error.title"),
+                error_msg
+            )
+            return
+        
+        # Build modifications for valid changes
+        for attr_name, new_values in getattr(self, 'contact_props', {}).items():
+            if attr_name in READ_ONLY_ATTRIBUTES:
+                continue
+                
+            try:
+                if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
+                    modifications.append((ldap.MOD_DELETE, attr_name, None))
+                else:
+                    encoded_values = [v.encode('utf-8') for v in new_values if v.strip()]
+                    if encoded_values:
+                        modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
+                    else:
+                        modifications.append((ldap.MOD_DELETE, attr_name, None))
+            except Exception as e:
+                self.logger.error(f"Error preparing modification for {attr_name}: {e}")
+        
+        # Apply modifications
+        if modifications:
+            success, message = update_object_attributes(self.samba_conn, self.contact_dn, modifications)
+            
+            if success:
+                QMessageBox.information(
+                    self, 
+                    self.i18n.get_string("dialog.common.success.title"),
+                    self.i18n.get_text("contact_properties.apply.success", str(len(modifications)))
+                )
+                self.logger.info(f"Successfully applied {len(modifications)} changes to contact {self.contact_dn}")
+            else:
+                QMessageBox.critical(
+                    self, 
+                    self.i18n.get_string("dialog.common.error.title"),
+                    self.i18n.get_string("contact_properties.apply.error") + "\n\n" + message
+                )
+                self.logger.error(f"Failed to apply changes to contact {self.contact_dn}: {message}")
+        else:
+            QMessageBox.information(
+                self, 
+                self.i18n.get_string("dialog.common.info.title"),
+                self.i18n.get_string("contact_properties.apply.no_changes")
+            )
     
     def _update_local_properties_from_ui(self):
         """Update local contact properties from UI fields."""
@@ -196,16 +264,9 @@ class ContactPropertiesDialog(QDialog):
         self.contact_props.update(self.editable_contact_props)
 
     def accept(self):
-        """Override accept to show read-only dialog before closing."""
-        # Update local properties from UI
-        self._update_local_properties_from_ui()
-        
-        # Show read-only dialog
-        QMessageBox.information(
-            self, 
-            "Read-Only Mode", 
-            "This application is currently in read-only mode. Changes cannot be saved to Active Directory."
-        )
+        """Override accept to apply changes before closing."""
+        # Apply changes first
+        self.apply_changes()
         
         # Close the dialog
         super().accept()

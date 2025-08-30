@@ -45,7 +45,7 @@ class GroupPropertiesDialog(QDialog):
         super().__init__(parent)
         self.samba_conn = samba_conn
         self.group_dn = group_dn
-        self.advanced_view = advanced_view
+        self.is_advanced_view = advanced_view
         self.logger = logging.getLogger("saduc_app." + self.__class__.__name__)
         self.i18n = I18nManager()
 
@@ -343,7 +343,7 @@ class GroupPropertiesDialog(QDialog):
         self.tab_widget.addTab(ManagedByTab(self.samba_conn, group_props), self.i18n.get_string("computer_properties.tab.managed_by"))
 
         # Add advanced tabs if enabled
-        if self.advanced_view:
+        if self.is_advanced_view:
             self.tab_widget.addTab(ObjectTab(self.samba_conn, self.group_dn, self.group_props), self.i18n.get_string("user_properties.tab.object"))
             self.tab_widget.addTab(SecurityTab(self.samba_conn, self.group_dn), self.i18n.get_string("user_properties.tab.security"))
             self.tab_widget.addTab(AttributeEditorTab(self.samba_conn, self.group_dn), "Attribute Editor")
@@ -417,31 +417,114 @@ class GroupPropertiesDialog(QDialog):
                 self.editable_group_props[attr_name] = [new_value]
 
     def apply_changes(self):
-        """Apply the changes made in the dialog to the local group object."""
-        self.logger.info("Applying changes for group object (read-only mode)")
+        """Apply the changes made in the dialog to Active Directory."""
+        self.logger.info("Applying changes for group to Active Directory")
         
-        # Properties are already updated via _on_attribute_change()
-        # Just sync editable props to main props for other tabs
-        self.group_props.update(self.editable_group_props)
+        # Build list of LDAP modifications
+        modifications = []
         
-        # Show read-only dialog but keep dialog open
-        QMessageBox.information(
-            self, 
-            "Read-Only Mode", 
-            "This application is currently in read-only mode. Changes cannot be saved to Active Directory."
-        )
+        # Define read-only attributes
+        READ_ONLY_ATTRIBUTES = {
+            'objectGUID', 'objectSid', 'sAMAccountType',
+            'whenCreated', 'whenChanged', 'lastLogon', 'lastLogonTimestamp', 
+            'uSNCreated', 'uSNChanged', 'logonCount', 'badPwdCount',
+            'systemFlags', 'instanceType', 'objectClass', 'objectCategory',
+            'distinguishedName', 'canonicalName', 'parentGUID'
+        }
+        
+        # Required attributes that cannot be empty
+        REQUIRED_ATTRIBUTES = {'groupType', 'cn', 'objectCategory', 'objectClass', 'sAMAccountName'}
+        
+        # Validate required attributes first
+        validation_errors = []
+        for attr_name, new_values in self.editable_group_props.items():
+            old_values = self.group_props.get(attr_name, [])
+            if old_values == new_values:
+                continue
+                
+            # Check for attempts to modify read-only attributes
+            if attr_name in READ_ONLY_ATTRIBUTES:
+                validation_errors.append(f"'{attr_name}' is a system attribute and cannot be modified")
+                continue
+                
+            # Check required attributes are not empty
+            if attr_name in REQUIRED_ATTRIBUTES:
+                if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
+                    validation_errors.append(f"'{attr_name}' is required and cannot be empty")
+        
+        if validation_errors:
+            error_msg = "The following errors must be corrected before saving:\n\n" + "\n".join(validation_errors)
+            QMessageBox.warning(
+                self, 
+                self.i18n.get_string("dialog.common.error.title"),
+                error_msg
+            )
+            # Reset invalid changes back to original values
+            self.editable_group_props = copy.deepcopy(self.group_props)
+            self._populate_tabs()
+            return
+        
+        # Build modifications for valid changes
+        for attr_name, new_values in self.editable_group_props.items():
+            old_values = self.group_props.get(attr_name, [])
+            
+            # Skip if values haven't changed or read-only
+            if old_values == new_values or attr_name in READ_ONLY_ATTRIBUTES:
+                continue
+            
+            try:
+                # Handle empty values (delete attribute)
+                if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
+                    modifications.append((ldap.MOD_DELETE, attr_name, None))
+                else:
+                    # Filter out empty strings and encode for LDAP
+                    encoded_values = []
+                    for value in new_values:
+                        if value.strip():
+                            encoded_values.append(value.encode('utf-8'))
+                    
+                    if encoded_values:
+                        modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
+                    else:
+                        modifications.append((ldap.MOD_DELETE, attr_name, None))
+                        
+            except Exception as e:
+                self.logger.error(f"Error preparing modification for {attr_name}: {e}")
+                continue
+        
+        # Apply modifications if any exist
+        if modifications:
+            success, message = update_object_attributes(self.samba_conn, self.group_dn, modifications)
+            
+            if success:
+                # Update local properties with changes
+                self.group_props.update(self.editable_group_props)
+                
+                QMessageBox.information(
+                    self, 
+                    self.i18n.get_string("dialog.common.success.title"),
+                    self.i18n.get_text("group_properties.apply.success", str(len(modifications)))
+                )
+                
+                self.logger.info(f"Successfully applied {len(modifications)} changes to group {self.group_dn}")
+            else:
+                QMessageBox.critical(
+                    self, 
+                    self.i18n.get_string("dialog.common.error.title"),
+                    self.i18n.get_string("group_properties.apply.error") + "\n\n" + message
+                )
+                self.logger.error(f"Failed to apply changes to group {self.group_dn}: {message}")
+        else:
+            QMessageBox.information(
+                self, 
+                self.i18n.get_string("dialog.common.info.title"),
+                self.i18n.get_string("group_properties.apply.no_changes")
+            )
     
     def accept(self):
-        """Override accept to show read-only dialog before closing."""
-        # Sync editable props to main props
-        self.group_props.update(self.editable_group_props)
-        
-        # Show read-only dialog
-        QMessageBox.information(
-            self, 
-            "Read-Only Mode", 
-            "This application is currently in read-only mode. Changes cannot be saved to Active Directory."
-        )
+        """Override accept to apply changes before closing."""
+        # Apply changes first
+        self.apply_changes()
         
         # Close the dialog
         super().accept()

@@ -2,10 +2,10 @@
 import logging
 from PyQt5.QtWidgets import QDialog, QMessageBox
 from PyQt5.QtCore import Qt
-from user_dialogs import NewUserWizard, CopyUserWizard, DeleteUserDialog, DisableUserDialog, NewGroupDialog, EnableUserDialog
+from user_dialogs import NewUserWizard, CopyUserWizard, DeleteUserDialog, DisableUserDialog, NewGroupDialog, NewOUDialog, DeleteOUDialog, EnableUserDialog
 from computer_dialogs import DisableComputerDialog, EnableComputerDialog
 from password_reset_dialog import PasswordResetDialog
-from samba_backend import create_user_samba, copy_user_samba, get_user_properties, create_group_samba, delete_user_samba, disable_user_samba, enable_user_samba, disable_computer_samba, enable_computer_samba, reset_password_samba
+from samba_backend import create_user_samba, copy_user_samba, get_user_properties, create_group_samba, create_ou_samba, delete_user_samba, delete_ou_samba, disable_user_samba, enable_user_samba, disable_computer_samba, enable_computer_samba, reset_password_samba
 from user_properties import UserPropertiesDialog
 from computer_properties import ComputerPropertiesDialog
 from group_properties import GroupPropertiesDialog
@@ -279,7 +279,7 @@ def on_view_customize_action_triggered(main_window):
 
 def on_view_objects_as_containers_toggled(main_window, checked):
     main_window.logger.info(f"'Objects as containers' toggled: {checked}")
-    main_window.adModel.set_objects_as_containers(checked)
+    main_window.adModel.set_show_objects_as_containers(checked)
 
 
 def on_advanced_features_toggled(main_window, checked):
@@ -312,7 +312,25 @@ def on_new_computer_action_triggered(main_window):
     QMessageBox.information(main_window, "Not Implemented", "'New Computer...' is not yet implemented.")
 
 def on_new_ou_action_triggered(main_window):
-    QMessageBox.information(main_window, "Not Implemented", "'New Organizational Unit...' is not yet implemented.")
+    main_window.logger.info("New OU action triggered. Opening NewOUDialog.")
+    dialog = NewOUDialog(main_window, container_dn=main_window.currentContainerDN)
+    if dialog.exec_() == QDialog.Accepted:
+        main_window.logger.info("New OU dialog was accepted.")
+        ou_data = dialog.get_ou_data()
+        if ou_data and ou_data['name']:
+            main_window.logger.info(f"OU data collected from dialog: {ou_data}")
+            success, message_key, args = create_ou_samba(main_window.samba_conn, ou_data)
+            message = main_window.i18n.get_text(message_key, *args)
+            if success:
+                QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
+                # Refresh the tree model to show the new OU
+                main_window.adModel.set_advanced_view(main_window.adModel.is_advanced_view)
+            else:
+                QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
+        else:
+            main_window.logger.info("New OU dialog was cancelled or no name was entered.")
+    else:
+        main_window.logger.info("New OU dialog was rejected.")
 
 def on_new_contact_action_triggered(main_window):
     QMessageBox.information(main_window, "Not Implemented", "'New Contact...' is not yet implemented.")
@@ -345,7 +363,111 @@ def on_new_query_action_triggered(main_window):
     QMessageBox.information(main_window, "Not Implemented", "'New Query...' is not yet implemented.")
 
 def on_delete_container_action_triggered(main_window):
-    QMessageBox.information(main_window, "Not Implemented", "'Delete' for containers is not yet implemented.")
+    """Handle delete action for containers and OUs."""
+    if not main_window.currentContainerDN:
+        main_window.logger.warning("No container/OU selected for deletion.")
+        return
+    
+    # Get container/OU information
+    try:
+        import ldap
+        from samba_backend import get_ldap_conn
+        
+        # Get connection (we can't use main_window.samba_conn if it's not available)
+        samba_conn = main_window.samba_conn
+        
+        # Check what type of object this is
+        res = samba_conn.search_s(main_window.currentContainerDN, ldap.SCOPE_BASE, '(objectClass=*)', ['objectClass', 'ou', 'cn', 'name'])
+        if not res:
+            QMessageBox.critical(main_window, "Error", "Could not find the selected object.")
+            return
+            
+        obj_attrs = res[0][1]
+        object_classes = [cls.decode('utf-8') for cls in obj_attrs.get('objectClass', [])]
+        
+        # Get object name
+        obj_name = "Unknown"
+        for attr in ['ou', 'cn', 'name']:
+            if attr in obj_attrs:
+                obj_name = obj_attrs[attr][0].decode('utf-8')
+                break
+        
+        if 'organizationalUnit' in object_classes:
+            # Handle OU deletion with enhanced checking
+            main_window.logger.info(f"Delete OU action triggered for: {obj_name}")
+            
+            # First check if OU has children to determine dialog type
+            has_children = False
+            try:
+                import ldap
+                child_res = samba_conn.search_s(main_window.currentContainerDN, ldap.SCOPE_ONELEVEL, '(objectClass=*)', ['cn'])
+                has_children = len(child_res) > 0
+            except Exception as e:
+                main_window.logger.warning(f"Could not check for child objects: {e}")
+            
+            # Show confirmation dialog with appropriate options
+            delete_dialog = DeleteOUDialog(obj_name, has_children, main_window)
+            if delete_dialog.exec_() != QDialog.Accepted:
+                main_window.logger.info("OU deletion cancelled by user.")
+                return
+            
+            # Get recursive delete preference from dialog
+            recursive_delete = delete_dialog.is_recursive_delete()
+            main_window.logger.info(f"OU deletion confirmed - Recursive: {recursive_delete}")
+            
+            # Attempt to delete the OU
+            success, message_key, args = delete_ou_samba(samba_conn, main_window.currentContainerDN, recursive_delete)
+            message = main_window.i18n.get_text(message_key, *args)
+            
+            if success:
+                QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
+                # Refresh the tree view to reflect the deletion
+                main_window.adModel.set_advanced_view(main_window.adModel.is_advanced_view)
+                main_window.logger.info(f"Successfully deleted OU: {obj_name}")
+            else:
+                # Show appropriate error message
+                if "critical_ou_cannot_delete" in message_key:
+                    QMessageBox.critical(main_window, "Cannot Delete System OU", 
+                                       f"The OU '{obj_name}' is a critical system OU and cannot be deleted.")
+                elif "ou_protected_from_deletion" in message_key:
+                    QMessageBox.warning(main_window, "OU Protected", 
+                                      f"The OU '{obj_name}' is protected from accidental deletion.\n\n"
+                                      f"To delete this OU, first disable protection in its Object properties tab.")
+                elif "ou_has_critical_children" in message_key:
+                    critical_objects = args[1] if len(args) > 1 else "critical system objects"
+                    QMessageBox.critical(main_window, "Cannot Delete OU", 
+                                       f"The OU '{obj_name}' contains critical system objects that cannot be deleted:\n\n"
+                                       f"{critical_objects}\n\n"
+                                       f"These objects are essential to Active Directory operation.")
+                elif "ou_has_protected_children" in message_key:
+                    protected_objects = args[1] if len(args) > 1 else "protected objects"
+                    QMessageBox.warning(main_window, "OU Contains Protected Objects", 
+                                      f"The OU '{obj_name}' contains objects that are protected from accidental deletion:\n\n"
+                                      f"{protected_objects}\n\n"
+                                      f"Remove protection from these objects before deleting the OU.")
+                elif "ou_recursive_delete_failed" in message_key:
+                    failed_objects = args[1] if len(args) > 1 else "some objects"
+                    QMessageBox.critical(main_window, "Recursive Delete Failed", 
+                                       f"Failed to recursively delete OU '{obj_name}'.\n\n"
+                                       f"Could not delete the following child objects:\n{failed_objects}\n\n"
+                                       f"The OU and some child objects may still exist. Please check manually.")
+                elif "ou_has_children" in message_key:
+                    child_count = args[1] if len(args) > 1 else "some"
+                    QMessageBox.warning(main_window, "OU Contains Objects", 
+                                      f"The OU '{obj_name}' contains {child_count} objects and cannot be deleted.\n\n"
+                                      f"Delete or move all objects from this OU before attempting to delete it.")
+                else:
+                    QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
+                main_window.logger.warning(f"Failed to delete OU: {message}")
+        
+        else:
+            # Handle other container types (not yet implemented)
+            QMessageBox.information(main_window, "Not Implemented", 
+                                  f"Delete operation for '{obj_name}' (type: {', '.join(object_classes)}) is not yet implemented.")
+    
+    except Exception as e:
+        main_window.logger.error(f"Error during delete operation: {e}")
+        QMessageBox.critical(main_window, "Error", f"An error occurred during the delete operation:\n{str(e)}")
 
 from container_properties import ContainerPropertiesDialog
 
@@ -354,12 +476,59 @@ def on_container_properties_action_triggered(main_window):
         main_window.logger.warning("No container selected for properties.")
         return
 
-    dialog = ContainerPropertiesDialog(main_window.samba_conn, main_window.currentContainerDN, main_window)
+    # Pass the correct advanced_view parameter from the main window's model
+    advanced_view = main_window.adModel.is_advanced_view if hasattr(main_window.adModel, 'is_advanced_view') else False
+    dialog = ContainerPropertiesDialog(main_window.samba_conn, main_window.currentContainerDN, advanced_view, main_window)
     dialog.exec_()
 
 def on_change_dc_action_triggered(main_window):
     main_window.logger.info("Change Domain Controller action triggered.")
     QMessageBox.information(main_window, "Not Implemented", "Changing the domain controller is not yet implemented.")
+
+def on_properties_action_triggered(main_window):
+    """Open properties dialog for the currently selected object based on its object class."""
+    if not main_window.current_selected_dn:
+        main_window.logger.warning("No object selected for properties.")
+        return
+
+    # Get object data to determine the object class
+    obj_data = None
+    if hasattr(main_window, 'tableModel') and main_window.tableModel:
+        for i in range(main_window.tableModel.rowCount()):
+            row_data = main_window.tableModel.get_object_data(main_window.tableModel.index(i, 0))
+            if row_data and row_data.get('dn') == main_window.current_selected_dn:
+                obj_data = row_data
+                break
+
+    if not obj_data:
+        main_window.logger.warning(f"Could not find object data for {main_window.current_selected_dn}")
+        return
+
+    object_class = obj_data.get('objectClass', [])
+    if isinstance(object_class, str):
+        object_class = [object_class]
+
+    # Get advanced_view setting
+    advanced_view = main_window.adModel.is_advanced_view if hasattr(main_window.adModel, 'is_advanced_view') else False
+
+    # Open appropriate properties dialog based on object class
+    if 'user' in object_class:
+        dialog = UserPropertiesDialog(main_window.samba_conn, main_window.current_selected_dn, advanced_view, main_window)
+    elif 'group' in object_class:
+        dialog = GroupPropertiesDialog(main_window.samba_conn, main_window.current_selected_dn, advanced_view, main_window)
+    elif 'computer' in object_class:
+        dialog = ComputerPropertiesDialog(main_window.samba_conn, main_window.current_selected_dn, advanced_view, main_window)
+    elif 'contact' in object_class:
+        dialog = ContactPropertiesDialog(main_window.samba_conn, main_window.current_selected_dn, advanced_view, main_window)
+    elif 'printQueue' in object_class:
+        dialog = PrinterPropertiesDialog(main_window.samba_conn, main_window.current_selected_dn, advanced_view, main_window)
+    elif 'organizationalUnit' in object_class or 'container' in object_class:
+        dialog = ContainerPropertiesDialog(main_window.samba_conn, main_window.current_selected_dn, advanced_view, main_window)
+    else:
+        # Generic object - use container properties as fallback
+        dialog = ContainerPropertiesDialog(main_window.samba_conn, main_window.current_selected_dn, advanced_view, main_window)
+
+    dialog.exec_()
 
 def on_list_item_double_clicked(main_window, index):
     if not index.isValid():

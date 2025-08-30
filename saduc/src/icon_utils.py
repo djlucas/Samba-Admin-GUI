@@ -12,11 +12,11 @@ logger = logging.getLogger("saduc_app.icon_utils")
 
 def get_saduc_icon():
     """Get the main SADUC application icon."""
-    return _load_icon('saduc.png', 'Main SADUC icon')
+    return _load_icon('directory.png', 'Main SADUC icon')
 
 def get_search_icon():
     """Get the search/saved queries icon."""
-    return _load_icon('saduc-search.png', 'SADUC search icon')
+    return _load_icon('directory-search.png', 'SADUC search icon')
 
 def _load_icon(filename, description):
     """Load an icon with fallback handling."""

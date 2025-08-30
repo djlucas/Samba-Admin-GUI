@@ -694,3 +694,159 @@ class NewGroupDialog(QDialog):
             'scope': scope,
             'type': group_type
         }
+
+
+class NewOUDialog(QDialog):
+    """
+    A dialog for creating a new Organizational Unit.
+    """
+    def __init__(self, parent=None, container_dn=None):
+        super().__init__(parent)
+        self.i18n = I18nManager()
+        self.container_dn = container_dn or BASE_DN
+        
+        self.setWindowTitle(self.i18n.get_string("dialog.new_ou.title"))
+        self.setMinimumSize(400, 300)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(10)
+
+        # Header section with icon and "Create in" info
+        header_layout = QHBoxLayout()
+        
+        # OU icon
+        icon_label = QLabel()
+        abs_icon_path = os.path.join(os.path.dirname(__file__), 'res', 'icons', 'folder_ou.png')
+        icon_label.setPixmap(QIcon(abs_icon_path).pixmap(32, 32))
+        
+        header_layout.addWidget(icon_label)
+        header_layout.addStretch()
+        
+        # "Create in" label
+        create_in_label = QLabel(f"Create in: {self._format_dn_for_display(self.container_dn)}")
+        create_in_label.setAlignment(Qt.AlignRight)
+        header_layout.addWidget(create_in_label)
+        
+        main_layout.addLayout(header_layout)
+
+        # Separator
+        separator1 = QFrame()
+        separator1.setFrameShape(QFrame.HLine)
+        separator1.setFrameShadow(QFrame.Sunken)
+        main_layout.addWidget(separator1)
+
+        # Name field
+        form_layout = QFormLayout()
+        self.ou_name_edit = QLineEdit()
+        self.ou_name_edit.textChanged.connect(self._validate_input)
+        form_layout.addRow(self.i18n.get_string("dialog.new_ou.label.name"), self.ou_name_edit)
+        
+        main_layout.addLayout(form_layout)
+
+        # Protection checkbox
+        self.protect_checkbox = QCheckBox(self.i18n.get_string("dialog.new_ou.checkbox.protect"))
+        self.protect_checkbox.setChecked(True)  # Default to yes
+        main_layout.addWidget(self.protect_checkbox)
+
+        # Extra space
+        main_layout.addStretch()
+
+        # Bottom separator
+        separator2 = QFrame()
+        separator2.setFrameShape(QFrame.HLine)
+        separator2.setFrameShadow(QFrame.Sunken)
+        main_layout.addWidget(separator2)
+
+        # Buttons
+        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        main_layout.addWidget(self.buttonBox)
+
+        self._validate_input()
+
+    def _format_dn_for_display(self, dn):
+        """Format DN for user display, showing only the CN part."""
+        if not dn:
+            return ""
+        try:
+            parsed = ldap.dn.explode_dn(dn, notypes=True)
+            return parsed[0] if parsed else dn
+        except:
+            return dn
+
+    def _validate_input(self):
+        name_valid = bool(self.ou_name_edit.text().strip())
+        self.buttonBox.button(QDialogButtonBox.Ok).setEnabled(name_valid)
+
+    def get_ou_data(self):
+        return {
+            'name': self.ou_name_edit.text().strip(),
+            'container_dn': self.container_dn,
+            'protect_from_deletion': self.protect_checkbox.isChecked()
+        }
+
+
+class DeleteOUDialog(QDialog):
+    """Dialog for confirming OU deletion."""
+    
+    def __init__(self, ou_name, has_children=False, parent=None):
+        super().__init__(parent)
+        self.ou_name = ou_name
+        self.has_children = has_children
+        self.i18n = I18nManager()
+        
+        self.setWindowTitle("Confirm Delete OU")
+        self.setModal(True)
+        self.setFixedSize(400, 200 if has_children else 150)
+        
+        layout = QVBoxLayout(self)
+        
+        # Warning message
+        warning_label = QLabel(f"Are you sure you want to delete the OU '{ou_name}'?")
+        warning_label.setWordWrap(True)
+        layout.addWidget(warning_label)
+        
+        # Additional warning
+        warning2_label = QLabel("This action cannot be undone.")
+        warning2_label.setStyleSheet("color: red; font-weight: bold;")
+        layout.addWidget(warning2_label)
+        
+        # Recursive deletion checkbox (only shown if OU has children)
+        self.recursive_checkbox = None
+        if has_children:
+            layout.addSpacing(10)
+            
+            info_label = QLabel("This OU contains child objects.")
+            info_label.setStyleSheet("color: #666; font-style: italic;")
+            layout.addWidget(info_label)
+            
+            self.recursive_checkbox = QCheckBox("Delete all child objects (recursive delete)")
+            self.recursive_checkbox.setStyleSheet("font-weight: bold; color: #d32f2f;")
+            layout.addWidget(self.recursive_checkbox)
+            
+            warning3_label = QLabel("⚠ WARNING: This will permanently delete ALL contents including nested OUs, users, computers, and other objects!")
+            warning3_label.setWordWrap(True)
+            warning3_label.setStyleSheet("color: #d32f2f; font-size: 10px; background-color: #ffebee; padding: 5px; border: 1px solid #ffcdd2;")
+            layout.addWidget(warning3_label)
+        
+        layout.addStretch()
+        
+        # Buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.Yes | QDialogButtonBox.No,
+            Qt.Horizontal, self
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        
+        # Make "No" the default
+        button_box.button(QDialogButtonBox.No).setDefault(True)
+        button_box.button(QDialogButtonBox.Yes).setText("Delete")
+        button_box.button(QDialogButtonBox.No).setText("Cancel")
+        
+        layout.addWidget(button_box)
+    
+    def is_recursive_delete(self):
+        """Return True if recursive delete was selected."""
+        return self.recursive_checkbox is not None and self.recursive_checkbox.isChecked()

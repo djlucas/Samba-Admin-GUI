@@ -52,7 +52,7 @@ class UserPropertiesDialog(QDialog):
         super().__init__(parent)
         self.samba_conn = samba_conn
         self.user_dn = user_dn
-        self.advanced_view = advanced_view
+        self.is_advanced_view = advanced_view
         self.logger = logging.getLogger("saduc_app." + self.__class__.__name__)
         self.i18n = I18nManager()
 
@@ -500,7 +500,7 @@ class UserPropertiesDialog(QDialog):
         self.display_name_header.setText(self.display_name)
 
         # Add tabs according to specified order
-        if not self.advanced_view:
+        if not self.is_advanced_view:
             # Normal view: Member Of, COM+
             self.tab_widget.addTab(MemberOfTab(self.samba_conn, self.user_dn, self.user_props, show_primary_group=True), self.i18n.get_string("user_properties.tab.member_of"))
             self.tab_widget.addTab(ComPlusTab(), self.i18n.get_string("user_properties.tab.com_plus"))
@@ -599,32 +599,161 @@ class UserPropertiesDialog(QDialog):
                 
                 self.logger.info(f"Selected manager: {display_name} ({manager_dn})")
 
+    def _validate_changes(self):
+        """Validate all changes before applying to Active Directory."""
+        errors = []
+        
+        # Define read-only attributes that should never be modified
+        READ_ONLY_ATTRIBUTES = {
+            'objectGUID', 'objectSid', 'sAMAccountType',
+            'whenCreated', 'whenChanged', 'lastLogon', 'lastLogonTimestamp', 
+            'lastLogoff', 'pwdLastSet', 'accountExpires', 'badPasswordTime',
+            'uSNCreated', 'uSNChanged', 'logonCount', 'badPwdCount',
+            'systemFlags', 'instanceType', 'objectClass', 'objectCategory',
+            'primaryGroupID', 'primaryGroupToken', 'nextRid', 'revision',
+            'distinguishedName', 'canonicalName', 'parentGUID', 'masteredBy'
+        }
+        
+        # Required attributes that cannot be empty
+        REQUIRED_ATTRIBUTES = {'cn', 'objectCategory', 'objectClass', 'sAMAccountName'}
+        
+        for attr_name, new_values in self.editable_user_props.items():
+            # Skip unchanged attributes
+            old_values = self.user_props.get(attr_name, [])
+            if old_values == new_values:
+                continue
+            
+            # Check for attempts to modify read-only attributes
+            if attr_name in READ_ONLY_ATTRIBUTES:
+                errors.append(self.i18n.get_text("user_properties.validation.readonly_attribute", attr_name))
+                continue
+            
+            # Check required attributes are not empty
+            if attr_name in REQUIRED_ATTRIBUTES:
+                if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
+                    errors.append(self.i18n.get_text("user_properties.validation.required_attribute", attr_name))
+                    continue
+            
+            # Email validation with improved requirements
+            if attr_name == 'mail' and new_values and new_values[0]:
+                email = new_values[0].strip()
+                if email and '@' in email:
+                    parts = email.split('@')
+                    if len(parts) != 2:  # Must have exactly one @
+                        errors.append(self.i18n.get_text("user_properties.validation.email_invalid", email))
+                    else:
+                        before_at, after_at = parts
+                        # Check before @ has at least one alphanumeric
+                        if not before_at or not any(c.isalnum() for c in before_at):
+                            errors.append(self.i18n.get_text("user_properties.validation.email_before_at", email))
+                        # Check after @ has at least one alphanumeric  
+                        elif not after_at or not any(c.isalnum() for c in after_at):
+                            errors.append(self.i18n.get_text("user_properties.validation.email_after_at", email))
+                elif email:  # Non-empty but no @
+                    errors.append(self.i18n.get_text("user_properties.validation.email_invalid", email))
+            
+            # sAMAccountName validation
+            if attr_name == 'sAMAccountName' and new_values and new_values[0]:
+                sam_name = new_values[0].strip()
+                if not sam_name.replace('_', '').replace('-', '').isalnum():
+                    errors.append(self.i18n.get_text("user_properties.validation.sam_invalid", sam_name))
+        
+        return errors
+    
+    def _build_modifications(self):
+        """Build LDAP modification list from validated changes."""
+        modifications = []
+        
+        for attr_name, new_values in self.editable_user_props.items():
+            old_values = self.user_props.get(attr_name, [])
+            
+            # Skip if values haven't changed
+            if old_values == new_values:
+                continue
+            
+            try:
+                # Handle empty values (delete attribute)
+                if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
+                    modifications.append((ldap.MOD_DELETE, attr_name, None))
+                else:
+                    # Filter out empty strings and encode for LDAP
+                    encoded_values = []
+                    for value in new_values:
+                        if value.strip():  # Only add non-empty values
+                            encoded_values.append(value.encode('utf-8'))
+                    
+                    if encoded_values:
+                        modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
+                    else:
+                        modifications.append((ldap.MOD_DELETE, attr_name, None))
+                        
+            except Exception as e:
+                self.logger.error(f"Error preparing modification for {attr_name}: {e}")
+                continue
+        
+        return modifications
+    
+    def _reset_invalid_changes(self):
+        """Reset editable properties back to original values."""
+        self.editable_user_props = copy.deepcopy(self.user_props)
+        # Refresh UI to show original values
+        self._populate_tabs()
+
     def apply_changes(self):
-        """Apply the changes made in the dialog to the local user object."""
-        self.logger.info("Applying changes for user (read-only mode)")
+        """Apply the changes made in the dialog to Active Directory."""
+        self.logger.info("Applying changes for user to Active Directory")
         
-        # Properties are already updated via _on_attribute_change()
-        # Just sync editable props to main props for other tabs
-        self.user_props.update(self.editable_user_props)
+        # First, validate all changes
+        validation_errors = self._validate_changes()
+        if validation_errors:
+            error_msg = self.i18n.get_string("user_properties.validation.errors_header") + "\n\n" + "\n".join(validation_errors)
+            QMessageBox.warning(
+                self, 
+                self.i18n.get_string("dialog.common.error.title"),
+                error_msg
+            )
+            # Reset invalid changes back to original values
+            self._reset_invalid_changes()
+            return
         
-        # Show read-only dialog but keep dialog open
-        QMessageBox.information(
-            self, 
-            "Read-Only Mode", 
-            "This application is currently in read-only mode. Changes cannot be saved to Active Directory."
-        )
+        # Build list of LDAP modifications for valid changes
+        modifications = self._build_modifications()
+        
+        # Apply modifications if any exist
+        if modifications:
+            success, message = update_object_attributes(self.samba_conn, self.user_dn, modifications)
+            
+            if success:
+                # Update local properties with changes
+                self.user_props.update(self.editable_user_props)
+                
+                QMessageBox.information(
+                    self, 
+                    self.i18n.get_string("dialog.common.success.title"),
+                    self.i18n.get_text("user_properties.apply.success", str(len(modifications)))
+                )
+                
+                self.logger.info(f"Successfully applied {len(modifications)} changes to user {self.user_dn}")
+            else:
+                QMessageBox.critical(
+                    self, 
+                    self.i18n.get_string("dialog.common.error.title"),
+                    self.i18n.get_string("user_properties.apply.error") + "\n\n" + message
+                )
+                # Reset back to original values on failure
+                self._reset_invalid_changes()
+                self.logger.error(f"Failed to apply changes to user {self.user_dn}: {message}")
+        else:
+            QMessageBox.information(
+                self, 
+                self.i18n.get_string("dialog.common.info.title"),
+                self.i18n.get_string("user_properties.apply.no_changes")
+            )
     
     def accept(self):
-        """Override accept to show read-only dialog before closing."""
-        # Sync editable props to main props
-        self.user_props.update(self.editable_user_props)
-        
-        # Show read-only dialog
-        QMessageBox.information(
-            self, 
-            "Read-Only Mode", 
-            "This application is currently in read-only mode. Changes cannot be saved to Active Directory."
-        )
+        """Override accept to apply changes before closing."""
+        # Apply changes first
+        self.apply_changes()
         
         # Close the dialog
         super().accept()

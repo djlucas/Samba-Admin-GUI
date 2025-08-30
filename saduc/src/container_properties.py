@@ -36,7 +36,7 @@ class ContainerPropertiesDialog(QDialog):
         super().__init__(parent)
         self.samba_conn = samba_conn
         self.container_dn = container_dn
-        self.advanced_view = advanced_view
+        self.is_advanced_view = advanced_view
         self.logger = logging.getLogger("saduc_app." + self.__class__.__name__)
         self.i18n = I18nManager()
 
@@ -153,8 +153,9 @@ class ContainerPropertiesDialog(QDialog):
             self.country_combo.setCurrentText(props.get('co', [''])[0])
 
         # Add advanced tabs if enabled
-        if self.advanced_view:
-            self.tab_widget.addTab(ObjectTab(self.samba_conn, self.container_dn, self.container_props), "Object")
+        if self.is_advanced_view:
+            self.object_tab = ObjectTab(self.samba_conn, self.container_dn, self.container_props)
+            self.tab_widget.addTab(self.object_tab, "Object")
             self.tab_widget.addTab(SecurityTab(self.samba_conn, self.container_dn), "Security")
             self.tab_widget.addTab(AttributeEditorTab(self.samba_conn, self.container_dn), "Attribute Editor")
 
@@ -202,19 +203,135 @@ class ContainerPropertiesDialog(QDialog):
             else:
                 self.logger.debug(f"Attribute '{attr_name}' set to '{new_value}'")
                 self.editable_container_props[attr_name] = [new_value]
+    
 
     def apply_changes(self):
-        """Logs the changes that have been made in the dialog."""
-        self.logger.info("Applying changes for container object.")
-        changes = {}
-        for attr, value in self.editable_container_props.items():
-            if self.container_props.get(attr) != value:
-                changes[attr] = value
-                self.logger.debug(f"Change to be applied: {attr}: {self.container_props.get(attr)} -> {value}")
-
-        if not changes:
-            self.logger.info("No changes to apply.")
+        """Apply the changes made in the dialog to Active Directory."""
+        self.logger.info("Applying changes for container to Active Directory")
+        
+        # Build LDAP modifications
+        modifications = []
+        READ_ONLY_ATTRIBUTES = {
+            'objectGUID', 'objectSid', 'whenCreated', 'whenChanged',
+            'uSNCreated', 'uSNChanged', 'systemFlags', 'instanceType', 
+            'objectClass', 'objectCategory', 'distinguishedName'
+        }
+        
+        # Required attributes for containers/OUs - basic set
+        REQUIRED_ATTRIBUTES = {'cn', 'objectClass', 'objectCategory'}
+        
+        # Validate required attributes first
+        validation_errors = []
+        for attr_name, new_values in self.editable_container_props.items():
+            old_values = self.container_props.get(attr_name, [])
+            if old_values == new_values:
+                continue
+                
+            # Check for attempts to modify read-only attributes
+            if attr_name in READ_ONLY_ATTRIBUTES:
+                validation_errors.append(f"'{attr_name}' is a system attribute and cannot be modified")
+                continue
+                
+            # Check required attributes are not empty
+            if attr_name in REQUIRED_ATTRIBUTES:
+                if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
+                    validation_errors.append(f"'{attr_name}' is required and cannot be empty")
+        
+        if validation_errors:
+            error_msg = "The following errors must be corrected before saving:\n\n" + "\n".join(validation_errors)
+            QMessageBox.warning(
+                self, 
+                self.i18n.get_string("dialog.common.error.title"),
+                error_msg
+            )
             return
-
-        self.logger.info("Changes logged. Write-back is not yet implemented.")
-        self.container_props = copy.deepcopy(self.editable_container_props)
+        
+        # Build modifications for valid changes
+        for attr_name, new_values in self.editable_container_props.items():
+            old_values = self.container_props.get(attr_name, [])
+            
+            # Skip if values haven't changed or read-only
+            if old_values == new_values or attr_name in READ_ONLY_ATTRIBUTES:
+                continue
+            
+            try:
+                # Handle empty values (delete attribute)
+                if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
+                    modifications.append((ldap.MOD_DELETE, attr_name, None))
+                else:
+                    # Filter out empty strings and encode for LDAP
+                    encoded_values = []
+                    for value in new_values:
+                        if value.strip():
+                            encoded_values.append(value.encode('utf-8'))
+                    
+                    if encoded_values:
+                        modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
+                    else:
+                        modifications.append((ldap.MOD_DELETE, attr_name, None))
+                        
+            except Exception as e:
+                self.logger.error(f"Error preparing modification for {attr_name}: {e}")
+                continue
+        
+        # Check for ObjectTab protection changes
+        protection_changes_made = False
+        protection_success_messages = []
+        protection_error_messages = []
+        
+        if hasattr(self, 'object_tab') and self.object_tab:
+            prot_success, prot_message = self.object_tab.apply_protection_changes()
+            if prot_message:  # prot_message is None if no change was needed
+                protection_changes_made = True
+                if prot_success:
+                    protection_success_messages.append(prot_message)
+                else:
+                    protection_error_messages.append(prot_message)
+        
+        # Apply LDAP attribute modifications if any exist
+        ldap_success = True
+        if modifications:
+            ldap_success, message = update_object_attributes(self.samba_conn, self.container_dn, modifications)
+            
+            if ldap_success:
+                # Update local properties with changes
+                self.container_props.update(self.editable_container_props)
+                self.logger.info(f"Successfully applied {len(modifications)} LDAP changes to container {self.container_dn}")
+            else:
+                self.logger.error(f"Failed to apply LDAP changes to container {self.container_dn}: {message}")
+        
+        # Show results to user
+        if protection_error_messages or not ldap_success:
+            # Show errors
+            error_parts = []
+            if not ldap_success:
+                error_parts.append(f"LDAP changes failed: {message}")
+            if protection_error_messages:
+                error_parts.append("Protection changes: " + "; ".join(protection_error_messages))
+                
+            QMessageBox.critical(
+                self, 
+                self.i18n.get_string("dialog.common.error.title"),
+                "\n\n".join(error_parts)
+            )
+        elif modifications or protection_changes_made:
+            # Show success
+            success_parts = []
+            if modifications:
+                success_parts.append(f"Applied {len(modifications)} attribute changes")
+            if protection_success_messages:
+                success_parts.append("; ".join(protection_success_messages))
+                
+            QMessageBox.information(
+                self, 
+                self.i18n.get_string("dialog.common.success.title"),
+                ". ".join(success_parts) + "."
+            )
+            self.logger.info(f"Successfully applied changes to container {self.container_dn}")
+        else:
+            # No changes
+            QMessageBox.information(
+                self, 
+                self.i18n.get_string("dialog.common.info.title"),
+                self.i18n.get_string("container_properties.apply.no_changes")
+            )

@@ -157,6 +157,7 @@ dialog.reset_password.error.password_too_short=Password must be at least 3 chara
 # Generic Dialogs and Backend Messages
 dialog.common.success.title=Success
 dialog.common.error.title=Error
+dialog.common.info.title=Information
 dialog.common.ok=OK
 dialog.common.cancel=Cancel
 dialog.common.error.generic=An unexpected error occurred. Check the debug log for details.
@@ -451,10 +452,20 @@ context_menu.properties=Properties
 # New Group Dialog
 dialog.new_group.title=New Object - Group
 
+# New OU Dialog
+dialog.new_ou.title=New Object - Organizational Unit
+dialog.new_ou.label.name=Name:
+dialog.new_ou.checkbox.protect=Protect container from accidental deletion
+
 # Backend messages for group creation
 samba_backend.success.create_group=Group '{0}' created successfully.
 samba_backend.error.create_group=An error occurred while creating the group: {0}
 samba_backend.error.group_exists=A group with the name '{0}' already exists in this location.
+
+# Backend messages for OU creation  
+samba_backend.success.create_ou=Organizational Unit '{0}' created successfully.
+samba_backend.error.create_ou=An error occurred while creating the organizational unit: {0}
+samba_backend.error.ou_exists=An organizational unit with the name '{0}' already exists in this location.
 
 # Attribute Editor
 attribute_editor.edit=Edit
@@ -568,3 +579,60 @@ laps.button.expire_now=Expire now
 laps.button.copy_password=Copy password
 laps.button.show_password=Show password
 laps.button.hide_password=Hide password
+
+# User Properties Apply Changes
+user_properties.apply.no_changes=No changes were made to save.
+user_properties.apply.success=Successfully applied {0} changes to user account.
+user_properties.apply.error=Failed to save changes to Active Directory:
+user_properties.validation.readonly_attribute='{0}' is a system attribute and cannot be modified
+user_properties.validation.required_attribute='{0}' is required and cannot be empty
+user_properties.validation.email_invalid='{0}' is not a valid email address
+user_properties.validation.email_before_at='{0}' must have at least one alphanumeric character before @
+user_properties.validation.email_after_at='{0}' must have at least one alphanumeric character after @
+user_properties.validation.sam_invalid='{0}' contains invalid characters. Use only letters, numbers, hyphens, and underscores
+user_properties.validation.errors_header=The following errors must be corrected before saving:
+
+# Computer Properties Apply Changes
+computer_properties.apply.no_changes=No changes were made to save.
+computer_properties.apply.success=Successfully applied {0} changes to computer account.
+computer_properties.apply.error=Failed to save changes to Active Directory:
+
+# Group Properties Apply Changes
+group_properties.apply.no_changes=No changes were made to save.
+group_properties.apply.success=Successfully applied {0} changes to group.
+group_properties.apply.error=Failed to save changes to Active Directory:
+
+# Contact Properties Apply Changes
+contact_properties.apply.no_changes=No changes were made to save.
+contact_properties.apply.success=Successfully applied {0} changes to contact.
+contact_properties.apply.error=Failed to save changes to Active Directory:
+
+# Printer Properties Apply Changes
+printer_properties.apply.no_changes=No changes were made to save.
+printer_properties.apply.success=Successfully applied {0} changes to printer.
+printer_properties.apply.error=Failed to save changes to Active Directory:
+
+# Container Properties Apply Changes
+container_properties.apply.no_changes=No changes were made to save.
+container_properties.apply.success=Successfully applied {0} changes to container.
+container_properties.apply.error=Failed to save changes to Active Directory:
+
+# Delete OU Messages
+samba_backend.error.ou_not_found=Organizational Unit '{0}' not found.
+samba_backend.error.critical_ou_cannot_delete=The Organizational Unit '{0}' is a critical system OU and cannot be deleted.
+samba_backend.error.ou_protected_from_deletion=The Organizational Unit '{0}' is protected from accidental deletion.
+samba_backend.error.ou_has_children=The Organizational Unit '{0}' contains {1} child objects and cannot be deleted.
+samba_backend.error.ou_has_critical_children=The Organizational Unit '{0}' contains critical system objects that cannot be deleted: {1}.
+samba_backend.error.ou_has_protected_children=The Organizational Unit '{0}' contains objects that are protected from accidental deletion: {1}. Remove protection before deleting the OU.
+samba_backend.error.ou_recursive_delete_failed=Failed to recursively delete OU '{0}'. Could not delete the following child objects: {1}.
+samba_backend.success.delete_organizationalUnit=Organizational Unit '{0}' has been successfully deleted.
+
+# Protection errors for all object types
+samba_backend.error.user_protected_from_deletion=The user '{0}' is protected from accidental deletion.
+samba_backend.error.computer_protected_from_deletion=The computer '{0}' is protected from accidental deletion.
+samba_backend.error.contact_protected_from_deletion=The contact '{0}' is protected from accidental deletion.
+samba_backend.error.printer_protected_from_deletion=The printer '{0}' is protected from accidental deletion.
+samba_backend.error.object_protected_from_deletion=The object '{0}' is protected from accidental deletion.
+
+# Critical computer protection
+samba_backend.error.critical_computer_cannot_delete=The computer '{0}' appears to be a Domain Controller and cannot be deleted.

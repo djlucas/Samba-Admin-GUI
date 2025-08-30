@@ -107,10 +107,10 @@ def main():
 
     app = QApplication(sys.argv)
     
-    # Set application icon
-    from icon_utils import get_saduc_icon
+    # Set application icon (for taskbar/system tray)
+    from icon_utils import _load_icon
     appLogger.info("Loading application icon...")
-    icon = get_saduc_icon()
+    icon = _load_icon('saduc.png', 'Application icon')
     if not icon.isNull():
         app.setWindowIcon(icon)
         appLogger.info("Application icon set successfully")
@@ -131,10 +131,10 @@ def main():
         
     window = SADUCMainWindow(samba_conn, connected_server)
     
-    # Ensure the window icon is properly set
+    # Ensure the window icon is properly set (title bar uses directory icon)
     from icon_utils import get_saduc_icon
     appLogger.info("Setting window icon...")
-    icon = get_saduc_icon()
+    icon = get_saduc_icon()  # This now returns directory.png
     if not icon.isNull():
         window.setWindowIcon(icon)
         appLogger.info("Window icon set successfully")

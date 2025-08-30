@@ -17,7 +17,7 @@
   A native GUI replacement for Microsoft's ADUC, enabling:
   - User, group, and computer account management
   - OU creation and delegation
-  - Attribute editing and schema-aware validatio
+  - Attribute editing and schema-aware validation
 
 - **sdns** – Samba DNS Manager  
   A native GUI replacement for Microsoft's DNS, enabling:
@@ -106,25 +106,40 @@ python main.py
 
 ## 🧪 Development Status
 
-### Current Implementation Status (~55% Complete)
+### Current Implementation Status (~75% Complete)
 
-**SADUC (Samba Active Directory Users & Computers)** - *~80% Complete*
-- ✅ **Working Features:**
+**SADUC (Samba Active Directory Users & Computers)** - *~85% Complete*
+
+- ✅ **Core Features (Complete):**
   - LDAP connectivity and authentication via Kerberos
   - Complete tree navigation of AD structure
-  - Property dialogs for all major object types (Users, Computers, Groups, etc.)
+  - Property dialogs for all major object types (Users, Computers, Groups, OUs, Containers)
+  - **Property write-back functionality** - All property dialog changes are persistent
   - Advanced search functionality with custom LDAP filters
   - Attribute editor with schema-aware validation
   - User creation/copy with full UPN and password support
-  - **Object deletion** for users, computers, groups, contacts, printers, and OUs
+  - **New OU creation** with "Protect from accidental deletion" option
+  - **Enhanced object deletion** with protection checking and recursive options:
+    - Smart protection detection for all object types
+    - Critical system object blocking (Domain Controllers, System OUs)
+    - Deep recursive scanning for nested protected objects
+    - User choice for bulk/recursive deletion with detailed warnings
   - **Enable/disable functionality** for user and computer accounts
   - **Password reset** with "user must change password at next logon" support
+  - **Real Windows ACL manipulation** using impacket for "Protect from accidental deletion"
   - Context menus with dynamic enable/disable options based on object state
 
-- ❌ **Critical Missing Features:**
-  - Write-back functionality for property dialog modifications
-  - Group membership management with proper DN resolution
+- ✅ **Advanced Security Features:**
+  - Authentic Active Directory ACE detection and manipulation
+  - Enterprise-grade protection checking across all object types
+  - Domain Controller identification and blocking from deletion
+  - Critical system OU protection (Domain Controllers, System, Builtin, etc.)
+  - Consistent "Protect from accidental deletion" functionality across all dialogs
+
+- ⚠️ **Remaining Features:**
+  - Group membership management (add/remove users from groups)
   - Move and rename operations for AD objects
+  - Security tab functionality (partially implemented)
 
 **SDNS (Samba DNS Manager)** - *~15% Complete*
 - ✅ Basic GUI structure exists
@@ -136,15 +151,24 @@ python main.py
 
 | Module   | Completion | Status     | Notes                                  |
 |----------|------------|------------|----------------------------------------|
-| saduc    | ~80%       | 🚧 Active Development | Core CRUD operations complete, property write-back pending |
+| saduc    | ~85%       | 🚧 Active Development | Core functionality complete, advanced features remaining |
 | sdns     | ~15%       | 🚧 Early Stage | Basic structure only, core functionality missing |
 | sadss    | 0%         | 🕒 Planned | Pending topology mapping logic |
 | sgpoe    | 0%         | 🕒 Planned | Requires policy template scaffolding |
 
-### Immediate Development Priorities
+### Recent Major Achievements
 
-1. **Implement Property Write-Back** - Critical for making property dialog changes persistent 
-2. **Group Membership Management** - Add/remove users from groups with proper DN resolution
-3. **Move and Rename Operations** - Complete basic object manipulation functionality
-4. **Add Comprehensive Testing** - No test files currently exist
+1. ✅ **Property Write-Back Implementation** - All property dialogs now save changes to Active Directory
+2. ✅ **New OU Creation** - Complete OU creation workflow with protection options
+3. ✅ **Enhanced Delete Operations** - Enterprise-grade deletion with recursive scanning and protection validation
+4. ✅ **Real ACL Manipulation** - Authentic Windows security descriptor manipulation using impacket
+5. ✅ **Smart Protection System** - Consistent "Protect from accidental deletion" across all object types
+
+### Next Development Priorities
+
+1. **Group Membership Management** - Add/remove users from groups with proper DN resolution
+2. **Move and Rename Operations** - Complete basic object manipulation functionality
+3. **Security Tab Enhancement** - Complete the partially implemented security permissions interface
+4. **Computer Creation Wizard** - Add new computer account creation functionality
+5. **Add Comprehensive Testing** - Implement test suite for core functionality
 

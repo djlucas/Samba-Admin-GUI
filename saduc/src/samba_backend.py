@@ -373,7 +373,7 @@ def get_paged_results(samba_conn, dn, scope, search_filter, attributes):
 
     return all_results
 
-def _is_tree_branch(entry, advanced_view=False, objects_as_containers=False):
+def _is_tree_branch(entry, advanced_view=False, show_objects_as_containers=False):
     """
     Helper to check if an LDAP object is a structural container for the tree view.
     """
@@ -391,7 +391,7 @@ def _is_tree_branch(entry, advanced_view=False, objects_as_containers=False):
     if len(object_classes.intersection(TREE_BRANCH_CLASSES)) > 0:
         return True
     
-    if objects_as_containers:
+    if show_objects_as_containers:
         if len(object_classes.intersection({'user', 'group', 'contact', 'computer'})) > 0:
             return True
 
@@ -418,7 +418,7 @@ def get_forest_root_info(samba_conn):
         logger.error(f"LDAP error querying RootDSE: {e}")
         return None
 
-def get_expandable_children(samba_conn, dn, advanced_view=False, object_class=None, objects_as_containers=False):
+def get_expandable_children(samba_conn, dn, advanced_view=False, object_class=None, show_objects_as_containers=False):
     """
     Retrieves children of a given DN that should appear as branches in the tree view.
     """
@@ -446,8 +446,8 @@ def get_expandable_children(samba_conn, dn, advanced_view=False, object_class=No
                         'has_sub_containers': False
                     })
             # Use our stricter check to see if this object belongs in the tree
-            elif _is_tree_branch(entry, advanced_view, objects_as_containers) and name_attr:
-                has_sub_containers = has_expandable_children(samba_conn, child_dn, advanced_view, objects_as_containers=objects_as_containers)
+            elif _is_tree_branch(entry, advanced_view, show_objects_as_containers) and name_attr:
+                has_sub_containers = has_expandable_children(samba_conn, child_dn, advanced_view, show_objects_as_containers=show_objects_as_containers)
                 children.append({
                     'name': name_attr[0].decode('utf-8'),
                     'dn': child_dn,
@@ -463,13 +463,13 @@ def get_expandable_children(samba_conn, dn, advanced_view=False, object_class=No
         return []
 
 
-def has_expandable_children(samba_conn, dn, advanced_view=False, object_class=None, objects_as_containers=False):
+def has_expandable_children(samba_conn, dn, advanced_view=False, object_class=None, show_objects_as_containers=False):
     """
     Checks if a given DN has any children that are themselves structural containers.
     """
     logger.debug(f"Checking for expandable children in DN: {dn}")
 
-    if not advanced_view and dn.lower() in NON_EXPANDABLE_CONTAINERS and not objects_as_containers:
+    if not advanced_view and dn.lower() in NON_EXPANDABLE_CONTAINERS and not show_objects_as_containers:
         return False
 
     try:
@@ -484,7 +484,7 @@ def has_expandable_children(samba_conn, dn, advanced_view=False, object_class=No
 
         for child_dn, entry in res:
             # Use the same strict check here
-            if _is_tree_branch(entry, advanced_view, objects_as_containers):
+            if _is_tree_branch(entry, advanced_view, show_objects_as_containers):
                 return True # Found at least one valid branch child
         return False
     except ldap.NO_SUCH_OBJECT:
@@ -699,6 +699,35 @@ def create_group_samba(samba_conn, group_data):
         return False, "samba_backend.error.create_group", [str(e)]
 
 
+def create_ou_samba(samba_conn, ou_data):
+    """Creates a new Organizational Unit in Samba AD."""
+    logger.info(f"Samba backend: Creating OU with data: {ou_data}")
+    
+    dn = f"OU={ou_data['name']},{ou_data['container_dn']}"
+    
+    attrs = []
+    attrs.append(('objectClass', [b'top', b'organizationalUnit']))
+    attrs.append(('ou', [ou_data['name'].encode('utf-8')]))
+    
+    # Add protection from accidental deletion if requested
+    if ou_data.get('protect_from_deletion', False):
+        # In Samba AD, we can use the msDS-HostServiceAccount attribute
+        # or implement protection through ACLs. For now, we'll add a description
+        # indicating protection status and handle it in deletion logic
+        attrs.append(('description', [b'Protected from accidental deletion']))
+
+    try:
+        samba_conn.add_s(dn, attrs)
+        logger.info(f"Successfully created OU: {dn}")
+        return True, "samba_backend.success.create_ou", [ou_data['name']]
+    except ldap.ALREADY_EXISTS:
+        logger.error(f"OU '{dn}' already exists.")
+        return False, "samba_backend.error.ou_exists", [ou_data['name']]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error creating OU '{dn}': {e}")
+        return False, "samba_backend.error.create_ou", [str(e)]
+
+
 def copy_user_samba(samba_conn, source_user_dn, new_user_data):
     """Creates a new user by copying properties from an existing user."""
     logger.info(f"Samba backend: Copying user from DN '{source_user_dn}' to new user with data: {new_user_data}")
@@ -853,8 +882,236 @@ def delete_user_samba(samba_conn, user_dn):
     return delete_object_samba(samba_conn, user_dn, 'user')
 
 
+def _get_object_name(attrs):
+    """Helper function to extract a readable name from LDAP attributes."""
+    # Try common name attributes in order of preference
+    for attr_name in ['cn', 'ou', 'name', 'displayName']:
+        if attr_name in attrs and attrs[attr_name]:
+            value = attrs[attr_name][0]
+            if isinstance(value, bytes):
+                return value.decode('utf-8')
+            return str(value)
+    return "Unknown"
+
+def _scan_descendants_for_protection(samba_conn, base_dn):
+    """Recursively scan all descendants of a DN for protected or critical objects.
+    
+    Returns:
+        tuple: (protected_objects, critical_objects) where each is a list of (name, type) tuples
+    """
+    from acl_utils import check_protection_from_deletion
+    
+    protected_descendants = []
+    critical_descendants = []
+    
+    try:
+        # Search all descendants (SCOPE_SUBTREE) except the base object itself
+        descendants = samba_conn.search_s(
+            base_dn, 
+            ldap.SCOPE_SUBTREE, 
+            '(objectClass=*)', 
+            ['cn', 'ou', 'name', 'objectClass', 'nTSecurityDescriptor']
+        )
+        
+        # Skip the first result (base DN itself)
+        for child_dn, child_attrs in descendants[1:]:
+            if not child_attrs:  # Skip if no attributes
+                continue
+                
+            child_name = _get_object_name(child_attrs)
+            child_classes = [cls.decode('utf-8') if isinstance(cls, bytes) else cls 
+                           for cls in child_attrs.get('objectClass', [])]
+            
+            # Check if child is a critical system object
+            if 'organizationalUnit' in child_classes:
+                ou_name_child = child_attrs.get('ou', [child_attrs.get('name', [b'Unknown'])[0]])[0]
+                if isinstance(ou_name_child, bytes):
+                    ou_name_child = ou_name_child.decode('utf-8')
+                if ou_name_child in ['Domain Controllers', 'System', 'Builtin', 'Users', 'Computers']:
+                    critical_descendants.append((child_name, 'Critical System OU'))
+                    continue  # Don't check protection for critical objects
+            
+            # Check if child is protected from deletion
+            if 'nTSecurityDescriptor' in child_attrs:
+                sd_data = child_attrs['nTSecurityDescriptor'][0]
+                if check_protection_from_deletion(sd_data):
+                    object_type = 'OU' if 'organizationalUnit' in child_classes else \
+                                 'User' if 'user' in child_classes else \
+                                 'Computer' if 'computer' in child_classes else \
+                                 'Contact' if 'contact' in child_classes else \
+                                 'Object'
+                    # Include the relative path for better identification
+                    relative_path = child_dn.replace(f",{base_dn}", "").replace(base_dn, "")
+                    display_name = f"{child_name} ({relative_path})" if relative_path else child_name
+                    protected_descendants.append((display_name, object_type))
+        
+        logger.debug(f"Deep scan found {len(protected_descendants)} protected and {len(critical_descendants)} critical descendants")
+        
+    except Exception as e:
+        logger.error(f"Error scanning descendants for protection: {e}")
+        
+    return protected_descendants, critical_descendants
+
+def delete_ou_samba(samba_conn, ou_dn, recursive=False):
+    """Deletes an OU from Samba AD with protection checking and optional recursive deletion."""
+    from acl_utils import check_protection_from_deletion
+    
+    logger.info(f"Samba backend: Deleting OU with DN: {ou_dn}")
+    
+    try:
+        # First, get the OU to check if it exists and get its name
+        res = samba_conn.search_s(ou_dn, ldap.SCOPE_BASE, '(objectClass=organizationalUnit)', ['ou', 'name', 'nTSecurityDescriptor'])
+        if not res:
+            logger.error(f"OU not found: {ou_dn}")
+            return False, "samba_backend.error.ou_not_found", [ou_dn]
+        
+        obj_attrs = res[0][1]
+        ou_name = obj_attrs.get('ou', [obj_attrs.get('name', [b'Unknown'])[0]])[0].decode('utf-8')
+        
+        # Check for system/critical OUs that should never be deleted
+        critical_ou_names = ['Domain Controllers', 'System', 'Builtin', 'Users', 'Computers']
+        if ou_name in critical_ou_names:
+            logger.warning(f"Attempted to delete critical system OU: {ou_name}")
+            return False, "samba_backend.error.critical_ou_cannot_delete", [ou_name]
+        
+        # Check for protection from accidental deletion
+        if 'nTSecurityDescriptor' in obj_attrs:
+            sd_data = obj_attrs['nTSecurityDescriptor'][0]
+            if check_protection_from_deletion(sd_data):
+                logger.warning(f"OU '{ou_name}' is protected from accidental deletion")
+                return False, "samba_backend.error.ou_protected_from_deletion", [ou_name]
+        
+        # Check if OU has child objects and analyze protection status
+        try:
+            # For recursive delete, we need to scan ALL descendants for protection FIRST
+            if recursive:
+                logger.info(f"Recursive delete requested - performing deep scan for protected objects in {ou_name}")
+                protected_descendants, critical_descendants = _scan_descendants_for_protection(samba_conn, ou_dn)
+                
+                if critical_descendants:
+                    child_list = ', '.join([f"{name} ({type_})" for name, type_ in critical_descendants])
+                    logger.warning(f"OU '{ou_name}' contains critical system objects in descendants: {child_list}")
+                    return False, "samba_backend.error.ou_has_critical_children", [ou_name, child_list]
+                
+                if protected_descendants:
+                    child_list = ', '.join([f"{name} ({type_})" for name, type_ in protected_descendants])
+                    logger.warning(f"OU '{ou_name}' contains protected objects in descendants: {child_list}")
+                    return False, "samba_backend.error.ou_has_protected_children", [ou_name, child_list]
+                
+                # If we get here with recursive=True, no protected/critical objects found in entire tree
+                logger.info(f"Deep scan complete - no protected objects found, proceeding with recursive delete of {ou_name}")
+            
+            # Check immediate children (for both recursive and non-recursive)
+            child_res = samba_conn.search_s(ou_dn, ldap.SCOPE_ONELEVEL, '(objectClass=*)', ['cn', 'ou', 'name', 'objectClass', 'nTSecurityDescriptor'])
+            if child_res:
+                child_count = len(child_res)
+                
+                # For non-recursive deletes, analyze immediate children for protection
+                if not recursive:
+                    protected_children = []
+                    critical_children = []
+                    
+                    # Analyze each immediate child object
+                    for child_dn, child_attrs in child_res:
+                        child_name = _get_object_name(child_attrs)
+                        child_classes = [cls.decode('utf-8') if isinstance(cls, bytes) else cls 
+                                       for cls in child_attrs.get('objectClass', [])]
+                        
+                        # Check if child is a critical system object
+                        if 'organizationalUnit' in child_classes:
+                            ou_name_child = child_attrs.get('ou', [child_attrs.get('name', [b'Unknown'])[0]])[0]
+                            if isinstance(ou_name_child, bytes):
+                                ou_name_child = ou_name_child.decode('utf-8')
+                            if ou_name_child in ['Domain Controllers', 'System', 'Builtin', 'Users', 'Computers']:
+                                critical_children.append((child_name, 'Critical System OU'))
+                                continue
+                        
+                        # Check if child is protected from deletion
+                        if 'nTSecurityDescriptor' in child_attrs:
+                            sd_data = child_attrs['nTSecurityDescriptor'][0]
+                            if check_protection_from_deletion(sd_data):
+                                object_type = 'OU' if 'organizationalUnit' in child_classes else \
+                                             'User' if 'user' in child_classes else \
+                                             'Computer' if 'computer' in child_classes else \
+                                             'Contact' if 'contact' in child_classes else \
+                                             'Object'
+                                protected_children.append((child_name, object_type))
+                    
+                    # Report findings for immediate children (non-recursive case)
+                    if critical_children:
+                        child_list = ', '.join([f"{name} ({type_})" for name, type_ in critical_children])
+                        logger.warning(f"OU '{ou_name}' contains critical system objects: {child_list}")
+                        return False, "samba_backend.error.ou_has_critical_children", [ou_name, child_list]
+                    
+                    if protected_children:
+                        child_list = ', '.join([f"{name} ({type_})" for name, type_ in protected_children])
+                        logger.warning(f"OU '{ou_name}' contains protected objects: {child_list}")
+                        return False, "samba_backend.error.ou_has_protected_children", [ou_name, child_list]
+                
+                # If we get here, OU has children but none are protected
+                if not recursive:
+                    logger.warning(f"OU '{ou_name}' has {child_count} child objects (none protected)")
+                    return False, "samba_backend.error.ou_has_children", [ou_name, str(child_count)]
+                else:
+                    # Recursive delete requested - delete all child objects first
+                    logger.info(f"Recursive delete: removing {child_count} child objects from OU '{ou_name}'")
+                    deleted_count = 0
+                    failed_deletions = []
+                    
+                    # Delete children in reverse order (deepest first for nested OUs)
+                    for child_dn, child_attrs in reversed(child_res):
+                        child_name = _get_object_name(child_attrs)
+                        child_classes = [cls.decode('utf-8') if isinstance(cls, bytes) else cls 
+                                       for cls in child_attrs.get('objectClass', [])]
+                        
+                        try:
+                            # Determine object type and delete accordingly
+                            if 'organizationalUnit' in child_classes:
+                                success, _, _ = delete_ou_samba(samba_conn, child_dn, recursive=True)
+                            else:
+                                # For other objects, use generic delete
+                                object_type = 'user' if 'user' in child_classes else \
+                                             'computer' if 'computer' in child_classes else \
+                                             'contact' if 'contact' in child_classes else \
+                                             'object'
+                                success, _, _ = delete_object_samba(samba_conn, child_dn, object_type)
+                            
+                            if success:
+                                deleted_count += 1
+                                logger.debug(f"Successfully deleted child object: {child_name}")
+                            else:
+                                failed_deletions.append(child_name)
+                                logger.error(f"Failed to delete child object: {child_name}")
+                                
+                        except Exception as e:
+                            failed_deletions.append(child_name)
+                            logger.error(f"Exception deleting child object '{child_name}': {e}")
+                    
+                    # Report results
+                    if failed_deletions:
+                        failed_list = ', '.join(failed_deletions)
+                        logger.error(f"Failed to delete {len(failed_deletions)} child objects: {failed_list}")
+                        return False, "samba_backend.error.ou_recursive_delete_failed", [ou_name, failed_list]
+                    
+                    logger.info(f"Successfully deleted all {deleted_count} child objects from OU '{ou_name}'")
+                
+        except ldap.LDAPError as e:
+            logger.warning(f"Could not check child objects for OU '{ou_name}': {e}")
+            # If we can't check children, proceed cautiously but warn user
+            pass
+        
+        # All checks passed, delete the OU
+        return delete_object_samba(samba_conn, ou_dn, 'organizationalUnit')
+        
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error while deleting OU '{ou_dn}': {e}")
+        return False, "samba_backend.error.ldap_error", [str(e)]
+
+
 def delete_object_samba(samba_conn, object_dn, object_type="object"):
     """Generic function to delete any AD object (user, computer, contact, printer, OU)."""
+    from acl_utils import check_protection_from_deletion
+    
     logger.info(f"Samba backend: Deleting {object_type} with DN: {object_dn}")
     
     # Object type configurations
@@ -870,8 +1127,9 @@ def delete_object_samba(samba_conn, object_dn, object_type="object"):
     config = object_configs.get(object_type, object_configs['object'])
     
     try:
-        # Get object name for success message
-        res = samba_conn.search_s(object_dn, ldap.SCOPE_BASE, config['filter'], config['name_attrs'])
+        # Get object name and security descriptor for protection checking
+        search_attrs = config['name_attrs'] + ['nTSecurityDescriptor', 'objectClass']
+        res = samba_conn.search_s(object_dn, ldap.SCOPE_BASE, config['filter'], search_attrs)
         if not res:
             logger.error(f"{object_type.title()} not found: {object_dn}")
             return False, f"samba_backend.error.{object_type}_not_found", [object_dn]
@@ -882,6 +1140,27 @@ def delete_object_samba(samba_conn, object_dn, object_type="object"):
             if attr in obj_attrs:
                 obj_name = obj_attrs[attr][0].decode('utf-8')
                 break
+        
+        # Check for special computer object protections
+        if object_type == 'computer':
+            # Check if this is a Domain Controller
+            object_classes = obj_attrs.get('objectClass', [])
+            if b'computer' in object_classes:
+                # Get the computer name to check for DC naming patterns
+                computer_name = obj_name.rstrip('$')  # Remove trailing $ from computer accounts
+                
+                # Check if it's likely a Domain Controller (common naming patterns)
+                dc_indicators = ['DC', 'DOMAINCONTROLLER', 'PDC', 'BDC']
+                if any(indicator in computer_name.upper() for indicator in dc_indicators):
+                    logger.warning(f"Attempted to delete what appears to be a Domain Controller: {computer_name}")
+                    return False, "samba_backend.error.critical_computer_cannot_delete", [computer_name]
+        
+        # Check for protection from accidental deletion (for all object types)
+        if 'nTSecurityDescriptor' in obj_attrs:
+            sd_data = obj_attrs['nTSecurityDescriptor'][0]
+            if check_protection_from_deletion(sd_data):
+                logger.warning(f"{object_type.title()} '{obj_name}' is protected from accidental deletion")
+                return False, f"samba_backend.error.{object_type}_protected_from_deletion", [obj_name]
         
         # Delete the object
         samba_conn.delete_s(object_dn)
@@ -990,9 +1269,6 @@ def delete_printer_samba(samba_conn, printer_dn):
     """Deletes a printer from Samba AD."""
     return delete_object_samba(samba_conn, printer_dn, 'printer')
 
-def delete_ou_samba(samba_conn, ou_dn):
-    """Deletes an organizational unit from Samba AD."""
-    return delete_object_samba(samba_conn, ou_dn, 'organizationalUnit')
 
 def disable_computer_samba(samba_conn, computer_dn):
     """Disables a computer account in Samba AD."""

@@ -28,7 +28,7 @@ class ADTreeItem:
         self._dn = dn
         self._object_class = object_class
         self._children = []
-        self._children_fetched = False
+        self._are_children_fetched = False
         # This flag determines if the item can have container children.
         # It's set during fetchMore. None means we haven't checked yet.
         self._has_sub_containers = None
@@ -66,10 +66,10 @@ class ADTreeItem:
         return self._object_class
 
     def children_fetched(self):
-        return self._children_fetched
+        return self._are_children_fetched
 
     def set_children_fetched(self, value):
-        self._children_fetched = value
+        self._are_children_fetched = value
 
     def set_has_sub_containers(self, value):
         self._has_sub_containers = value
@@ -90,16 +90,16 @@ class ADTreeModel(QAbstractItemModel):
         self.logger = logging.getLogger("saduc_app." + self.__class__.__name__)
         self.samba_conn = samba_conn
         self.connected_server = connected_server
-        self.advanced_view = advanced_view
-        self.objects_as_containers = False
+        self.is_advanced_view = advanced_view
+        self.show_objects_as_containers = False
 
         # Create an invisible root item for our model
         self.root_item = ADTreeItem(None, dn=None)
 
         self._icons = {
-            "saducRoot": "saduc.png",
+            "saducRoot": "directory.png",
             "savedQueriesRoot": "folder.png",
-            "savedQuery": "saduc-search.png",
+            "savedQuery": "directory-search.png",
             "server": "dns.png",
             "domainDns": "domain.png",
             "organizationalUnit": "folder_ou.png",
@@ -122,15 +122,15 @@ class ADTreeModel(QAbstractItemModel):
 
     def set_advanced_view(self, enabled):
         self.logger.info(f"Setting advanced view to: {enabled}")
-        self.advanced_view = enabled
+        self.is_advanced_view = enabled
         self.beginResetModel()
         self.root_item = ADTreeItem(None, dn=None)
         self._setup_model()
         self.endResetModel()
 
-    def set_objects_as_containers(self, enabled):
+    def set_show_objects_as_containers(self, enabled):
         self.logger.info(f"Setting objects as containers to: {enabled}")
-        self.objects_as_containers = enabled
+        self.show_objects_as_containers = enabled
         self.beginResetModel()
         self.root_item = ADTreeItem(None, dn=None)
         self._setup_model()
@@ -258,11 +258,11 @@ class ADTreeModel(QAbstractItemModel):
             return item.has_sub_containers()
 
         object_class = item.object_class()
-        if self.objects_as_containers and object_class and any(c in object_class for c in ['user', 'group', 'contact', 'computer']):
-            return has_expandable_children(self.samba_conn, item.dn(), self.advanced_view, object_class=object_class, objects_as_containers=self.objects_as_containers)
+        if self.show_objects_as_containers and object_class and any(c in object_class for c in ['user', 'group', 'contact', 'computer']):
+            return has_expandable_children(self.samba_conn, item.dn(), self.is_advanced_view, object_class=object_class, show_objects_as_containers=self.show_objects_as_containers)
 
         # Fallback: check the backend directly
-        return has_expandable_children(self.samba_conn, item.dn(), self.advanced_view, objects_as_containers=self.objects_as_containers)
+        return has_expandable_children(self.samba_conn, item.dn(), self.is_advanced_view, show_objects_as_containers=self.show_objects_as_containers)
 
     def canFetchMore(self, parent):
         if not parent.isValid():
@@ -296,10 +296,10 @@ class ADTreeModel(QAbstractItemModel):
         else:
             self.logger.debug(f"ADTreeModel: Fetching children for '{parent_dn}'.")
             child_data_list = []
-            if self.objects_as_containers and object_class and any(c in object_class for c in ['user', 'group', 'contact', 'computer']):
-                child_data_list = get_expandable_children(self.samba_conn, parent_dn, self.advanced_view, object_class=object_class, objects_as_containers=self.objects_as_containers)
+            if self.show_objects_as_containers and object_class and any(c in object_class for c in ['user', 'group', 'contact', 'computer']):
+                child_data_list = get_expandable_children(self.samba_conn, parent_dn, self.is_advanced_view, object_class=object_class, show_objects_as_containers=self.show_objects_as_containers)
             else:
-                child_data_list = get_expandable_children(self.samba_conn, parent_dn, self.advanced_view, objects_as_containers=self.objects_as_containers)
+                child_data_list = get_expandable_children(self.samba_conn, parent_dn, self.is_advanced_view, show_objects_as_containers=self.show_objects_as_containers)
 
         if child_data_list:
             self.beginInsertRows(parent_index, 0, len(child_data_list) - 1)

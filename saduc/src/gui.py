@@ -407,7 +407,7 @@ class SADUCMainWindow(QMainWindow):
         advanced_view_enabled = self.advancedFeaturesAction.isChecked() if self.advancedFeaturesAction else False
         objects_as_containers_enabled = self.objectsAsContainersAction.isChecked() if self.objectsAsContainersAction else False
         self.adModel = ADTreeModel(self.samba_conn, self.connected_server, advanced_view=advanced_view_enabled)
-        self.adModel.set_objects_as_containers(objects_as_containers_enabled)
+        self.adModel.set_show_objects_as_containers(objects_as_containers_enabled)
         self.treePane.setModel(self.adModel)
         self.adModel.modelReset.connect(self._expand_tree_after_reset)
         self.adModel.rowsInserted.connect(self._on_rows_inserted)
