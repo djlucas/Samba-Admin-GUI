@@ -99,6 +99,7 @@ class ADTreeModel(QAbstractItemModel):
         self._icons = {
             "saducRoot": "directory.png",
             "savedQueriesRoot": "folder.png",
+            "savedQueriesFolder": "folder.png",
             "savedQuery": "directory-search.png",
             "server": "dns.png",
             "domainDns": "domain.png",
@@ -293,6 +294,9 @@ class ADTreeModel(QAbstractItemModel):
         if object_class == 'savedQueriesRoot':
             self.logger.debug("ADTreeModel: Fetching saved queries.")
             child_data_list = self._get_saved_queries_children()
+        elif object_class == 'savedQueriesFolder':
+            self.logger.debug(f"ADTreeModel: Fetching saved queries folder contents for '{parent_dn}'.")
+            child_data_list = self._get_saved_queries_folder_children(parent_dn)
         else:
             self.logger.debug(f"ADTreeModel: Fetching children for '{parent_dn}'.")
             child_data_list = []
@@ -314,11 +318,24 @@ class ADTreeModel(QAbstractItemModel):
         self.logger.debug(f"ADTreeModel: Fetched and added {len(child_data_list)} children for '{parent_dn}'.")
     
     def _get_saved_queries_children(self):
-        """Get saved queries as child data for the tree model."""
+        """Get saved queries and folders as child data for the tree model."""
         try:
-            searches = config_manager.list_saved_searches()
             child_data_list = []
             
+            # Add subdirectories as expandable folders
+            folders = config_manager.list_saved_search_folders()
+            for folder_name in folders:
+                folder_data = {
+                    'name': folder_name,
+                    'dn': f"local://saved-queries/{folder_name}",
+                    'objectClass': 'savedQueriesFolder',
+                    'has_sub_containers': True,
+                    'description': 'Saved queries folder'
+                }
+                child_data_list.append(folder_data)
+            
+            # Add saved queries (JSON files) in root directory
+            searches = config_manager.list_saved_searches()
             for search_meta in searches:
                 child_data = {
                     'name': search_meta['name'],
@@ -329,10 +346,44 @@ class ADTreeModel(QAbstractItemModel):
                 }
                 child_data_list.append(child_data)
             
-            self.logger.debug(f"ADTreeModel: Found {len(child_data_list)} saved queries.")
+            self.logger.debug(f"ADTreeModel: Found {len(folders)} folders and {len(searches)} saved queries.")
             return child_data_list
             
         except Exception as e:
             self.logger.error(f"ADTreeModel: Failed to load saved queries: {e}")
+            return []
+    
+    def _get_saved_queries_folder_children(self, folder_dn):
+        """Get contents of a saved queries subfolder."""
+        try:
+            # Extract relative path from DN
+            if folder_dn.startswith('local://saved-queries/'):
+                relative_path = folder_dn.replace('local://saved-queries/', '')
+            else:
+                self.logger.error(f"Invalid saved queries folder DN: {folder_dn}")
+                return []
+            
+            child_data_list = []
+            
+            # Add subdirectories
+            folders = config_manager.list_saved_search_folders(relative_path)
+            for folder_name in folders:
+                folder_data = {
+                    'name': folder_name,
+                    'dn': f"{folder_dn}/{folder_name}",
+                    'objectClass': 'savedQueriesFolder',
+                    'has_sub_containers': True,
+                    'description': 'Saved queries folder'
+                }
+                child_data_list.append(folder_data)
+            
+            # Add saved queries (JSON files) in this directory
+            # TODO: Update list_saved_searches to support subdirectories
+            
+            self.logger.debug(f"ADTreeModel: Found {len(folders)} subfolders in {relative_path}.")
+            return child_data_list
+            
+        except Exception as e:
+            self.logger.error(f"ADTreeModel: Failed to load saved queries folder {folder_dn}: {e}")
             return []
 

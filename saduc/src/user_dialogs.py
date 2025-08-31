@@ -487,6 +487,73 @@ class NewUserWizard(QWizard):
 
         super().accept()
 
+# --- Configurable User Wizard ---
+class ConfigurableUserWizard(QWizard):
+    """
+    A configurable multi-page wizard for creating user-like accounts.
+    Can be used for regular users, inetOrgPerson, etc.
+    """
+    def __init__(self, parent=None, container_dn=None, window_title_key="dialog.new_user.title", 
+                 page1_title_key="dialog.new_user.page1.title", page1_subtitle_key="dialog.new_user.page1.subtitle", 
+                 page1_intro_key="dialog.new_user.page1.intro_text", icon_path="src/res/icons/user_add.png",
+                 page2_title_key="dialog.new_user.page2.title", page2_subtitle_key="dialog.new_user.page2.subtitle",
+                 page3_title_key="dialog.new_user.page3.title", page3_subtitle_key="dialog.new_user.page3.subtitle",
+                 page3_summary_intro_key="dialog.new_user.page3.summary_intro", 
+                 page3_summary_full_name_key="dialog.new_user.page3.summary_full_name",
+                 page3_summary_user_logon_key="dialog.new_user.page3.summary_user_logon"):
+        super().__init__(parent)
+        self.i18n = I18nManager()
+
+        self.setWindowTitle(self.i18n.get_string(window_title_key))
+        self.setWizardStyle(QWizard.ModernStyle)
+
+        # Get samba connection from parent (main window)
+        samba_conn = getattr(parent, 'samba_conn', None) if parent else None
+
+        self.setPage(0, NewUserPage1(
+            page_title_key=page1_title_key,
+            page_subtitle_key=page1_subtitle_key, 
+            intro_text_key=page1_intro_key,
+            icon_path=icon_path,
+            container_dn=container_dn,
+            samba_conn=samba_conn
+        ))
+        self.setPage(1, NewUserPage2(
+            page_title_key=page2_title_key,
+            page_subtitle_key=page2_subtitle_key
+        ))
+        self.setPage(2, NewUserPage3(
+            page_title_key=page3_title_key,
+            page_subtitle_key=page3_subtitle_key,
+            summary_intro_key=page3_summary_intro_key,
+            summary_full_name_key=page3_summary_full_name_key,
+            summary_user_logon_key=page3_summary_user_logon_key,
+            icon_path=icon_path
+        ))
+
+        self.user_data = {}
+
+    def accept(self):
+        page1 = self.page(0)
+        page2 = self.page(1)
+
+        self.user_data = {
+            'first_name': page1.firstNameInput.text(),
+            'last_name': page1.lastNameInput.text(),
+            'initials': page1.initialsInput.text(),
+            'full_name': page1.fullNameInput.text(),
+            'user_logon_name': page1.userLogonNameInput.text(),
+            'upn_domain': page1.upnDomainDropdown.currentText(),
+            'pre_win2k_logon': page1.preWin2kLogonInput.text(),
+            'password': page2.passwordInput.text(),
+            'password_never_expires': page2.passwordNeverExpiresCheck.isChecked(),
+            'user_must_change_password': page2.userChangePasswordCheck.isChecked(),
+            'user_cannot_change_password': page2.userCannotChangePasswordCheck.isChecked(),
+            'account_is_disabled': page2.accountDisabledCheck.isChecked()
+        }
+
+        super().accept()
+
 # --- Copy User Wizard ---
 class CopyUserWizard(QWizard):
     """
@@ -850,3 +917,168 @@ class DeleteOUDialog(QDialog):
     def is_recursive_delete(self):
         """Return True if recursive delete was selected."""
         return self.recursive_checkbox is not None and self.recursive_checkbox.isChecked()
+
+
+# --- New Contact Dialog ---
+class NewContactDialog(QDialog):
+    """
+    A dialog for creating a new contact.
+    Based on the project outline specification.
+    """
+    def __init__(self, parent=None, container_dn=None):
+        super().__init__(parent)
+        self.i18n = I18nManager()
+        self.container_dn = container_dn or BASE_DN
+        self.logger = logging.getLogger("saduc_app.NewContactDialog")
+
+        self.setWindowTitle(self.i18n.get_string("dialog.new_contact.title"))
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setMinimumSize(400, 300)
+
+        self._create_widgets()
+        self._create_layout()
+        self._connect_signals()
+
+    def _create_widgets(self):
+        """Create all widgets for the dialog"""
+        # Header section
+        self.header_layout = QHBoxLayout()
+        
+        # Contact icon
+        self.icon_label = QLabel()
+        abs_icon_path = os.path.join(os.path.dirname(__file__), 'res', 'icons', 'contact.png')
+        try:
+            self.icon_label.setPixmap(QIcon(abs_icon_path).pixmap(32, 32))
+        except:
+            # If icon doesn't exist, create a placeholder
+            self.icon_label.setText("📧")
+            self.icon_label.setStyleSheet("font-size: 24px;")
+        
+        # Create contact label
+        self.intro_label = QLabel(self.i18n.get_string("dialog.new_contact.intro_text"))
+        self.intro_label.setStyleSheet("font-weight: bold; font-size: 14pt;")
+        
+        # "Create in" label
+        self.create_in_label = QLabel(self._format_dn_for_display(self.container_dn))
+        
+        self.header_layout.addWidget(self.icon_label)
+        self.header_layout.addWidget(self.intro_label)
+        self.header_layout.addStretch()
+        self.header_layout.addWidget(self.create_in_label)
+        
+        # Separator
+        self.header_separator = QFrame()
+        self.header_separator.setFrameShape(QFrame.HLine)
+        
+        # Form fields
+        self.form_layout = QFormLayout()
+        self.form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        
+        self.first_name_edit = QLineEdit()
+        self.first_name_edit.textChanged.connect(self._update_display_name)
+        self.first_name_edit.textChanged.connect(self._validate_input)
+        
+        self.initials_edit = QLineEdit()
+        self.initials_edit.setMaxLength(6)
+        self.initials_edit.setMaximumWidth(80)
+        self.initials_edit.textChanged.connect(self._update_display_name)
+        
+        self.last_name_edit = QLineEdit()
+        self.last_name_edit.textChanged.connect(self._update_display_name)
+        self.last_name_edit.textChanged.connect(self._validate_input)
+        
+        self.display_name_edit = QLineEdit()
+        
+        # Create layout for first name and initials
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(self.first_name_edit)
+        name_layout.addWidget(QLabel(self.i18n.get_string("dialog.new_contact.label.initials")))
+        name_layout.addWidget(self.initials_edit)
+        
+        self.form_layout.addRow(self.i18n.get_string("dialog.new_contact.label.first_name"), name_layout)
+        self.form_layout.addRow(self.i18n.get_string("dialog.new_contact.label.last_name"), self.last_name_edit)
+        self.form_layout.addRow(self.i18n.get_string("dialog.new_contact.label.display_name"), self.display_name_edit)
+        
+        # Button box
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        
+    def _create_layout(self):
+        """Create the main dialog layout"""
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(10)
+        
+        main_layout.addLayout(self.header_layout)
+        main_layout.addWidget(self.header_separator)
+        main_layout.addLayout(self.form_layout)
+        main_layout.addStretch()
+        main_layout.addWidget(self.button_box)
+        
+    def _connect_signals(self):
+        """Connect signals to slots"""
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        
+        # Initial validation
+        self._validate_input()
+        
+    def _format_dn_for_display(self, dn):
+        """Format DN for display in the 'Create in' label."""
+        if not dn:
+            return self.i18n.get_string("dialog.new_contact.create_in_unknown")
+            
+        try:
+            # Extract domain from DN
+            domain_parts = [p.split('=')[1] for p in dn.split(',') if p.lower().startswith('dc=')]
+            domain = ".".join(domain_parts)
+            
+            # Parse the DN to get container path
+            dn_struct = ldap.dn.str2dn(dn)
+            path_parts = []
+            
+            for rdn_part in reversed(dn_struct):
+                if rdn_part[0][0].lower() != 'dc':  # Skip domain components
+                    path_parts.append(rdn_part[0][1])
+            
+            if not path_parts:
+                return self.i18n.get_text("dialog.new_contact.create_in_domain", domain)
+            else:
+                return self.i18n.get_text("dialog.new_contact.create_in_path", domain, '/'.join(path_parts))
+                
+        except Exception as e:
+            self.logger.debug(f"Error formatting DN for display: {e}")
+            return self.i18n.get_text("dialog.new_contact.create_in_fallback", dn)
+    
+    def _update_display_name(self):
+        """Auto-update display name based on first name, initials, and last name."""
+        first = self.first_name_edit.text().strip()
+        initials = self.initials_edit.text().strip()
+        last = self.last_name_edit.text().strip()
+        
+        display_parts = []
+        if first:
+            display_parts.append(first)
+        if initials:
+            display_parts.append(initials)
+        if last:
+            display_parts.append(last)
+            
+        self.display_name_edit.setText(" ".join(display_parts))
+    
+    def _validate_input(self):
+        """Validate input and enable/disable OK button."""
+        # At least first name or last name must be provided
+        first_name_valid = bool(self.first_name_edit.text().strip())
+        last_name_valid = bool(self.last_name_edit.text().strip())
+        
+        is_valid = first_name_valid or last_name_valid
+        self.button_box.button(QDialogButtonBox.Ok).setEnabled(is_valid)
+    
+    def get_contact_data(self):
+        """Return the contact data entered by the user."""
+        return {
+            'first_name': self.first_name_edit.text().strip(),
+            'initials': self.initials_edit.text().strip(), 
+            'last_name': self.last_name_edit.text().strip(),
+            'display_name': self.display_name_edit.text().strip(),
+            'container_dn': self.container_dn
+        }

@@ -161,8 +161,8 @@ class SADUCMainWindow(QMainWindow):
         fileMenu.addAction(exitAction)
         self.logger.debug("SADUCMainWindow: 'File' menu created.")
 
-        menuBar.addMenu(self.i18n.get_string("menu.action"))
-        self.logger.debug("SADUCMainWindow: 'Action' menu placeholder created.")
+        self.actionMenu = menuBar.addMenu(self.i18n.get_string("menu.action"))
+        self.logger.debug("SADUCMainWindow: 'Action' menu created.")
 
         viewMenu = menuBar.addMenu(self.i18n.get_string("menu.view"))
         
@@ -458,6 +458,9 @@ class SADUCMainWindow(QMainWindow):
 
         tree_item = index.internalPointer()
         obj_classes = tree_item.object_class() if isinstance(tree_item.object_class(), list) else [tree_item.object_class()]
+        
+        # Update the Action menu based on the selected container
+        self._update_action_menu(tree_item)
 
         if 'saducRoot' in obj_classes:
             self.tableModel.clear_data()
@@ -512,7 +515,8 @@ class SADUCMainWindow(QMainWindow):
         action_map = {
             "action_pane.menu.new_user": actions.on_new_user_action_triggered,
             "action_pane.menu.new_group": actions.on_new_group_action_triggered,
-            "action_pane.menu.new_computer": actions.on_new_computer_action_triggered
+            "action_pane.menu.new_computer": actions.on_new_computer_action_triggered,
+            "action_pane.menu.new_printer": actions.on_new_printer_action_triggered
         }
         self.listActionLayout.addLayout(self._create_action_section(container_name, action_map))
 
@@ -688,4 +692,181 @@ class SADUCMainWindow(QMainWindow):
         except Exception as e:
             self.logger.error(f"Failed to execute search in main list: {e}")
             QMessageBox.critical(self, "Error", f"Search failed: {e}")
+
+    def _update_action_menu(self, tree_item=None):
+        """Update the Action menu to match the current container context."""
+        # Clear current Action menu
+        self.actionMenu.clear()
+        
+        if not tree_item:
+            # Get currently selected tree item
+            current_index = self.treePane.currentIndex()
+            if not current_index.isValid():
+                return
+            tree_item = current_index.internalPointer()
+            if not tree_item:
+                return
+        
+        current_dn = tree_item.dn()
+        obj_classes = tree_item.object_class() if isinstance(tree_item.object_class(), list) else [tree_item.object_class()]
+        
+        # Import actions here to avoid circular imports
+        import main_window_actions as actions
+        from functools import partial
+        
+        # Build the same menu as the context menu for this container type
+        if 'saducRoot' in obj_classes:
+            self._populate_saduc_root_action_menu(current_dn)
+        elif 'savedQueriesRoot' in obj_classes:
+            self._populate_saved_queries_action_menu(current_dn)
+        elif 'savedQueriesFolder' in obj_classes:
+            self._populate_saved_queries_folder_action_menu(current_dn)
+        elif 'domainDns' in obj_classes:
+            self._populate_domain_action_menu(current_dn)
+        elif 'organizationalUnit' in obj_classes:
+            self._populate_ou_action_menu(current_dn)
+        elif 'container' in obj_classes or 'builtinDomain' in obj_classes:
+            self._populate_container_action_menu(current_dn)
+    
+    def _populate_saduc_root_action_menu(self, dn):
+        """Populate Action menu for SADUC root."""
+        import main_window_actions as actions
+        from functools import partial
+        
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.change_domain"), partial(actions.on_change_domain_action_triggered, self))
+        self.actionMenu.addAction(self.i18n.get_string("action_pane.menu.change_dc"), partial(actions.on_change_dc_action_triggered, self))
+        self.actionMenu.addSeparator()
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self))
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.export_list"), partial(actions.on_export_list_action_triggered, self))
+    
+    def _populate_saved_queries_action_menu(self, dn):
+        """Populate Action menu for saved queries root."""
+        import main_window_actions as actions
+        from functools import partial
+        
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.import_query"), partial(actions.on_import_query_definition_action_triggered, self))
+        self.actionMenu.addSeparator()
+        
+        new_menu = self.actionMenu.addMenu(self.i18n.get_string("context_menu.new"))
+        new_menu.addAction(self.i18n.get_string("context_menu.new_query"), partial(actions.on_new_query_action_triggered, self))
+        new_menu.addAction(self.i18n.get_string("context_menu.new_folder"), partial(actions.on_new_folder_action_triggered, self))
+        
+        self.actionMenu.addSeparator()
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self))
+    
+    def _populate_saved_queries_folder_action_menu(self, dn):
+        """Populate Action menu for saved queries folder."""
+        import main_window_actions as actions
+        from functools import partial
+        
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.import_query"), partial(actions.on_import_query_definition_action_triggered, self))
+        self.actionMenu.addSeparator()
+        
+        new_menu = self.actionMenu.addMenu(self.i18n.get_string("context_menu.new"))
+        new_menu.addAction(self.i18n.get_string("context_menu.new_query"), partial(actions.on_new_query_action_triggered, self))
+        new_menu.addAction(self.i18n.get_string("context_menu.new_folder"), partial(actions.on_new_folder_action_triggered, self))
+        
+        self.actionMenu.addSeparator()
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self))
+    
+    def _populate_domain_action_menu(self, dn):
+        """Populate Action menu for domain container."""
+        import main_window_actions as actions
+        from functools import partial
+        from PyQt5.QtWidgets import QAction
+        
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.delegate_control"), partial(actions.on_delegate_control_action_triggered, self))
+        
+        find_action = QAction(self.i18n.get_string("action_pane.menu.find_user"), self)
+        find_action.triggered.connect(lambda: actions.on_find_user_action_triggered(self, dn))
+        self.actionMenu.addAction(find_action)
+        
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.change_domain"), partial(actions.on_change_domain_action_triggered, self))
+        self.actionMenu.addAction(self.i18n.get_string("action_pane.menu.change_dc"), partial(actions.on_change_dc_action_triggered, self))
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.raise_domain_level"), partial(actions.on_raise_domain_functional_level_action_triggered, self))
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.operations_masters"), partial(actions.on_operations_masters_action_triggered, self))
+        self.actionMenu.addSeparator()
+        
+        new_menu = self.actionMenu.addMenu(self.i18n.get_string("context_menu.new"))
+        self._populate_new_action_menu(new_menu)
+        
+        self.actionMenu.addSeparator()
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self))
+    
+    def _populate_ou_action_menu(self, dn):
+        """Populate Action menu for OU container."""
+        import main_window_actions as actions
+        from functools import partial
+        from PyQt5.QtWidgets import QAction
+        
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.delegate_control"), partial(actions.on_delegate_control_action_triggered, self))
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.move"), partial(actions.on_move_action_triggered, self))
+        
+        find_action = QAction(self.i18n.get_string("action_pane.menu.find_user"), self)
+        find_action.triggered.connect(lambda: actions.on_find_user_action_triggered(self, dn))
+        self.actionMenu.addAction(find_action)
+        
+        self.actionMenu.addSeparator()
+        new_menu = self.actionMenu.addMenu(self.i18n.get_string("context_menu.new"))
+        self._populate_new_action_menu(new_menu)
+        
+        self.actionMenu.addSeparator()
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self))
+    
+    def _populate_container_action_menu(self, dn):
+        """Populate Action menu for regular container."""
+        import main_window_actions as actions
+        from functools import partial
+        from PyQt5.QtWidgets import QAction
+        
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.delegate_control"), partial(actions.on_delegate_control_action_triggered, self))
+        
+        find_action = QAction(self.i18n.get_string("action_pane.menu.find_user"), self)
+        find_action.triggered.connect(lambda: actions.on_find_user_action_triggered(self, dn))
+        self.actionMenu.addAction(find_action)
+        
+        self.actionMenu.addSeparator()
+        new_menu = self.actionMenu.addMenu(self.i18n.get_string("context_menu.new"))
+        self._populate_new_action_menu(new_menu, is_container=True)
+        
+        self.actionMenu.addSeparator()
+        self.actionMenu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self))
+    
+    def _populate_new_action_menu(self, new_menu, is_container=False):
+        """Populate the New submenu in Action menu."""
+        import main_window_actions as actions
+        from functools import partial
+        from samba_backend import get_schema_structural_classes
+        
+        # Add standard object types
+        new_menu.addAction(self.i18n.get_string("action_pane.menu.new_computer"), partial(actions.on_new_computer_action_triggered, self))
+        new_menu.addAction(self.i18n.get_string("context_menu.new_contact"), partial(actions.on_new_contact_action_triggered, self))
+        new_menu.addAction(self.i18n.get_string("action_pane.menu.new_group"), partial(actions.on_new_group_action_triggered, self))
+        new_menu.addAction(self.i18n.get_string("context_menu.new_inetorgperson"), partial(actions.on_new_inetorgperson_action_triggered, self))
+        if not is_container:
+            new_menu.addAction(self.i18n.get_string("context_menu.new_ou"), partial(actions.on_new_ou_action_triggered, self))
+        new_menu.addAction(self.i18n.get_string("action_pane.menu.new_printer"), partial(actions.on_new_printer_action_triggered, self))
+        new_menu.addAction(self.i18n.get_string("context_menu.new_shared_folder"), partial(actions.on_new_shared_folder_action_triggered, self))
+        new_menu.addAction(self.i18n.get_string("action_pane.menu.new_user"), partial(actions.on_new_user_action_triggered, self))
+        
+        # Add dynamic schema-extended objects
+        try:
+            if hasattr(self, 'samba_conn') and self.samba_conn:
+                structural_classes = get_schema_structural_classes(self.samba_conn)
+                if structural_classes:
+                    new_menu.addSeparator()
+                    for class_info in structural_classes:
+                        menu_text = f"{class_info['display_name']}..."
+                        action = partial(
+                            actions.on_new_generic_object_action_triggered,
+                            self,
+                            class_info['class_name'],
+                            class_info['display_name'],
+                            class_info['naming_attribute'],
+                            class_info.get('is_complex', False),
+                            class_info.get('required_attributes', None)
+                        )
+                        new_menu.addAction(menu_text, action)
+        except Exception as e:
+            self.logger.warning(f"Could not load schema extensions for menu: {e}")
 

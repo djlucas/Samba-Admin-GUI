@@ -22,6 +22,8 @@ class TreeMenuManager:
             self._build_saduc_root_menu(menu, dn)
         elif 'savedQueriesRoot' in obj_classes:
             self._build_saved_queries_menu(menu, dn)
+        elif 'savedQueriesFolder' in obj_classes:
+            self._build_saved_queries_folder_menu(menu, dn)
         elif 'savedQuery' in obj_classes:
             self._build_saved_query_item_menu(menu, dn, tree_item)
         elif 'domainDns' in obj_classes:
@@ -63,9 +65,35 @@ class TreeMenuManager:
         menu.addSeparator()
         new_menu = menu.addMenu(self.i18n.get_string("context_menu.new"))
         new_menu.addAction(self.i18n.get_string("context_menu.new_query"), partial(actions.on_new_query_action_triggered, self.main_window))
+        new_menu.addAction(self.i18n.get_string("context_menu.new_folder"), partial(actions.on_new_folder_action_triggered, self.main_window))
         all_tasks_menu = menu.addMenu(self.i18n.get_string("context_menu.all_tasks"))
         self._populate_all_tasks_menu(all_tasks_menu, dn, 'savedQueriesRoot')
         menu.addSeparator()
+        menu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self.main_window))
+        menu.addSeparator()
+        properties_action = QAction(self.i18n.get_string("context_menu.properties"), self.main_window)
+        font = properties_action.font()
+        font.setBold(True)
+        properties_action.setFont(font)
+        properties_action.triggered.connect(partial(actions.on_container_properties_action_triggered, self.main_window))
+        menu.addAction(properties_action)
+
+    def _build_saved_queries_folder_menu(self, menu, dn):
+        menu.addAction(self.i18n.get_string("context_menu.import_query"), partial(actions.on_import_query_definition_action_triggered, self.main_window))
+        menu.addSeparator()
+        new_menu = menu.addMenu(self.i18n.get_string("context_menu.new"))
+        new_menu.addAction(self.i18n.get_string("context_menu.new_query"), partial(actions.on_new_query_action_triggered, self.main_window))
+        new_menu.addAction(self.i18n.get_string("context_menu.new_folder"), partial(actions.on_new_folder_action_triggered, self.main_window))
+        all_tasks_menu = menu.addMenu(self.i18n.get_string("context_menu.all_tasks"))
+        self._populate_all_tasks_menu(all_tasks_menu, dn, 'savedQueriesFolder')
+        menu.addSeparator()
+        view_menu = menu.addMenu(self.i18n.get_string("context_menu.view"))
+        self._populate_view_menu(view_menu)
+        menu.addSeparator()
+        menu.addAction(self.i18n.get_string("context_menu.cut"), partial(actions.on_stub_action_triggered, self.main_window))
+        menu.addAction(self.i18n.get_string("context_menu.copy"), partial(actions.on_stub_action_triggered, self.main_window))
+        menu.addAction(self.i18n.get_string("context_menu.delete"), partial(actions.on_delete_saved_queries_folder_action_triggered, self.main_window))
+        menu.addAction(self.i18n.get_string("context_menu.rename"), partial(actions.on_rename_action_triggered, self.main_window))
         menu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self.main_window))
         menu.addSeparator()
         properties_action = QAction(self.i18n.get_string("context_menu.properties"), self.main_window)
@@ -157,7 +185,6 @@ class TreeMenuManager:
         new_menu.addAction(self.i18n.get_string("context_menu.new_msmq_queue_alias"), partial(actions.on_new_msmq_queue_alias_action_triggered, self.main_window))
         if not is_container:
             new_menu.addAction(self.i18n.get_string("context_menu.new_ou"), partial(actions.on_new_ou_action_triggered, self.main_window))
-        new_menu.addAction(self.i18n.get_string("context_menu.new_printer"), partial(actions.on_new_printer_action_triggered, self.main_window))
         new_menu.addAction(self.i18n.get_string("action_pane.menu.new_user"), partial(actions.on_new_user_action_triggered, self.main_window))
         new_menu.addAction(self.i18n.get_string("context_menu.new_shared_folder"), partial(actions.on_new_shared_folder_action_triggered, self.main_window))
 
@@ -171,10 +198,12 @@ class TreeMenuManager:
         if object_type == 'saducRoot':
             all_tasks_menu.addAction(self.i18n.get_string("context_menu.change_domain"), partial(actions.on_change_domain_action_triggered, self.main_window))
             all_tasks_menu.addAction(self.i18n.get_string("action_pane.menu.change_dc"), partial(actions.on_change_dc_action_triggered, self.main_window))
-        if object_type == 'savedQueriesRoot':
+        if object_type in ['savedQueriesRoot', 'savedQueriesFolder']:
             all_tasks_menu.addAction(self.i18n.get_string("context_menu.import_query"), partial(actions.on_import_query_definition_action_triggered, self.main_window))
             new_query_action = all_tasks_menu.addAction(self.i18n.get_string("context_menu.new_query"))
             new_query_action.triggered.connect(partial(actions.on_new_query_action_triggered, self.main_window))
+            if object_type == 'savedQueriesFolder':
+                all_tasks_menu.addSeparator()
     
     def _build_saved_query_item_menu(self, menu, dn, tree_item):
         """Build context menu for individual saved query items."""

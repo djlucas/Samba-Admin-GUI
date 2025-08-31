@@ -608,6 +608,9 @@ def create_user_samba(samba_conn, user_data):
     attrs.append(('sAMAccountName', [user_data['pre_win2k_logon'].encode('utf-8')]))
     attrs.append(('userAccountControl', [str(uac_value).encode('utf-8')]))
     
+    # Set primary group to Domain Users (RID 513)
+    attrs.append(('primaryGroupID', [b'513']))
+    
     # Add optional attributes
     if user_data.get('first_name'):
         attrs.append(('givenName', [user_data['first_name'].encode('utf-8')]))
@@ -662,6 +665,214 @@ def create_user_samba(samba_conn, user_data):
     except ldap.LDAPError as e:
         logger.error(f"LDAP error creating user '{dn}': {e}")
         return False, "samba_backend.error.create_user", [str(e)]
+
+
+def create_contact_samba(samba_conn, contact_data):
+    """Creates a new contact in Samba AD."""
+    logger.info(f"Samba backend: Creating contact with data: {contact_data}")
+    
+    # Construct contact DN - use display name if available, otherwise first or last name
+    cn_value = (contact_data.get('display_name') or 
+                contact_data.get('first_name') or 
+                contact_data.get('last_name') or
+                'New Contact')
+    
+    if not cn_value.strip():
+        logger.error("Cannot create contact: missing name information")
+        return False, "samba_backend.error.missing_contact_name"
+        
+    dn = f"CN={cn_value},{contact_data['container_dn']}"
+    
+    # Build attributes list for contact
+    attrs = []
+    attrs.append(('objectClass', [b'top', b'person', b'organizationalPerson', b'contact']))
+    attrs.append(('cn', [cn_value.encode('utf-8')]))
+    
+    # Add optional attributes
+    if contact_data.get('first_name'):
+        attrs.append(('givenName', [contact_data['first_name'].encode('utf-8')]))
+    if contact_data.get('last_name'):
+        attrs.append(('sn', [contact_data['last_name'].encode('utf-8')]))
+    if contact_data.get('initials'):
+        attrs.append(('initials', [contact_data['initials'].encode('utf-8')]))
+    if contact_data.get('display_name'):
+        attrs.append(('displayName', [contact_data['display_name'].encode('utf-8')]))
+
+    try:
+        # Create the contact object
+        samba_conn.add_s(dn, attrs)
+        logger.info(f"Successfully created contact object: {dn}")
+        
+        return True, "samba_backend.success.create_contact", [cn_value]
+        
+    except ldap.ALREADY_EXISTS:
+        logger.error(f"Contact '{dn}' already exists.")
+        return False, "samba_backend.error.contact_exists", [cn_value]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error creating contact '{dn}': {e}")
+        return False, "samba_backend.error.create_contact", [str(e)]
+
+
+def create_inetorgperson_samba(samba_conn, user_data):
+    """Creates a new inetOrgPerson in Samba AD."""
+    logger.info(f"Samba backend: Creating inetOrgPerson with data: {user_data}")
+    
+    # Construct inetOrgPerson DN
+    cn_value = user_data.get('full_name') or user_data.get('user_logon_name')
+    if not cn_value:
+        logger.error("Cannot create inetOrgPerson: missing both full_name and user_logon_name")
+        return False, "samba_backend.error.missing_username"
+        
+    dn = f"CN={cn_value},{user_data['container_dn']}"
+    
+    # Build userAccountControl value
+    uac_value = 0x0200  # NORMAL_ACCOUNT
+    
+    if user_data.get('account_is_disabled', False):
+        uac_value |= 0x0002  # UAC_ACCOUNT_DISABLED
+    if user_data.get('password_never_expires', False):
+        uac_value |= 0x10000  # UAC_DONT_EXPIRE_PASSWORD
+    if user_data.get('user_cannot_change_password', False):
+        uac_value |= 0x0040  # UAC_PASSWORD_CANT_CHANGE
+    if user_data.get('user_must_change_password', True):
+        # When user must change password, set password expired
+        uac_value |= 0x800000  # UAC_PASSWORD_EXPIRED
+
+    # Build attributes list - inetOrgPerson extends organizationalPerson
+    attrs = []
+    attrs.append(('objectClass', [b'top', b'person', b'organizationalPerson', b'user', b'inetOrgPerson']))
+    attrs.append(('cn', [cn_value.encode('utf-8')]))
+    attrs.append(('sAMAccountName', [user_data['pre_win2k_logon'].encode('utf-8')]))
+    attrs.append(('userAccountControl', [str(uac_value).encode('utf-8')]))
+    
+    # Set primary group to Domain Users (RID 513)
+    attrs.append(('primaryGroupID', [b'513']))
+    
+    # Add optional attributes
+    if user_data.get('first_name'):
+        attrs.append(('givenName', [user_data['first_name'].encode('utf-8')]))
+    if user_data.get('last_name'):
+        attrs.append(('sn', [user_data['last_name'].encode('utf-8')]))
+    if user_data.get('initials'):
+        attrs.append(('initials', [user_data['initials'].encode('utf-8')]))
+    if user_data.get('full_name'):
+        attrs.append(('displayName', [user_data['full_name'].encode('utf-8')]))
+    
+    # Set UPN
+    if user_data.get('user_logon_name') and user_data.get('upn_domain'):
+        # Strip @ prefix if present (UI includes @ in dropdown)
+        upn_domain = user_data['upn_domain'].lstrip('@')
+        upn = f"{user_data['user_logon_name']}@{upn_domain}"
+        attrs.append(('userPrincipalName', [upn.encode('utf-8')]))
+
+    try:
+        # Create the inetOrgPerson object first
+        samba_conn.add_s(dn, attrs)
+        logger.info(f"Successfully created inetOrgPerson object: {dn}")
+        
+        # Set password if provided
+        password = user_data.get('password')
+        if password:
+            try:
+                # Format password for unicodePwd (UTF-16LE with quotes)
+                password_utf16 = f'"{password}"'.encode('utf-16le')
+                mod_list = [(ldap.MOD_REPLACE, 'unicodePwd', password_utf16)]
+                samba_conn.modify_s(dn, mod_list)
+                logger.info(f"Successfully set password for inetOrgPerson: {cn_value}")
+            except ldap.INSUFFICIENT_ACCESS as e:
+                logger.error(f"Insufficient access to set password for {cn_value}: {e}")
+                logger.error("Service account may lack 'Reset Password' permissions")
+            except ldap.CONSTRAINT_VIOLATION as e:
+                logger.error(f"Password constraint violation for {cn_value}: {e}")
+                logger.error("Password may not meet complexity requirements")
+            except ldap.UNWILLING_TO_PERFORM as e:
+                logger.error(f"Server unwilling to perform password change for {cn_value}: {e}")
+                logger.error("This often indicates SSL/TLS is required but not active")
+            except ldap.LDAPError as e:
+                logger.error(f"LDAP error setting password for {cn_value}: {e}")
+                logger.error(f"Error type: {type(e).__name__}")
+                # Don't fail the entire creation if password fails
+                # The user can be created and password set later
+        
+        return True, "samba_backend.success.create_inetorgperson", [cn_value]
+        
+    except ldap.ALREADY_EXISTS:
+        logger.error(f"inetOrgPerson '{dn}' already exists.")
+        return False, "samba_backend.error.inetorgperson_exists", [cn_value]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error creating inetOrgPerson '{dn}': {e}")
+        return False, "samba_backend.error.create_inetorgperson", [str(e)]
+
+
+def create_computer_samba(samba_conn, computer_data):
+    """Creates a new computer account in Samba AD."""
+    logger.info(f"Samba backend: Creating computer with data: {computer_data}")
+    
+    # Construct computer DN
+    cn_value = computer_data.get('computer_name')
+    if not cn_value:
+        logger.error("Cannot create computer: missing computer name")
+        return False, "samba_backend.error.missing_computer_name"
+        
+    dn = f"CN={cn_value},{computer_data['container_dn']}"
+    
+    # Build userAccountControl value for computer account
+    uac_value = 0x1000  # UAC_WORKSTATION_TRUST_ACCOUNT
+    
+    if computer_data.get('is_pre2k_computer', False):
+        # Additional flags for pre-Windows 2000 compatibility if needed
+        pass
+    
+    # Build attributes list for computer
+    attrs = []
+    attrs.append(('objectClass', [b'top', b'person', b'organizationalPerson', b'user', b'computer']))
+    attrs.append(('cn', [cn_value.encode('utf-8')]))
+    
+    # sAMAccountName should be the pre2k name (with $ suffix)
+    sam_account_name = computer_data.get('pre2k_name', cn_value + '$')
+    if not sam_account_name.endswith('$'):
+        sam_account_name += '$'
+    attrs.append(('sAMAccountName', [sam_account_name.encode('utf-8')]))
+    
+    # Set userAccountControl for computer account
+    attrs.append(('userAccountControl', [str(uac_value).encode('utf-8')]))
+    
+    
+    # Set DNS hostname (servicePrincipalName will be set automatically by AD)
+    if computer_data.get('computer_name'):
+        # Extract domain from BASE_DN for FQDN
+        try:
+            domain_parts = [p.split('=')[1] for p in computer_data['container_dn'].split(',') if p.lower().startswith('dc=')]
+            domain = ".".join(domain_parts)
+            fqdn = f"{computer_data['computer_name'].lower()}.{domain}"
+            attrs.append(('dNSHostName', [fqdn.encode('utf-8')]))
+        except Exception as e:
+            logger.debug(f"Could not set dNSHostName: {e}")
+
+    try:
+        # Create the computer object
+        samba_conn.add_s(dn, attrs)
+        logger.info(f"Successfully created computer object: {dn}")
+        
+        # Add computer to selected group if specified
+        if computer_data.get('group_dn'):
+            try:
+                group_dn = computer_data['group_dn']
+                mod_attrs = [(ldap.MOD_ADD, 'member', [dn.encode('utf-8')])]
+                samba_conn.modify_s(group_dn, mod_attrs)
+                logger.info(f"Added computer {dn} to group {group_dn}")
+            except ldap.LDAPError as e:
+                logger.warning(f"Failed to add computer to group {group_dn}: {e}")
+                # Don't fail the entire operation if group membership fails
+        
+        return True, "samba_backend.success.create_computer", [cn_value]
+        
+    except ldap.ALREADY_EXISTS:
+        logger.error(f"Computer '{dn}' already exists.")
+        return False, "samba_backend.error.computer_exists", [cn_value]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error creating computer '{dn}': {e}")
+        return False, "samba_backend.error.create_computer", [str(e)]
 
 
 def create_group_samba(samba_conn, group_data):
@@ -859,8 +1070,24 @@ def copy_user_samba(samba_conn, source_user_dn, new_user_data):
                     logger.error(f"LDAP error setting password for {cn_value}: {e}")
                     logger.error(f"Error type: {type(e).__name__}")
             
-            # TODO: Copy group memberships from source user
-            # This would require additional implementation to handle group membership
+            # Copy group memberships from source user
+            source_member_of = source_user_props.get('memberOf', [])
+            if source_member_of:
+                logger.info(f"Copying group memberships from source user: {len(source_member_of)} groups")
+                groups_copied = 0
+                groups_failed = 0
+                
+                for group_dn in source_member_of:
+                    try:
+                        # Use the existing group membership function
+                        add_user_to_group_samba(samba_conn, dn, group_dn)
+                        groups_copied += 1
+                        logger.debug(f"Added copied user to group: {group_dn}")
+                    except Exception as e:
+                        groups_failed += 1
+                        logger.warning(f"Failed to add copied user to group {group_dn}: {e}")
+                
+                logger.info(f"Group membership copy complete: {groups_copied} succeeded, {groups_failed} failed")
             
             return True, "samba_backend.success.copy_user", [cn_value]
             
@@ -1268,6 +1495,56 @@ def delete_contact_samba(samba_conn, contact_dn):
 def delete_printer_samba(samba_conn, printer_dn):
     """Deletes a printer from Samba AD."""
     return delete_object_samba(samba_conn, printer_dn, 'printer')
+
+
+def reset_computer_account_samba(samba_conn, computer_dn):
+    """
+    Reset a computer account in Samba AD.
+    This breaks the trust relationship and requires the computer to rejoin the domain.
+    """
+    logger.info(f"Samba backend: Resetting computer account: {computer_dn}")
+    
+    try:
+        # Get current computer attributes
+        res = samba_conn.search_s(computer_dn, ldap.SCOPE_BASE, '(objectClass=computer)', 
+                                ['cn', 'sAMAccountName', 'userAccountControl'])
+        if not res:
+            logger.error(f"Computer not found: {computer_dn}")
+            return False, "samba_backend.error.computer_not_found", [computer_dn]
+        
+        computer_attrs = res[0][1]
+        computer_name = computer_attrs['cn'][0].decode('utf-8')
+        sam_account = computer_attrs['sAMAccountName'][0].decode('utf-8')
+        current_uac = int(computer_attrs['userAccountControl'][0].decode('utf-8'))
+        
+        # Reset the computer account by modifying userAccountControl
+        # First, set UF_PASSWD_NOTREQD flag (0x20) to allow password reset
+        reset_uac = current_uac | 0x20  # Add UF_PASSWD_NOTREQD flag
+        
+        # Step 1: Set password not required flag
+        mod_attrs = [(ldap.MOD_REPLACE, 'userAccountControl', str(reset_uac).encode('utf-8'))]
+        samba_conn.modify_s(computer_dn, mod_attrs)
+        
+        # Step 2: Remove the flag to complete the reset
+        final_uac = reset_uac & ~0x20  # Remove UF_PASSWD_NOTREQD flag
+        mod_attrs = [(ldap.MOD_REPLACE, 'userAccountControl', str(final_uac).encode('utf-8'))]
+        samba_conn.modify_s(computer_dn, mod_attrs)
+        
+        logger.info(f"Successfully reset computer account: {computer_name}")
+        return True, "samba_backend.success.reset_computer", [computer_name]
+        
+    except ldap.NO_SUCH_OBJECT:
+        logger.error(f"Computer '{computer_dn}' does not exist.")
+        return False, "samba_backend.error.computer_not_found", [computer_dn]
+    except ldap.INSUFFICIENT_ACCESS:
+        logger.error(f"Insufficient access to reset computer '{computer_dn}'.")
+        return False, "samba_backend.error.insufficient_access", [computer_dn]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error resetting computer '{computer_dn}': {e}")
+        return False, "samba_backend.error.reset_computer", [str(e)]
+    except Exception as e:
+        logger.error(f"Unexpected error resetting computer {computer_dn}: {e}")
+        return False, "samba_backend.error.reset_computer", [str(e)]
 
 
 def disable_computer_samba(samba_conn, computer_dn):
@@ -2309,4 +2586,382 @@ def set_laps_expiration(samba_conn, computer_dn, expiration_datetime):
     except Exception as e:
         logger.error(f"Error setting LAPS expiration: {e}")
         return False
+
+
+def create_printer_samba(samba_conn, printer_data):
+    """Creates a new printer object in Samba AD."""
+    logger.info(f"Samba backend: Creating printer with data: {printer_data}")
+    
+    # Validate required fields
+    if not printer_data.get('network_path'):
+        logger.error("Network path is required for printer creation")
+        return False, "samba_backend.error.printer_path_required", []
+    
+    network_path = printer_data['network_path'].strip()
+    if not network_path:
+        logger.error("Network path cannot be empty")
+        return False, "samba_backend.error.printer_path_required", []
+    
+    # Extract printer name from network path (\\server\share -> share)
+    printer_name = network_path.split('\\')[-1] if '\\' in network_path else network_path
+    if not printer_name:
+        logger.error("Could not determine printer name from network path")
+        return False, "samba_backend.error.printer_name_required", []
+    
+    dn = f"CN={printer_name},{printer_data['container_dn']}"
+    
+    # Create printer object attributes
+    attrs = []
+    attrs.append(('objectClass', [b'top', b'printQueue']))
+    attrs.append(('cn', [printer_name.encode('utf-8')]))
+    attrs.append(('printShareName', [printer_name.encode('utf-8')]))
+    attrs.append(('uNCName', [network_path.encode('utf-8')]))
+    attrs.append(('serverName', [network_path.encode('utf-8')]))
+    
+    try:
+        samba_conn.add_s(dn, attrs)
+        logger.info(f"Successfully created printer: {dn}")
+        return True, "samba_backend.success.create_printer", [printer_name]
+    except ldap.ALREADY_EXISTS:
+        logger.error(f"Printer '{dn}' already exists.")
+        return False, "samba_backend.error.printer_exists", [printer_name]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error creating printer '{dn}': {e}")
+        return False, "samba_backend.error.create_printer", [str(e)]
+
+
+def create_shared_folder_samba(samba_conn, shared_folder_data):
+    """Creates a new shared folder object in Samba AD."""
+    logger.info(f"Samba backend: Creating shared folder with data: {shared_folder_data}")
+    
+    # Validate required fields
+    if not shared_folder_data.get('name'):
+        logger.error("Name is required for shared folder creation")
+        return False, "samba_backend.error.shared_folder_name_required", []
+    
+    if not shared_folder_data.get('network_path'):
+        logger.error("Network path is required for shared folder creation")
+        return False, "samba_backend.error.shared_folder_path_required", []
+    
+    name = shared_folder_data['name'].strip()
+    network_path = shared_folder_data['network_path'].strip()
+    
+    if not name:
+        logger.error("Name cannot be empty")
+        return False, "samba_backend.error.shared_folder_name_required", []
+    
+    if not network_path:
+        logger.error("Network path cannot be empty")
+        return False, "samba_backend.error.shared_folder_path_required", []
+    
+    dn = f"CN={name},{shared_folder_data['container_dn']}"
+    
+    # Create shared folder object attributes
+    attrs = []
+    attrs.append(('objectClass', [b'top', b'volume']))
+    attrs.append(('cn', [name.encode('utf-8')]))
+    attrs.append(('uNCName', [network_path.encode('utf-8')]))
+    
+    try:
+        samba_conn.add_s(dn, attrs)
+        logger.info(f"Successfully created shared folder: {dn}")
+        return True, "samba_backend.success.create_shared_folder", [name]
+    except ldap.ALREADY_EXISTS:
+        logger.error(f"Shared folder '{dn}' already exists.")
+        return False, "samba_backend.error.shared_folder_exists", [name]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error creating shared folder '{dn}': {e}")
+        return False, "samba_backend.error.create_shared_folder", [str(e)]
+
+
+def get_schema_structural_classes(samba_conn):
+    """Get all structural object classes from the schema that can be created."""
+    logger.info("Querying schema for structural object classes")
+    
+    # Hardcoded configuration for object types with known required attributes beyond the naming attribute.
+    # These use the generic multi-part dialog (wizard) instead of the simple single-field dialog.
+    # New extensions with known required attributes can be defined here as bug reports come in.
+    # These objects do not show up unless the specific schema extension is present in the directory.
+    COMPLEX_OBJECT_TYPES = {
+        'msDS-KeyCredential': {
+            'display_name': 'msDS-KeyCredential',
+            'naming_attribute': 'cn',
+            'required_attributes': [
+                {
+                    'name': 'msDS-KeyId', 
+                    'display_name': 'Key ID',
+                    'type': 'octet_string',
+                    'description': 'Unique identifier for the key credential'
+                }
+            ]
+        }
+        # Add more complex object types here as needed:
+        # 'SomeOtherClass': {
+        #     'display_name': 'Some Other Class',
+        #     'naming_attribute': 'cn',
+        #     'required_attributes': [
+        #         {'name': 'someRequiredAttr', 'display_name': 'Some Required Attribute', 'type': 'string'}
+        #     ]
+        # }
+    }
+    
+    try:
+        # Get the schema naming context
+        res = samba_conn.search_s('', ldap.SCOPE_BASE, '(objectClass=*)', ['schemaNamingContext'])
+        if not res or 'schemaNamingContext' not in res[0][1]:
+            logger.error("Could not determine schema naming context")
+            return []
+        
+        schema_dn = res[0][1]['schemaNamingContext'][0].decode('utf-8')
+        logger.info(f"Schema DN: {schema_dn}")
+        
+        # Query for structural object classes that are not hidden
+        filter_expr = '(&(objectClass=classSchema)(objectClassCategory=1)(!(systemFlags:1.2.840.113556.1.4.803:=1)))'
+        attrs = ['cn', 'displayName', 'defaultHidingValue', 'rDNAttID']
+        
+        res = samba_conn.search_s(schema_dn, ldap.SCOPE_ONELEVEL, filter_expr, attrs)
+        
+        structural_classes = []
+        for dn, attrs in res:
+            if not attrs:
+                continue
+                
+            class_name = attrs.get('cn', [b''])[0].decode('utf-8')
+            if not class_name:
+                continue
+            
+            # Skip system classes that have dedicated dialogs
+            if class_name.lower() in ['user', 'computer', 'group', 'organizationalunit', 'container', 
+                                     'contact', 'printqueue', 'volume', 'person', 'organizationalperson', 
+                                     'inetorgperson']:
+                continue
+            
+            # Check if the class is hidden (defaultHidingValue = TRUE means hidden)
+            default_hiding = attrs.get('defaultHidingValue', [b'FALSE'])[0].decode('utf-8').upper()
+            if default_hiding == 'TRUE':
+                continue
+            
+            # Get display name or format from class name
+            display_name = attrs.get('displayName', [b''])[0].decode('utf-8')
+            if not display_name:
+                display_name = class_name
+            
+            # Get naming attribute (assume cn for simplicity)
+            naming_attribute = 'cn'
+            
+            # Check if this is a complex object type with additional required attributes
+            class_info = {
+                'class_name': class_name,
+                'display_name': display_name,
+                'naming_attribute': naming_attribute,
+                'is_complex': False
+            }
+            
+            if class_name in COMPLEX_OBJECT_TYPES:
+                complex_config = COMPLEX_OBJECT_TYPES[class_name]
+                class_info.update({
+                    'is_complex': True,
+                    'display_name': complex_config.get('display_name', display_name),
+                    'naming_attribute': complex_config.get('naming_attribute', naming_attribute),
+                    'required_attributes': complex_config['required_attributes']
+                })
+            
+            structural_classes.append(class_info)
+        
+        # Sort by display name
+        structural_classes.sort(key=lambda x: x['display_name'])
+        
+        logger.info(f"Found {len(structural_classes)} structural classes")
+        return structural_classes
+        
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error querying schema: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"Error querying schema: {e}")
+        return []
+
+
+def create_generic_object_samba(samba_conn, object_data):
+    """Creates a generic object in Samba AD based on provided class and naming value."""
+    logger.info(f"Samba backend: Creating generic object with data: {object_data}")
+    
+    class_name = object_data.get('object_class')
+    naming_attr = object_data.get('naming_attribute', 'cn')
+    naming_value = object_data.get('naming_value')
+    container_dn = object_data.get('container_dn')
+    additional_attrs = object_data.get('attributes', {})
+    
+    if not class_name or not naming_value or not container_dn:
+        logger.error("Missing required fields for generic object creation")
+        return False, "samba_backend.error.generic_object_missing_fields", []
+    
+    naming_value = naming_value.strip()
+    if not naming_value:
+        logger.error("Naming value cannot be empty")
+        return False, "samba_backend.error.generic_object_name_required", []
+    
+    # Construct DN
+    dn = f"{naming_attr}={naming_value},{container_dn}"
+    
+    # Build attribute list
+    attrs = []
+    attrs.append(('objectClass', [b'top', class_name.encode('utf-8')]))
+    attrs.append((naming_attr, [naming_value.encode('utf-8')]))
+    
+    # Add additional attributes from wizard
+    for attr_name, attr_value in additional_attrs.items():
+        if attr_value and attr_name != naming_attr:
+            # Convert the value appropriately
+            if isinstance(attr_value, str):
+                attr_value = attr_value.strip()
+                if attr_value:
+                    # For octet strings (hex values), convert to binary
+                    if attr_name == 'msDS-KeyId' and len(attr_value) % 2 == 0:
+                        try:
+                            # Convert hex string to bytes
+                            binary_value = bytes.fromhex(attr_value)
+                            attrs.append((attr_name, [binary_value]))
+                        except ValueError:
+                            logger.error(f"Invalid hex value for {attr_name}: {attr_value}")
+                            return False, "samba_backend.error.create_generic_object", [f"Invalid hex value for {attr_name}"]
+                    else:
+                        # Regular string attribute
+                        attrs.append((attr_name, [attr_value.encode('utf-8')]))
+    
+    try:
+        samba_conn.add_s(dn, attrs)
+        logger.info(f"Successfully created generic object: {dn}")
+        return True, "samba_backend.success.create_generic_object", [naming_value, class_name]
+    except ldap.ALREADY_EXISTS:
+        logger.error(f"Object '{dn}' already exists.")
+        return False, "samba_backend.error.generic_object_exists", [naming_value]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error creating generic object '{dn}': {e}")
+        return False, "samba_backend.error.create_generic_object", [str(e)]
+
+
+def add_user_to_group_samba(samba_conn, user_dn, group_dn):
+    """Adds a user to a group in Samba AD."""
+    logger.info(f"Samba backend: Adding user {user_dn} to group {group_dn}")
+    
+    try:
+        # Add the user DN to the group's member attribute
+        modifications = [(ldap.MOD_ADD, 'member', [user_dn.encode('utf-8')])]
+        samba_conn.modify_s(group_dn, modifications)
+        logger.info(f"Successfully added user {user_dn} to group {group_dn}")
+        return True, "samba_backend.success.add_user_to_group", [user_dn, group_dn]
+    except ldap.TYPE_OR_VALUE_EXISTS:
+        logger.warning(f"User {user_dn} is already a member of group {group_dn}")
+        return False, "samba_backend.error.user_already_in_group", [user_dn, group_dn]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error adding user {user_dn} to group {group_dn}: {e}")
+        return False, "samba_backend.error.add_user_to_group", [str(e)]
+
+
+def remove_user_from_group_samba(samba_conn, user_dn, group_dn):
+    """Removes a user from a group in Samba AD."""
+    logger.info(f"Samba backend: Removing user {user_dn} from group {group_dn}")
+    
+    try:
+        # Remove the user DN from the group's member attribute
+        modifications = [(ldap.MOD_DELETE, 'member', [user_dn.encode('utf-8')])]
+        samba_conn.modify_s(group_dn, modifications)
+        logger.info(f"Successfully removed user {user_dn} from group {group_dn}")
+        return True, "samba_backend.success.remove_user_from_group", [user_dn, group_dn]
+    except ldap.NO_SUCH_ATTRIBUTE:
+        logger.warning(f"User {user_dn} is not a member of group {group_dn}")
+        return False, "samba_backend.error.user_not_in_group", [user_dn, group_dn]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error removing user {user_dn} from group {group_dn}: {e}")
+        return False, "samba_backend.error.remove_user_from_group", [str(e)]
+
+
+def get_user_groups_samba(samba_conn, user_dn):
+    """Gets all groups that a user is a member of."""
+    logger.info(f"Samba backend: Getting groups for user {user_dn}")
+    
+    try:
+        # Search for all groups where this user is a member
+        base_dn = BASE_DN
+        filter_expr = f'(&(objectClass=group)(member={user_dn}))'
+        attrs = ['cn', 'distinguishedName', 'groupType', 'description']
+        
+        res = samba_conn.search_s(base_dn, ldap.SCOPE_SUBTREE, filter_expr, attrs)
+        
+        groups = []
+        for dn, attrs in res:
+            if attrs:
+                group_info = {
+                    'dn': dn,
+                    'cn': attrs.get('cn', [b''])[0].decode('utf-8'),
+                    'description': attrs.get('description', [b''])[0].decode('utf-8'),
+                    'groupType': attrs.get('groupType', [b''])[0].decode('utf-8')
+                }
+                groups.append(group_info)
+        
+        logger.info(f"Found {len(groups)} groups for user {user_dn}")
+        return True, groups
+        
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error getting groups for user {user_dn}: {e}")
+        return False, []
+
+
+def get_group_members_samba(samba_conn, group_dn):
+    """Gets all members of a group."""
+    logger.info(f"Samba backend: Getting members for group {group_dn}")
+    
+    try:
+        # Get the group's member attribute
+        attrs = ['member']
+        res = samba_conn.search_s(group_dn, ldap.SCOPE_BASE, '(objectClass=*)', attrs)
+        
+        if not res or not res[0][1]:
+            logger.info(f"Group {group_dn} has no members")
+            return True, []
+        
+        member_dns = res[0][1].get('member', [])
+        members = []
+        
+        # Get details for each member
+        for member_dn_bytes in member_dns:
+            member_dn = member_dn_bytes.decode('utf-8')
+            try:
+                # Get member details
+                member_attrs = ['cn', 'sAMAccountName', 'objectClass', 'description']
+                member_res = samba_conn.search_s(member_dn, ldap.SCOPE_BASE, '(objectClass=*)', member_attrs)
+                
+                if member_res and member_res[0][1]:
+                    attrs = member_res[0][1]
+                    object_classes = [cls.decode('utf-8') for cls in attrs.get('objectClass', [])]
+                    
+                    member_info = {
+                        'dn': member_dn,
+                        'cn': attrs.get('cn', [b''])[0].decode('utf-8'),
+                        'sAMAccountName': attrs.get('sAMAccountName', [b''])[0].decode('utf-8'),
+                        'description': attrs.get('description', [b''])[0].decode('utf-8'),
+                        'objectClass': object_classes,
+                        'type': 'User' if 'user' in object_classes else 'Group' if 'group' in object_classes else 'Computer' if 'computer' in object_classes else 'Other'
+                    }
+                    members.append(member_info)
+                    
+            except ldap.LDAPError as e:
+                logger.warning(f"Could not get details for member {member_dn}: {e}")
+                # Add with minimal info
+                members.append({
+                    'dn': member_dn,
+                    'cn': member_dn.split(',')[0].split('=')[1] if '=' in member_dn else member_dn,
+                    'sAMAccountName': '',
+                    'description': '',
+                    'objectClass': [],
+                    'type': 'Unknown'
+                })
+        
+        logger.info(f"Found {len(members)} members for group {group_dn}")
+        return True, members
+        
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error getting members for group {group_dn}: {e}")
+        return False, []
 

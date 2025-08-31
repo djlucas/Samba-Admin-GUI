@@ -79,6 +79,7 @@ action_pane.menu.reset_computer_account=Reset Account
 action_pane.menu.new_group=New Group...
 action_pane.menu.find_group=Find...
 action_pane.menu.delete_group=Delete
+action_pane.menu.new_printer=New Printer...
 action_pane.menu.properties=Properties
 action_pane.menu.change_dc=Change Domain Controller...
 action_pane.container_header=Actions for '{0}'
@@ -132,6 +133,7 @@ dialog.copy_user.page3.summary_intro=Please review the following details for the
 dialog.copy_user.page3.summary_full_name=<br><b>Full Name:</b> {0}
 dialog.copy_user.page3.summary_user_logon=<br><b>User Logon Name:</b> {0}{1}
 
+
 # Confirmation Dialogs
 dialog.delete_user.title=Confirm Deletion
 dialog.delete_user.message=Are you sure you want to delete the user '{0}'? This action cannot be undone.
@@ -176,6 +178,7 @@ samba_backend.success.disable_computer = Computer '{0}' has been disabled succes
 samba_backend.success.enable_user = User '{0}' has been enabled successfully.
 samba_backend.success.enable_computer = Computer '{0}' has been enabled successfully.
 samba_backend.success.reset_password = Password has been reset for user '{0}' successfully.
+samba_backend.success.reset_computer = Computer account '{0}' has been reset. The computer must be rejoined to the domain.
 samba_backend.error.create_user = An error occurred while creating the user: {0}
 samba_backend.error.copy_user = An error occurred while copying the user: {0}
 samba_backend.error.delete_user = An error occurred while deleting the user: {0}
@@ -189,6 +192,7 @@ samba_backend.error.disable_computer = An error occurred while disabling the com
 samba_backend.error.enable_user = An error occurred while enabling the user: {0}
 samba_backend.error.enable_computer = An error occurred while enabling the computer: {0}
 samba_backend.error.reset_password = An error occurred while resetting the password: {0}
+samba_backend.error.reset_computer = An error occurred while resetting the computer account: {0}
 samba_backend.error.password_constraint = Password does not meet complexity requirements: {0}
 samba_backend.error.password_complexity = Password does not meet domain complexity requirements. Please ensure the password contains uppercase letters, lowercase letters, numbers, and special characters, and meets the minimum length requirement.
 samba_backend.error.password_history = This password was recently used and cannot be reused. Please choose a different password.
@@ -408,7 +412,6 @@ container_properties.tab.com_plus=COM+
 context_menu.new=New
 context_menu.new_ou=Organizational Unit
 context_menu.new_contact=Contact...
-context_menu.new_printer=Printer...
 context_menu.new_shared_folder=Shared Folder...
 context_menu.new_inetorgperson=InetOrgPerson...
 context_menu.new_msds_keycredential=msDS-KeyCredential...
@@ -435,6 +438,7 @@ context_menu.view_filter_options=Filter options...
 context_menu.view_customize=Customize...
 context_menu.view_users_as_containers=Users, Contacts, Groups, and Computers as containers
 context_menu.add_to_group=Add to a group...
+context_menu.remove_from_group=Remove from group...
 context_menu.reset_password=Reset Password...
 context_menu.move=Move...
 context_menu.open_home_page=Open Home Page
@@ -457,6 +461,18 @@ dialog.new_ou.title=New Object - Organizational Unit
 dialog.new_ou.label.name=Name:
 dialog.new_ou.checkbox.protect=Protect container from accidental deletion
 
+# New Contact Dialog
+dialog.new_contact.title=New Object - Contact
+dialog.new_contact.intro_text=Create a new contact object in Active Directory.
+dialog.new_contact.label.first_name=First name:
+dialog.new_contact.label.last_name=Last name:
+dialog.new_contact.label.display_name=Display name:
+dialog.new_contact.label.initials=Initials:
+dialog.new_contact.create_in_unknown=Create in: (Unknown)
+dialog.new_contact.create_in_domain=Create in: {0}
+dialog.new_contact.create_in_path=Create in: {0}/{1}
+dialog.new_contact.create_in_fallback=Create in: {0}
+
 # Backend messages for group creation
 samba_backend.success.create_group=Group '{0}' created successfully.
 samba_backend.error.create_group=An error occurred while creating the group: {0}
@@ -466,6 +482,51 @@ samba_backend.error.group_exists=A group with the name '{0}' already exists in t
 samba_backend.success.create_ou=Organizational Unit '{0}' created successfully.
 samba_backend.error.create_ou=An error occurred while creating the organizational unit: {0}
 samba_backend.error.ou_exists=An organizational unit with the name '{0}' already exists in this location.
+
+# Backend messages for contact creation
+samba_backend.success.create_contact=Contact '{0}' created successfully.
+samba_backend.error.create_contact=An error occurred while creating the contact: {0}
+samba_backend.error.contact_exists=A contact with the name '{0}' already exists in this location.
+samba_backend.error.missing_contact_name=Cannot create contact: missing name information.
+
+# New InetOrgPerson Dialog
+dialog.new_inetorgperson.title=New Object - InetOrgPerson
+dialog.new_inetorgperson.page1.title=Create a new inetOrgPerson
+dialog.new_inetorgperson.page1.subtitle=Fill in the inetOrgPerson's name details and logon names.
+dialog.new_inetorgperson.page1.intro_text=Create a new inetOrgPerson object in Active Directory.
+dialog.new_inetorgperson.page2.title=New Object - InetOrgPerson
+dialog.new_inetorgperson.page2.subtitle=Set the password and account options.
+dialog.new_inetorgperson.page3.title=Completing the New Object - InetOrgPerson Wizard
+dialog.new_inetorgperson.page3.subtitle=You have successfully created a new inetOrgPerson.
+dialog.new_inetorgperson.page3.summary_intro=You have chosen to create the following object:
+dialog.new_inetorgperson.page3.summary_full_name=Full name: {0}
+dialog.new_inetorgperson.page3.summary_user_logon=User logon name: {0}{1}
+
+# Backend messages for inetOrgPerson creation
+samba_backend.success.create_inetorgperson=InetOrgPerson '{0}' created successfully.
+samba_backend.error.create_inetorgperson=An error occurred while creating the inetOrgPerson: {0}
+samba_backend.error.inetorgperson_exists=An inetOrgPerson with the name '{0}' already exists in this location.
+
+# New Computer Dialog
+dialog.new_computer.title=New Object - Computer
+dialog.new_computer.label.computer_name=Computer name:
+dialog.new_computer.label.pre2k_name=Computer name (pre-Windows 2000):
+dialog.new_computer.label.user_or_group=User or group:
+dialog.new_computer.button.change=Change...
+dialog.new_computer.checkbox.pre2k=Assign this computer account as a pre-Windows 2000 computer
+dialog.new_computer.default.domain_computers=Domain Computers
+dialog.new_computer.create_in_unknown=Create in: (Unknown)
+dialog.new_computer.create_in_domain=Create in: {0}
+dialog.new_computer.create_in_path=Create in: {0}/{1}
+dialog.new_computer.create_in_fallback=Create in: {0}
+dialog.new_computer.select_group.title=Select Group
+dialog.new_computer.select_group.prompt=Enter group name:
+
+# Backend messages for computer creation
+samba_backend.success.create_computer=Computer '{0}' created successfully.
+samba_backend.error.create_computer=An error occurred while creating the computer: {0}
+samba_backend.error.computer_exists=A computer with the name '{0}' already exists in this location.
+samba_backend.error.missing_computer_name=Cannot create computer: missing computer name.
 
 # Attribute Editor
 attribute_editor.edit=Edit
@@ -636,3 +697,60 @@ samba_backend.error.object_protected_from_deletion=The object '{0}' is protected
 
 # Critical computer protection
 samba_backend.error.critical_computer_cannot_delete=The computer '{0}' appears to be a Domain Controller and cannot be deleted.
+
+# New Printer Dialog
+dialog.new_printer.title=New Object - Printer
+dialog.new_printer.create_in=Create in: {0}
+dialog.new_printer.network_path_label=Network path for the pre-Windows 2000 print share (\\server\\share):
+dialog.new_printer.network_path_placeholder=\\server\\share
+dialog.new_printer.validation_warning=(Note: this path is not validated in SADUC.)
+
+# Samba backend printer creation
+samba_backend.success.create_printer=Printer '{0}' has been created successfully.
+samba_backend.error.create_printer=An error occurred while creating the printer: {0}
+samba_backend.error.printer_exists=A printer with the name '{0}' already exists.
+samba_backend.error.printer_name_required=Printer name is required.
+samba_backend.error.printer_path_required=Network path is required.
+
+# New Shared Folder Dialog
+dialog.new_shared_folder.title=New Object - Shared Folder
+dialog.new_shared_folder.create_in=Create in: {0}
+dialog.new_shared_folder.name_label=Name:
+dialog.new_shared_folder.network_path_label=Network path (\\server\\share):
+dialog.new_shared_folder.network_path_placeholder=\\server\\share
+dialog.new_shared_folder.validation_warning=(Note: this path is not validated in SADUC.)
+
+# Samba backend shared folder creation
+samba_backend.success.create_shared_folder=Shared folder '{0}' has been created successfully.
+samba_backend.error.create_shared_folder=An error occurred while creating the shared folder: {0}
+samba_backend.error.shared_folder_exists=A shared folder with the name '{0}' already exists.
+samba_backend.error.shared_folder_name_required=Shared folder name is required.
+samba_backend.error.shared_folder_path_required=Network path is required.
+
+# Generic Object Dialog
+dialog.generic_object.title=New Object - {0}
+dialog.generic_object.create_in=Create in: {0}
+dialog.generic_object.name_label={0}:
+
+# Generic Object Wizard
+dialog.generic_object_wizard.step1.title=New Object - {0} - Step 1 of 2
+dialog.generic_object_wizard.step1.subtitle=Create new {0}
+dialog.generic_object_wizard.step1.attribute_name=Attribute name: {0}
+dialog.generic_object_wizard.step1.attribute_type=Attribute type: {0}
+dialog.generic_object_wizard.step2.title=New Object - {0} - Step 2 of 2  
+dialog.generic_object_wizard.step2.subtitle=Set required attributes for {0}
+
+# Samba backend generic object creation
+samba_backend.success.create_generic_object={1} '{0}' has been created successfully.
+samba_backend.error.create_generic_object=An error occurred while creating the object: {0}
+samba_backend.error.generic_object_exists=An object with the name '{0}' already exists.
+samba_backend.error.generic_object_name_required=Name is required.
+samba_backend.error.generic_object_missing_fields=Missing required fields for object creation.
+
+# Samba backend group membership management
+samba_backend.success.add_user_to_group=Successfully added user to group.
+samba_backend.error.add_user_to_group=An error occurred while adding user to group: {0}
+samba_backend.error.user_already_in_group=User is already a member of this group.
+samba_backend.success.remove_user_from_group=Successfully removed user from group.
+samba_backend.error.remove_user_from_group=An error occurred while removing user from group: {0}
+samba_backend.error.user_not_in_group=User is not a member of this group.

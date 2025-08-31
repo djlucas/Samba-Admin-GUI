@@ -535,32 +535,102 @@ class GroupPropertiesDialog(QDialog):
         self.remove_member_btn.setEnabled(len(selected_items) > 0)
     
     def _add_member(self):
-        """Add a new member to the group using the universal search dialog."""
-        from find_dialog import FindObjectsDialog
-        from samba_backend import get_base_dn
+        """Add new members to the group using the Add to Group dialog."""
+        from group_membership_dialogs import AddToGroupDialog
+        from samba_backend import add_user_to_group_samba
         
-        # Use your existing universal search dialog
-        search_base = get_base_dn(self.samba_conn)
-        dialog = FindObjectsDialog(self.samba_conn, search_base, self)
-        dialog.setWindowTitle("Find Objects to Add to Group")
+        dialog = AddToGroupDialog(self.samba_conn, self)
         
         if dialog.exec_() == QDialog.Accepted:
-            # Get selected items from the search results
-            selected_items = dialog.results_table.selectedItems()
-            if not selected_items:
-                QMessageBox.information(self, "Add Member", "Please select an object to add to the group.")
+            selected_objects = dialog.get_selected_objects()
+            if not selected_objects:
                 return
+                
+            # Add each selected object to the group
+            success_count = 0
+            for obj in selected_objects:
+                obj_dn = obj['dn']
+                obj_display = obj['display_text']
+                
+                # Add to group via backend
+                success, message_key, extra = add_user_to_group_samba(self.samba_conn, obj_dn, self.group_dn)
+                
+                if success:
+                    success_count += 1
+                    # Add to the table immediately
+                    self._add_member_to_table(obj_dn, obj_display)
+                    
+                    # Update local group properties for Apply functionality
+                    current_members = self.editable_group_props.get('member', [])
+                    if isinstance(current_members[0], bytes) if current_members else False:
+                        current_members = [m.decode('utf-8') for m in current_members]
+                    if obj_dn not in current_members:
+                        current_members.append(obj_dn)
+                        self.editable_group_props['member'] = current_members
+                else:
+                    # Show error message
+                    message = self.i18n.get_text(message_key, *extra) if extra else self.i18n.get_string(message_key)
+                    QMessageBox.warning(self, "Add Member Failed", f"Failed to add '{obj_display}':\n{message}")
             
-            # Get the selected row
-            row = selected_items[0].row()
-            member_name = dialog.results_table.item(row, 0).text()
-            
-            # We need to get the DN - this might need to be stored in the search results
-            # For now, we'll use the name to construct a basic DN (this is a limitation we need to fix)
-            QMessageBox.information(self, "Add Member", f"Selected: {member_name}\n\nNote: Need to enhance search dialog to return DN for proper membership management.")
-            
-            # TODO: Enhance FindObjectsDialog to store and return object DNs
-            self.logger.info(f"Would add member {member_name} to group (need DN from search results)")
+            if success_count > 0:
+                message = f"Successfully added {success_count} member(s) to the group."
+                QMessageBox.information(self, "Add Members", message)
+                self.logger.info(f"Added {success_count} members to group {self.group_dn}")
+                
+    def _add_member_to_table(self, member_dn, display_text=None):
+        """Add a member to the members table."""
+        if not display_text:
+            # Try to get display name from DN
+            try:
+                import ldap
+                attrs = ['cn', 'sAMAccountName', 'displayName', 'objectClass']
+                res = self.samba_conn.search_s(member_dn, ldap.SCOPE_BASE, '(objectClass=*)', attrs)
+                
+                if res and res[0][1]:
+                    attrs_dict = res[0][1]
+                    cn = attrs_dict.get('cn', [b''])[0].decode('utf-8')
+                    sam_account = attrs_dict.get('sAMAccountName', [b''])[0].decode('utf-8')
+                    display_name = attrs_dict.get('displayName', [b''])[0].decode('utf-8')
+                    object_classes = [cls.decode('utf-8') for cls in attrs_dict.get('objectClass', [])]
+                    
+                    # Determine object type
+                    if 'user' in object_classes:
+                        obj_type = 'User'
+                    elif 'group' in object_classes:
+                        obj_type = 'Group'
+                    elif 'computer' in object_classes:
+                        obj_type = 'Computer'
+                    elif 'contact' in object_classes:
+                        obj_type = 'Contact'
+                    else:
+                        obj_type = 'Object'
+                        
+                    # Create display text
+                    display_text = display_name or cn or sam_account
+                    if sam_account and sam_account != display_text:
+                        display_text += f" ({sam_account})"
+                    display_text += f" [{obj_type}]"
+            except:
+                # Fallback to DN
+                display_text = member_dn.split(',')[0].split('=')[1] if '=' in member_dn else member_dn
+        
+        # Check if already in table
+        for row in range(self.members_table.rowCount()):
+            existing_item = self.members_table.item(row, 0)
+            if existing_item and existing_item.data(Qt.UserRole) == member_dn:
+                return  # Already in table
+        
+        # Add to table
+        row = self.members_table.rowCount()
+        self.members_table.insertRow(row)
+        
+        name_item = QTableWidgetItem(display_text)
+        name_item.setData(Qt.UserRole, member_dn)
+        self.members_table.setItem(row, 0, name_item)
+        
+        # Create path display (simplified)
+        display_path = member_dn.replace(f",{self.base_dn}", "").replace(",", " / ")
+        self.members_table.setItem(row, 1, QTableWidgetItem(display_path))
     
     def _remove_member(self):
         """Remove selected member from the group."""
@@ -586,19 +656,29 @@ class GroupPropertiesDialog(QDialog):
         )
         
         if reply == QMessageBox.Yes:
-            # Remove from table
-            self.members_table.removeRow(row)
+            # Remove from group via backend
+            from samba_backend import remove_user_from_group_samba
             
-            # Update local group properties
-            current_members = self.editable_group_props.get('member', [])
-            if isinstance(current_members[0], bytes) if current_members else False:
-                current_members = [m.decode('utf-8') for m in current_members]
+            success, message_key, extra = remove_user_from_group_samba(self.samba_conn, member_dn, self.group_dn)
             
-            if member_dn in current_members:
-                current_members.remove(member_dn)
-                self.editable_group_props['member'] = current_members
-            
-            self.logger.info(f"Removed member {member_name} from group (local update only)")
-            
-            # Update button state
+            if success:
+                # Remove from table
+                self.members_table.removeRow(row)
+                
+                # Update local group properties for consistency
+                current_members = self.editable_group_props.get('member', [])
+                if isinstance(current_members[0], bytes) if current_members else False:
+                    current_members = [m.decode('utf-8') for m in current_members]
+                
+                if member_dn in current_members:
+                    current_members.remove(member_dn)
+                    self.editable_group_props['member'] = current_members
+                    
+                self.logger.info(f"Removed member {member_dn} from group {self.group_dn}")
+                QMessageBox.information(self, "Remove Member", "Member removed successfully.")
+            else:
+                # Show error message
+                message = self.i18n.get_text(message_key, *extra) if extra else self.i18n.get_string(message_key)
+                QMessageBox.warning(self, "Remove Member Failed", f"Failed to remove '{member_name}':\n{message}")
+                self.logger.error(f"Failed to remove member {member_dn} from group {self.group_dn}: {message}")
             self._on_member_selection_changed()

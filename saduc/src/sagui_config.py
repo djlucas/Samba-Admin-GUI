@@ -146,6 +146,35 @@ class SAGUIConfig:
         
         return searches
     
+    def list_saved_search_folders(self, relative_path: str = "") -> List[str]:
+        """
+        Get list of subdirectories in the saved searches folder
+        
+        Args:
+            relative_path: Relative path from searches_dir root
+            
+        Returns:
+            List of directory names
+        """
+        folders = []
+        
+        try:
+            search_path = self.searches_dir
+            if relative_path:
+                search_path = search_path / relative_path
+                
+            if search_path.exists() and search_path.is_dir():
+                for item in search_path.iterdir():
+                    if item.is_dir():
+                        folders.append(item.name)
+                        
+            folders.sort()
+            return folders
+            
+        except Exception as e:
+            self.logger.error(f"Failed to list search folders in {search_path}: {e}")
+            return []
+    
     def delete_search(self, name: str) -> bool:
         """
         Delete a saved search

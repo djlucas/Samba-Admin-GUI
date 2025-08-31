@@ -643,7 +643,7 @@ class MemberOfTab(QWidget):
     def _add_to_group(self):
         """Add this object to a selected group using the universal search dialog."""
         from find_dialog import FindObjectsDialog
-        from samba_backend import get_base_dn
+        from samba_backend import get_base_dn, add_user_to_group_samba
         
         # Use the universal search dialog to find groups
         search_base = get_base_dn(self.samba_conn)
@@ -662,14 +662,14 @@ class MemberOfTab(QWidget):
         if dialog.exec_() == QDialog.Accepted:
             selected_object = dialog.get_selected_object()
             if not selected_object:
-                QMessageBox.information(self, "Add to Group", "Please select a group.")
+                QMessageBox.information(self, self.i18n.get_string("dialog.common.info.title"), "Please select a group.")
                 return
             
             group_dn = selected_object.get('dn', '')
             group_name = selected_object.get('name', selected_object.get('cn', [''])[0] if isinstance(selected_object.get('cn'), list) else selected_object.get('cn', ''))
             
             if not group_dn:
-                QMessageBox.warning(self, "Add to Group", "Could not retrieve the group DN.")
+                QMessageBox.warning(self, self.i18n.get_string("dialog.common.error.title"), "Could not retrieve the group DN.")
                 return
             
             # Check if already a member
@@ -678,23 +678,40 @@ class MemberOfTab(QWidget):
                 current_member_of = [m.decode('utf-8') for m in current_member_of]
             
             if group_dn in current_member_of:
-                QMessageBox.information(self, "Add to Group", f"This object is already a member of '{group_name}'.")
+                QMessageBox.information(self, self.i18n.get_string("dialog.common.info.title"), f"This object is already a member of '{group_name}'.")
                 return
             
-            # Show read-only confirmation since we can't actually modify AD
-            QMessageBox.information(
-                self, 
-                "Read-Only Mode", 
-                f"Would add this object to group '{group_name}'.\n\nThis application is currently in read-only mode. Changes cannot be saved to Active Directory."
-            )
-            
-            self.logger.info(f"Would add object {self.object_dn} to group {group_dn} (read-only mode)")
+            try:
+                # Actually add the user to the group
+                add_user_to_group_samba(self.samba_conn, self.object_dn, group_dn)
+                
+                # Update the local properties and refresh the display
+                self.parent_props['memberOf'] = self.parent_props.get('memberOf', []) + [group_dn]
+                self._load_membership_data()
+                
+                QMessageBox.information(
+                    self, 
+                    self.i18n.get_string("dialog.common.success.title"), 
+                    f"Successfully added this object to group '{group_name}'."
+                )
+                
+                self.logger.info(f"Successfully added object {self.object_dn} to group {group_dn}")
+                
+            except Exception as e:
+                QMessageBox.critical(
+                    self, 
+                    self.i18n.get_string("dialog.common.error.title"), 
+                    f"Failed to add object to group '{group_name}': {str(e)}"
+                )
+                self.logger.error(f"Failed to add object {self.object_dn} to group {group_dn}: {e}")
 
     def _remove_from_group(self):
         """Remove this object from the selected group."""
+        from samba_backend import remove_user_from_group_samba
+        
         selected_items = self.member_of_table.selectedItems()
         if not selected_items:
-            QMessageBox.information(self, "Remove from Group", "Please select a group to remove this object from.")
+            QMessageBox.information(self, self.i18n.get_string("dialog.common.info.title"), "Please select a group to remove this object from.")
             return
         
         # Get the selected row
@@ -711,7 +728,7 @@ class MemberOfTab(QWidget):
             primary_group_id = self.parent_props.get('primaryGroupID', ['513'])[0]
             primary_group_info = get_group_by_rid(self.samba_conn, primary_group_id)
             if primary_group_info and group_dn == primary_group_info['dn']:
-                QMessageBox.warning(self, "Remove from Group", "Cannot remove an object from its primary group. Change the primary group first.")
+                QMessageBox.warning(self, self.i18n.get_string("dialog.common.error.title"), "Cannot remove an object from its primary group. Change the primary group first.")
                 return
         
         # Confirm removal
@@ -723,14 +740,33 @@ class MemberOfTab(QWidget):
         )
         
         if reply == QMessageBox.Yes:
-            # Show read-only confirmation since we can't actually modify AD
-            QMessageBox.information(
-                self, 
-                "Read-Only Mode", 
-                f"Would remove this object from group '{group_name}'.\n\nThis application is currently in read-only mode. Changes cannot be saved to Active Directory."
-            )
-            
-            self.logger.info(f"Would remove object {self.object_dn} from group {group_dn} (read-only mode)")
+            try:
+                # Actually remove the user from the group
+                remove_user_from_group_samba(self.samba_conn, self.object_dn, group_dn)
+                
+                # Update the local properties and refresh the display
+                current_member_of = self.parent_props.get('memberOf', [])
+                if group_dn in current_member_of:
+                    current_member_of.remove(group_dn)
+                    self.parent_props['memberOf'] = current_member_of
+                
+                self._load_membership_data()
+                
+                QMessageBox.information(
+                    self, 
+                    self.i18n.get_string("dialog.common.success.title"), 
+                    f"Successfully removed this object from group '{group_name}'."
+                )
+                
+                self.logger.info(f"Successfully removed object {self.object_dn} from group {group_dn}")
+                
+            except Exception as e:
+                QMessageBox.critical(
+                    self, 
+                    self.i18n.get_string("dialog.common.error.title"), 
+                    f"Failed to remove object from group '{group_name}': {str(e)}"
+                )
+                self.logger.error(f"Failed to remove object {self.object_dn} from group {group_dn}: {e}")
 
     def _set_primary_group(self):
         current_row = self.member_of_table.currentRow()

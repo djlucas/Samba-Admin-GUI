@@ -106,9 +106,9 @@ python main.py
 
 ## 🧪 Development Status
 
-### Current Implementation Status (~75% Complete)
+### Current Implementation Status (~80% Complete)
 
-**SADUC (Samba Active Directory Users & Computers)** - *~85% Complete*
+**SADUC (Samba Active Directory Users & Computers)** - *~90% Complete*
 
 - ✅ **Core Features (Complete):**
   - LDAP connectivity and authentication via Kerberos
@@ -127,6 +127,7 @@ python main.py
   - **Enable/disable functionality** for user and computer accounts
   - **Password reset** with "user must change password at next logon" support
   - **Real Windows ACL manipulation** using impacket for "Protect from accidental deletion"
+  - **Complete group membership management** with add/remove functionality across all interfaces
   - Context menus with dynamic enable/disable options based on object state
 
 - ✅ **Advanced Security Features:**
@@ -137,7 +138,6 @@ python main.py
   - Consistent "Protect from accidental deletion" functionality across all dialogs
 
 - ⚠️ **Remaining Features:**
-  - Group membership management (add/remove users from groups)
   - Move and rename operations for AD objects
   - Security tab functionality (partially implemented)
 
@@ -151,7 +151,7 @@ python main.py
 
 | Module   | Completion | Status     | Notes                                  |
 |----------|------------|------------|----------------------------------------|
-| saduc    | ~85%       | 🚧 Active Development | Core functionality complete, advanced features remaining |
+| saduc    | ~90%       | 🚧 Active Development | Core functionality complete, move/rename operations remaining |
 | sdns     | ~15%       | 🚧 Early Stage | Basic structure only, core functionality missing |
 | sadss    | 0%         | 🕒 Planned | Pending topology mapping logic |
 | sgpoe    | 0%         | 🕒 Planned | Requires policy template scaffolding |
@@ -163,12 +163,18 @@ python main.py
 3. ✅ **Enhanced Delete Operations** - Enterprise-grade deletion with recursive scanning and protection validation
 4. ✅ **Real ACL Manipulation** - Authentic Windows security descriptor manipulation using impacket
 5. ✅ **Smart Protection System** - Consistent "Protect from accidental deletion" across all object types
+6. ✅ **Complete Group Membership Management** - Full add/remove functionality via properties dialogs and context menus
 
 ### Next Development Priorities
 
-1. **Group Membership Management** - Add/remove users from groups with proper DN resolution
-2. **Move and Rename Operations** - Complete basic object manipulation functionality
-3. **Security Tab Enhancement** - Complete the partially implemented security permissions interface
-4. **Computer Creation Wizard** - Add new computer account creation functionality
-5. **Add Comprehensive Testing** - Implement test suite for core functionality
+**HIGH PRIORITY (Core functionality gaps):**
+1. **Move and Rename Operations** - Complete basic AD manipulation functionality
+
+**MEDIUM PRIORITY (Enhancement):**
+2. **Security Tab Enhancement** - Complete the partially implemented security permissions interface
+
+**LOW PRIORITY:**
+3. **Search Dialog Parameter Setting** - Enhanced search functionality configuration
+4. **Samba-Specific Tasks** - Add Samba extensions (e.g., sambaSamAccount objectType to inetOrgPerson)
+5. **Comprehensive Testing Suite** - Implement automated test coverage for core functionality
 
