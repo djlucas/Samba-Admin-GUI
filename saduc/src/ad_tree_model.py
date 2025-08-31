@@ -14,7 +14,7 @@
 
 import logging
 import os
-from PyQt5.QtCore import QAbstractItemModel, QModelIndex, Qt
+from PyQt5.QtCore import QAbstractItemModel, QModelIndex, Qt, pyqtSignal
 from PyQt5.QtGui import QIcon
 from samba_backend import get_forest_root_info, get_expandable_children, has_expandable_children
 from sagui_config import config_manager
@@ -85,6 +85,9 @@ class ADTreeModel(QAbstractItemModel):
     This model uses lazy loading to fetch children on demand, starting
     from the forest root.
     """
+    # Signal emitted when drag-drop operations complete
+    dragDropCompleted = pyqtSignal(int, int, str)  # success_count, total_count, message
+    
     def __init__(self, samba_conn, connected_server, advanced_view=False, parent=None):
         super().__init__(parent)
         self.logger = logging.getLogger("saduc_app." + self.__class__.__name__)
@@ -206,7 +209,22 @@ class ADTreeModel(QAbstractItemModel):
         if not index.isValid():
             return Qt.NoItemFlags
 
-        return QAbstractItemModel.flags(self, index)
+        default_flags = QAbstractItemModel.flags(self, index)
+        
+        # Enable drop for container items
+        if index.isValid():
+            item = index.internalPointer()
+            if item and item.dn():
+                # Don't allow drops on saved queries
+                if 'savedQueries' not in item.dn():
+                    # Check if it's a container type
+                    item_classes = item.object_class()
+                    if isinstance(item_classes, list):
+                        container_classes = {'container', 'organizationalUnit', 'domainDNS', 'builtinDomain'}
+                        if any(cls in container_classes for cls in item_classes):
+                            return default_flags | Qt.ItemIsDropEnabled
+        
+        return default_flags
 
     def headerData(self, section, orientation, role):
         if orientation == Qt.Horizontal and role == Qt.DisplayRole:
@@ -386,4 +404,96 @@ class ADTreeModel(QAbstractItemModel):
         except Exception as e:
             self.logger.error(f"ADTreeModel: Failed to load saved queries folder {folder_dn}: {e}")
             return []
+
+    # Drag and Drop support
+    def supportedDropActions(self):
+        return Qt.MoveAction
+
+    def mimeTypes(self):
+        return ['application/x-saduc-object-dn']
+
+    def canDropMimeData(self, data, action, row, column, parent):
+        if not data.hasFormat('application/x-saduc-object-dn'):
+            return False
+        
+        if action != Qt.MoveAction:
+            return False
+        
+        # Get the target container
+        if not parent.isValid():
+            return False
+        
+        target_item = parent.internalPointer()
+        if not target_item:
+            return False
+        
+        # Only allow drops on containers (not saved queries or other non-container items)
+        target_dn = target_item.dn()
+        if not target_dn or 'savedQueries' in target_dn:
+            return False
+        
+        # Check if the target can contain objects (is a container or OU)
+        target_classes = target_item.object_class()
+        if isinstance(target_classes, list):
+            container_classes = {'container', 'organizationalUnit', 'domainDNS', 'builtinDomain'}
+            if not any(cls in container_classes for cls in target_classes):
+                return False
+        
+        return True
+
+    def dropMimeData(self, data, action, row, column, parent):
+        if not self.canDropMimeData(data, action, row, column, parent):
+            return False
+        
+        # Get the target container
+        target_item = parent.internalPointer()
+        target_dn = target_item.dn()
+        
+        # Get the source object DNs
+        mime_data = data.data('application/x-saduc-object-dn').data().decode('utf-8')
+        source_dns = [dn.strip() for dn in mime_data.split('\n') if dn.strip()]
+        
+        if not source_dns:
+            return False
+        
+        # Perform the move operation for each object
+        from samba_backend import move_object_samba
+        
+        success_count = 0
+        total_count = len(source_dns)
+        
+        for source_dn in source_dns:
+            try:
+                # Don't move to the same container
+                current_parent = ','.join(source_dn.split(',')[1:])
+                if target_dn == current_parent:
+                    continue
+                
+                # Perform the move
+                success, message_key, extra = move_object_samba(self.samba_conn, source_dn, target_dn)
+                if success:
+                    success_count += 1
+                    self.logger.info(f"Drag-drop move successful: {source_dn} -> {target_dn}")
+                else:
+                    self.logger.warning(f"Drag-drop move failed: {source_dn} -> {target_dn}: {message_key}")
+                    
+            except Exception as e:
+                self.logger.error(f"Exception during drag-drop move {source_dn} -> {target_dn}: {e}")
+        
+        # Emit signal with results
+        if total_count > 0:
+            if success_count == total_count:
+                message = f"Successfully moved {success_count} object{'s' if success_count != 1 else ''}"
+                self.logger.info(f"All {success_count} drag-drop moves completed successfully")
+            elif success_count > 0:
+                message = f"Moved {success_count} of {total_count} objects successfully"
+                self.logger.warning(f"{success_count} of {total_count} drag-drop moves completed successfully")
+            else:
+                message = f"Failed to move {total_count} object{'s' if total_count != 1 else ''}"
+                self.logger.error(f"All {total_count} drag-drop moves failed")
+            
+            # Emit signal to notify main window of results
+            self.dragDropCompleted.emit(success_count, total_count, message)
+        
+        return success_count > 0
 

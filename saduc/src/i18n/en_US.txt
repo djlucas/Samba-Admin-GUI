@@ -754,3 +754,15 @@ samba_backend.error.user_already_in_group=User is already a member of this group
 samba_backend.success.remove_user_from_group=Successfully removed user from group.
 samba_backend.error.remove_user_from_group=An error occurred while removing user from group: {0}
 samba_backend.error.user_not_in_group=User is not a member of this group.
+
+# Samba backend move and rename operations
+samba_backend.success.move_object=Object successfully moved to new location.
+samba_backend.error.move_object=An error occurred while moving the object: {0}
+samba_backend.error.move_unwilling=Server refused to move the object: {0}
+samba_backend.success.rename_object=Object successfully renamed to '{1}'.
+samba_backend.error.rename_object=An error occurred while renaming the object: {0}
+samba_backend.error.rename_unwilling=Server refused to rename the object: {0}
+samba_backend.error.invalid_dn=Invalid DN format: {0}
+samba_backend.error.invalid_rdn=Invalid RDN format: {0}
+samba_backend.error.object_not_found=Object not found: {0}
+samba_backend.error.name_exists=An object with the name '{0}' already exists in this location.

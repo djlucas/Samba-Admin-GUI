@@ -191,3 +191,37 @@ class ADListModel(QAbstractTableModel):
         if index.isValid() and 0 <= index.row() < len(self._data):
             return self._data[index.row()]
         return None
+
+    # Drag and Drop support
+    def supportedDragActions(self):
+        return Qt.MoveAction
+
+    def mimeTypes(self):
+        return ['application/x-saduc-object-dn']
+
+    def mimeData(self, indexes):
+        from PyQt5.QtCore import QMimeData
+        mime_data = QMimeData()
+        
+        # Get unique rows (in case multiple columns are selected)
+        rows = set()
+        for index in indexes:
+            if index.isValid():
+                rows.add(index.row())
+        
+        # Get DNs of dragged objects
+        dns = []
+        for row in rows:
+            if row < len(self._data):
+                obj_data = self._data[row]
+                dn = obj_data.get('distinguishedName')
+                if dn:
+                    dns.append(dn)
+        
+        # Store DNs as MIME data
+        if dns:
+            mime_data.setData('application/x-saduc-object-dn', '\n'.join(dns).encode('utf-8'))
+            # Also set text data for debugging
+            mime_data.setText('\n'.join(dns))
+        
+        return mime_data

@@ -148,7 +148,7 @@ class SADUCMainWindow(QMainWindow):
 
     def _create_menu_bar(self):
         """
-        Sets up the application's menu bar with basic File, Action, View, Window, Help menus.
+        Sets up the application's menu bar with File, Action, and View menus.
         """
         self.logger.debug("SADUCMainWindow: Creating menu bar.")
         menuBar = self.menuBar()
@@ -218,12 +218,6 @@ class SADUCMainWindow(QMainWindow):
 
         self.logger.debug("SADUCMainWindow: 'View' menu created.")
 
-        menuBar.addMenu(self.i18n.get_string("menu.window"))
-        self.logger.debug("SADUCMainWindow: 'Window' menu placeholder created.")
-
-        menuBar.addMenu(self.i18n.get_string("menu.help"))
-        self.logger.debug("SADUCMainWindow: 'Help' menu placeholder created.")
-
     def _create_tool_bar(self):
         """
         Sets up the application's toolbar (currently a placeholder).
@@ -253,6 +247,10 @@ class SADUCMainWindow(QMainWindow):
         self.treePane.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.treePane.setContextMenuPolicy(Qt.CustomContextMenu)
         self.treePane.customContextMenuRequested.connect(self.tree_menu_manager.on_tree_context_menu)
+        
+        # Enable drag and drop for tree view (drop target)
+        self.treePane.setAcceptDrops(True)
+        self.treePane.setDropIndicatorShown(True)
 
         self.listPane = QTableView()
         self.listPane.setObjectName("ListPane")
@@ -267,6 +265,10 @@ class SADUCMainWindow(QMainWindow):
         self.listPane.setContextMenuPolicy(Qt.CustomContextMenu)
         self.listPane.customContextMenuRequested.connect(self.list_menu_manager.on_list_context_menu)
         self.listPane.doubleClicked.connect(partial(actions.on_list_item_double_clicked, self))
+        
+        # Enable drag and drop for list view (drag source)
+        self.listPane.setDragEnabled(True)
+        self.listPane.setDragDropMode(QAbstractItemView.DragOnly)
 
         self.iconView = QListView()
         self.iconView.setObjectName("IconView")
@@ -277,6 +279,10 @@ class SADUCMainWindow(QMainWindow):
         self.iconView.setContextMenuPolicy(Qt.CustomContextMenu)
         self.iconView.customContextMenuRequested.connect(self.list_menu_manager.on_list_context_menu)
         self.iconView.doubleClicked.connect(partial(actions.on_list_item_double_clicked, self))
+        
+        # Enable drag and drop for icon view (drag source)
+        self.iconView.setDragEnabled(True)
+        self.iconView.setDragDropMode(QAbstractItemView.DragOnly)
 
         self.stackedListWidget = QStackedWidget()
         self.stackedListWidget.addWidget(self.listPane)
@@ -411,6 +417,7 @@ class SADUCMainWindow(QMainWindow):
         self.treePane.setModel(self.adModel)
         self.adModel.modelReset.connect(self._expand_tree_after_reset)
         self.adModel.rowsInserted.connect(self._on_rows_inserted)
+        self.adModel.dragDropCompleted.connect(self._on_drag_drop_completed)
         self._expand_tree_after_reset()
         self.logger.debug("SADUCMainWindow: Tree view model set.")
 
@@ -869,4 +876,21 @@ class SADUCMainWindow(QMainWindow):
                         new_menu.addAction(menu_text, action)
         except Exception as e:
             self.logger.warning(f"Could not load schema extensions for menu: {e}")
+
+    def _on_drag_drop_completed(self, success_count, total_count, message):
+        """Handle drag and drop completion signal from tree model."""
+        from PyQt5.QtWidgets import QMessageBox
+        
+        if success_count == total_count and success_count > 0:
+            # All successful
+            QMessageBox.information(self, self.i18n.get_string("dialog.common.success.title"), message)
+        elif success_count > 0:
+            # Partial success
+            QMessageBox.warning(self, "Partial Success", message)
+        else:
+            # All failed
+            QMessageBox.critical(self, self.i18n.get_string("dialog.common.error.title"), message)
+        
+        # Refresh the current container to reflect changes
+        self.refresh_current_container()
 

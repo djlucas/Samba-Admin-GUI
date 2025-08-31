@@ -2965,3 +2965,81 @@ def get_group_members_samba(samba_conn, group_dn):
         logger.error(f"LDAP error getting members for group {group_dn}: {e}")
         return False, []
 
+
+def move_object_samba(samba_conn, object_dn, new_parent_dn):
+    """Moves an AD object to a new parent container."""
+    logger.info(f"Samba backend: Moving object {object_dn} to {new_parent_dn}")
+    
+    try:
+        # Parse the current DN to get the RDN (relative DN)
+        import ldap.dn
+        dn_components = ldap.dn.explode_dn(object_dn)
+        if not dn_components:
+            logger.error(f"Invalid DN format: {object_dn}")
+            return False, "samba_backend.error.invalid_dn", [object_dn]
+        
+        rdn = dn_components[0]  # First component is the RDN (e.g., "CN=John")
+        
+        # Perform the move using modrdn
+        # modrdn(dn, newrdn, delold=1, newsuperior=new_parent)
+        samba_conn.rename_s(object_dn, rdn, newsuperior=new_parent_dn)
+        
+        new_dn = f"{rdn},{new_parent_dn}"
+        logger.info(f"Successfully moved object to: {new_dn}")
+        return True, "samba_backend.success.move_object", [object_dn, new_parent_dn]
+        
+    except ldap.NO_SUCH_OBJECT:
+        logger.error(f"Object not found: {object_dn}")
+        return False, "samba_backend.error.object_not_found", [object_dn]
+    except ldap.UNWILLING_TO_PERFORM as e:
+        logger.error(f"Server unwilling to perform move operation: {e}")
+        return False, "samba_backend.error.move_unwilling", [str(e)]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error moving object {object_dn}: {e}")
+        return False, "samba_backend.error.move_object", [str(e)]
+
+
+def rename_object_samba(samba_conn, object_dn, new_name):
+    """Renames an AD object by changing its RDN."""
+    logger.info(f"Samba backend: Renaming object {object_dn} to {new_name}")
+    
+    try:
+        # Parse the current DN to determine the attribute type
+        import ldap.dn
+        dn_components = ldap.dn.explode_dn(object_dn)
+        if not dn_components:
+            logger.error(f"Invalid DN format: {object_dn}")
+            return False, "samba_backend.error.invalid_dn", [object_dn]
+        
+        current_rdn = dn_components[0]  # e.g., "CN=OldName"
+        parent_dn = ','.join(dn_components[1:])  # Everything after the first component
+        
+        # Extract the attribute type from current RDN (CN, OU, etc.)
+        if '=' not in current_rdn:
+            logger.error(f"Invalid RDN format: {current_rdn}")
+            return False, "samba_backend.error.invalid_rdn", [current_rdn]
+        
+        attr_type = current_rdn.split('=')[0]  # e.g., "CN" from "CN=OldName"
+        new_rdn = f"{attr_type}={new_name}"  # e.g., "CN=NewName"
+        
+        # Perform the rename using modrdn
+        # rename_s(dn, newrdn, delold=1) - delold=1 means delete the old RDN attribute
+        samba_conn.rename_s(object_dn, new_rdn, delold=1)
+        
+        new_dn = f"{new_rdn},{parent_dn}"
+        logger.info(f"Successfully renamed object to: {new_dn}")
+        return True, "samba_backend.success.rename_object", [object_dn, new_name]
+        
+    except ldap.NO_SUCH_OBJECT:
+        logger.error(f"Object not found: {object_dn}")
+        return False, "samba_backend.error.object_not_found", [object_dn]
+    except ldap.ALREADY_EXISTS:
+        logger.error(f"Object with name '{new_name}' already exists in the same container")
+        return False, "samba_backend.error.name_exists", [new_name]
+    except ldap.UNWILLING_TO_PERFORM as e:
+        logger.error(f"Server unwilling to perform rename operation: {e}")
+        return False, "samba_backend.error.rename_unwilling", [str(e)]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error renaming object {object_dn}: {e}")
+        return False, "samba_backend.error.rename_object", [str(e)]
+

@@ -8,7 +8,7 @@ from printer_dialogs import NewPrinterDialog
 from shared_folder_dialogs import NewSharedFolderDialog
 from generic_object_dialogs import GenericObjectDialog, GenericObjectWizard
 from password_reset_dialog import PasswordResetDialog
-from samba_backend import create_user_samba, copy_user_samba, get_user_properties, create_group_samba, create_ou_samba, delete_user_samba, delete_ou_samba, disable_user_samba, enable_user_samba, disable_computer_samba, enable_computer_samba, reset_password_samba, create_contact_samba, create_inetorgperson_samba, create_computer_samba, delete_object_samba, reset_computer_account_samba, create_printer_samba, create_shared_folder_samba, create_generic_object_samba
+from samba_backend import create_user_samba, copy_user_samba, get_user_properties, create_group_samba, create_ou_samba, delete_user_samba, delete_ou_samba, disable_user_samba, enable_user_samba, disable_computer_samba, enable_computer_samba, reset_password_samba, create_contact_samba, create_inetorgperson_samba, create_computer_samba, delete_object_samba, reset_computer_account_samba, create_printer_samba, create_shared_folder_samba, create_generic_object_samba, move_object_samba, rename_object_samba
 from user_properties import UserPropertiesDialog
 from computer_properties import ComputerPropertiesDialog
 from group_properties import GroupPropertiesDialog
@@ -378,10 +378,135 @@ def on_reset_password_action_triggered(main_window):
             QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
 
 def on_move_action_triggered(main_window):
-    QMessageBox.information(main_window, "Not Implemented", "'Move...' is not yet implemented.")
+    """Move the currently selected object to a different container."""
+    if not main_window.current_selected_dn:
+        return
+        
+    from find_dialog import FindObjectsDialog
+    from samba_backend import get_base_dn
+    
+    # Use the universal search dialog to find containers (OUs, CNs)
+    search_base = get_base_dn(main_window.samba_conn)
+    dialog = FindObjectsDialog(main_window.samba_conn, search_base, main_window)
+    dialog.setWindowTitle("Select Destination Container")
+    
+    # Set the dialog to search for containers by default
+    container_index = -1
+    for i in range(dialog.find_combo.count()):
+        if "Container" in dialog.find_combo.itemText(i) or "Organizational Unit" in dialog.find_combo.itemText(i):
+            container_index = i
+            break
+    if container_index >= 0:
+        dialog.find_combo.setCurrentIndex(container_index)
+    
+    if dialog.exec_() == QDialog.Accepted:
+        selected_object = dialog.get_selected_object()
+        if not selected_object:
+            QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.info.title"), "Please select a destination container.")
+            return
+        
+        new_parent_dn = selected_object.get('dn', '')
+        container_name = selected_object.get('name', selected_object.get('cn', [''])[0] if isinstance(selected_object.get('cn'), list) else selected_object.get('cn', ''))
+        
+        if not new_parent_dn:
+            QMessageBox.warning(main_window, main_window.i18n.get_string("dialog.common.error.title"), "Could not retrieve the destination container DN.")
+            return
+        
+        # Don't allow moving to the same container
+        current_parent = ','.join(main_window.current_selected_dn.split(',')[1:])
+        if new_parent_dn == current_parent:
+            QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.info.title"), "The object is already in the selected container.")
+            return
+        
+        # Confirm the move
+        reply = QMessageBox.question(
+            main_window, 
+            "Move Object", 
+            f"Are you sure you want to move this object to '{container_name}'?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                # Perform the move
+                success, message_key, extra = move_object_samba(main_window.samba_conn, main_window.current_selected_dn, new_parent_dn)
+                message = main_window.i18n.get_text(message_key, *extra) if extra else main_window.i18n.get_string(message_key)
+                
+                if success:
+                    QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
+                    main_window.logger.info(f"Successfully moved object {main_window.current_selected_dn}")
+                    
+                    # Refresh both the source and destination containers
+                    main_window.refresh_current_container()
+                    
+                else:
+                    QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
+                    main_window.logger.error(f"Failed to move object {main_window.current_selected_dn}: {message}")
+                    
+            except Exception as e:
+                QMessageBox.critical(
+                    main_window, 
+                    main_window.i18n.get_string("dialog.common.error.title"), 
+                    f"Unexpected error during move operation: {str(e)}"
+                )
+                main_window.logger.error(f"Exception during move operation: {e}")
 
 def on_rename_action_triggered(main_window):
-    QMessageBox.information(main_window, "Not Implemented", "'Rename...' is not yet implemented.")
+    """Rename the currently selected object."""
+    if not main_window.current_selected_dn:
+        return
+    
+    # Get the current object name for the dialog
+    current_name = main_window.current_selected_dn.split(',')[0].split('=')[1]  # Extract name from CN=name,... or OU=name,...
+    
+    # Simple input dialog for the new name
+    from PyQt5.QtWidgets import QInputDialog
+    new_name, ok = QInputDialog.getText(
+        main_window, 
+        "Rename Object", 
+        f"Enter new name for '{current_name}':",
+        text=current_name
+    )
+    
+    if ok and new_name.strip():
+        new_name = new_name.strip()
+        
+        # Don't proceed if the name hasn't changed
+        if new_name == current_name:
+            return
+        
+        # Confirm the rename
+        reply = QMessageBox.question(
+            main_window, 
+            "Rename Object", 
+            f"Are you sure you want to rename '{current_name}' to '{new_name}'?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                # Perform the rename
+                success, message_key, extra = rename_object_samba(main_window.samba_conn, main_window.current_selected_dn, new_name)
+                message = main_window.i18n.get_text(message_key, *extra) if extra else main_window.i18n.get_string(message_key)
+                
+                if success:
+                    QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
+                    main_window.logger.info(f"Successfully renamed object {main_window.current_selected_dn} to {new_name}")
+                    
+                    # Refresh the current container to show the new name
+                    main_window.refresh_current_container()
+                    
+                else:
+                    QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
+                    main_window.logger.error(f"Failed to rename object {main_window.current_selected_dn}: {message}")
+                    
+            except Exception as e:
+                QMessageBox.critical(
+                    main_window, 
+                    main_window.i18n.get_string("dialog.common.error.title"), 
+                    f"Unexpected error during rename operation: {str(e)}"
+                )
+                main_window.logger.error(f"Exception during rename operation: {e}")
 
 def on_stub_action_triggered(main_window):
     QMessageBox.information(main_window, "Not Implemented", "This feature is not yet implemented.")
