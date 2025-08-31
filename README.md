@@ -168,14 +168,14 @@ python main.py
 
 ### Next Development Priorities
 
-**MEDIUM PRIORITY (Enhancement):** 
-1. **Security Tab Enhancement** - Complete the partially implemented security permissions interface 
+**MEDIUM PRIORITY (Enhancement):**  
+1. **Security Tab Enhancement** - Complete the partially implemented security permissions interface  
 
-**LOW PRIORITY:** 
-2. **Search Dialog Parameter Setting** - Enhanced search functionality configuration 
-3. **Samba-Specific Tasks** - Add Samba extensions (e.g., sambaSamAccount objectType to inetOrgPerson) 
-4. **Comprehensive Testing Suite** - Implement automated test coverage for core functionality 
+**LOW PRIORITY:**  
+2. **Search Dialog Parameter Setting** - Enhanced search functionality configuration  
+3. **Samba-Specific Tasks** - Add Samba extensions (e.g., sambaSamAccount objectType to inetOrgPerson)  
+4. **Comprehensive Testing Suite** - Implement automated test coverage for core functionality  
 
-**QUALITY OF LIFE:** 
-5. **Additional UI Polish** - Minor interface improvements and user experience enhancements 
-
+**QUALITY OF LIFE:**  
+5. **Additional UI Polish** - Minor interface improvements and user experience enhancements  
+  
