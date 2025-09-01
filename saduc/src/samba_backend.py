@@ -3043,3 +3043,218 @@ def rename_object_samba(samba_conn, object_dn, new_name):
         logger.error(f"LDAP error renaming object {object_dn}: {e}")
         return False, "samba_backend.error.rename_object", [str(e)]
 
+
+def get_fsmo_role_holders(samba_conn):
+    """Get information about all FSMO role holders using samba-tool."""
+    logger.info("Retrieving FSMO role holders using samba-tool")
+    
+    try:
+        import subprocess
+        import json
+        
+        # Use samba-tool to get FSMO roles - much more reliable than LDAP parsing
+        cmd = ['samba-tool', 'fsmo', 'show', '--json']
+        
+        logger.debug(f"Running command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode != 0:
+            error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+            logger.error(f"samba-tool fsmo show failed: {error_msg}")
+            return False, f"Failed to retrieve FSMO roles: {error_msg}"
+        
+        # Parse JSON output
+        try:
+            fsmo_data = json.loads(result.stdout)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse samba-tool fsmo JSON output: {e}")
+            # Fall back to parsing text output
+            return _parse_fsmo_text_output(result.stdout)
+        
+        # Convert to our expected format
+        fsmo_roles = {}
+        
+        # Map samba-tool role names to display names
+        role_mapping = {
+            'SchemaMasterRole': ('Schema Master', 'Forest', 'Controls schema modifications for the entire forest'),
+            'DomainNamingMasterRole': ('Domain Naming Master', 'Forest', 'Controls addition and removal of domains in the forest'),
+            'PDCEmulatorMasterRole': ('PDC Emulator', 'Domain', 'Handles password changes, account lockouts, and time synchronization'),
+            'RidAllocationMasterRole': ('RID Master', 'Domain', 'Allocates RID pools to domain controllers for creating security principals'),
+            'InfrastructureMasterRole': ('Infrastructure Master', 'Domain', 'Updates cross-domain group and user references')
+        }
+        
+        for role_key, role_info in fsmo_data.items():
+            if role_key in role_mapping:
+                display_name, scope, description = role_mapping[role_key]
+                holder = role_info.get('holder', 'Unknown')
+                
+                fsmo_roles[display_name] = {
+                    'holder': holder,
+                    'server_name': holder,  # samba-tool should give us the server name directly
+                    'scope': scope,
+                    'description': description
+                }
+        
+        return True, fsmo_roles
+        
+    except subprocess.TimeoutExpired:
+        logger.error("samba-tool fsmo show command timed out")
+        return False, "FSMO query timed out"
+    except FileNotFoundError:
+        logger.error("samba-tool command not found")
+        return False, "samba-tool command not found - ensure Samba is properly installed"
+    except Exception as e:
+        logger.error(f"Error retrieving FSMO role holders: {e}")
+        return False, f"Error retrieving FSMO roles: {str(e)}"
+
+
+def _parse_fsmo_text_output(output):
+    """Parse text output from samba-tool fsmo show when JSON isn't available."""
+    logger.info("Parsing samba-tool fsmo text output")
+    
+    try:
+        fsmo_roles = {}
+        lines = output.strip().split('\n')
+        
+        # Parse text output format
+        for line in lines:
+            line = line.strip()
+            if ':' in line:
+                parts = line.split(':', 1)
+                if len(parts) == 2:
+                    role_part = parts[0].strip()
+                    holder_part = parts[1].strip()
+                    
+                    # Map role names
+                    if 'SchemaMasterRole' in role_part or 'Schema Master' in role_part:
+                        fsmo_roles['Schema Master'] = {
+                            'holder': holder_part,
+                            'server_name': holder_part,
+                            'scope': 'Forest',
+                            'description': 'Controls schema modifications for the entire forest'
+                        }
+                    elif 'DomainNamingMasterRole' in role_part or 'Domain Naming Master' in role_part:
+                        fsmo_roles['Domain Naming Master'] = {
+                            'holder': holder_part,
+                            'server_name': holder_part,
+                            'scope': 'Forest',
+                            'description': 'Controls addition and removal of domains in the forest'
+                        }
+                    elif 'PDCEmulatorMasterRole' in role_part or 'PDC Emulator' in role_part:
+                        fsmo_roles['PDC Emulator'] = {
+                            'holder': holder_part,
+                            'server_name': holder_part,
+                            'scope': 'Domain',
+                            'description': 'Handles password changes, account lockouts, and time synchronization'
+                        }
+                    elif 'RidAllocationMasterRole' in role_part or 'RID Master' in role_part:
+                        fsmo_roles['RID Master'] = {
+                            'holder': holder_part,
+                            'server_name': holder_part,
+                            'scope': 'Domain',
+                            'description': 'Allocates RID pools to domain controllers for creating security principals'
+                        }
+                    elif 'InfrastructureMasterRole' in role_part or 'Infrastructure Master' in role_part:
+                        fsmo_roles['Infrastructure Master'] = {
+                            'holder': holder_part,
+                            'server_name': holder_part,
+                            'scope': 'Domain',
+                            'description': 'Updates cross-domain group and user references'
+                        }
+        
+        return True, fsmo_roles
+        
+    except Exception as e:
+        logger.error(f"Error parsing FSMO text output: {e}")
+        return False, f"Error parsing FSMO roles: {str(e)}"
+
+
+def transfer_fsmo_role(role_name, target_server):
+    """Transfer a FSMO role to another domain controller using samba-tool."""
+    logger.info(f"Transferring FSMO role {role_name} to {target_server}")
+    
+    try:
+        import subprocess
+        
+        # Map display names to samba-tool role names
+        role_mapping = {
+            'Schema Master': 'schema',
+            'Domain Naming Master': 'naming', 
+            'PDC Emulator': 'pdc',
+            'RID Master': 'rid',
+            'Infrastructure Master': 'infrastructure'
+        }
+        
+        samba_role = role_mapping.get(role_name)
+        if not samba_role:
+            return False, f"Unknown role: {role_name}"
+        
+        # Use samba-tool to transfer the role
+        cmd = ['samba-tool', 'fsmo', 'transfer', samba_role, '--role-owner=' + target_server]
+        
+        logger.debug(f"Running command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        
+        if result.returncode != 0:
+            error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+            logger.error(f"samba-tool fsmo transfer failed: {error_msg}")
+            return False, f"Failed to transfer role: {error_msg}"
+        
+        logger.info(f"Successfully transferred {role_name} to {target_server}")
+        return True, f"Successfully transferred {role_name} to {target_server}"
+        
+    except subprocess.TimeoutExpired:
+        logger.error("samba-tool fsmo transfer command timed out")
+        return False, "Role transfer timed out"
+    except FileNotFoundError:
+        logger.error("samba-tool command not found")
+        return False, "samba-tool command not found - ensure Samba is properly installed"
+    except Exception as e:
+        logger.error(f"Error transferring FSMO role: {e}")
+        return False, f"Error transferring role: {str(e)}"
+
+
+def seize_fsmo_role(role_name, target_server):
+    """Seize a FSMO role (emergency takeover) using samba-tool."""
+    logger.warning(f"Seizing FSMO role {role_name} to {target_server} - this is an emergency operation")
+    
+    try:
+        import subprocess
+        
+        # Map display names to samba-tool role names
+        role_mapping = {
+            'Schema Master': 'schema',
+            'Domain Naming Master': 'naming',
+            'PDC Emulator': 'pdc', 
+            'RID Master': 'rid',
+            'Infrastructure Master': 'infrastructure'
+        }
+        
+        samba_role = role_mapping.get(role_name)
+        if not samba_role:
+            return False, f"Unknown role: {role_name}"
+        
+        # Use samba-tool to seize the role
+        cmd = ['samba-tool', 'fsmo', 'seize', samba_role, '--role-owner=' + target_server]
+        
+        logger.debug(f"Running command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        
+        if result.returncode != 0:
+            error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+            logger.error(f"samba-tool fsmo seize failed: {error_msg}")
+            return False, f"Failed to seize role: {error_msg}"
+        
+        logger.warning(f"Successfully seized {role_name} to {target_server}")
+        return True, f"Successfully seized {role_name} to {target_server}"
+        
+    except subprocess.TimeoutExpired:
+        logger.error("samba-tool fsmo seize command timed out")
+        return False, "Role seizure timed out"
+    except FileNotFoundError:
+        logger.error("samba-tool command not found")
+        return False, "samba-tool command not found - ensure Samba is properly installed"  
+    except Exception as e:
+        logger.error(f"Error seizing FSMO role: {e}")
+        return False, f"Error seizing role: {str(e)}"
+

@@ -657,15 +657,7 @@ class UsernamePasswordDialog(QDialog):
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
 
         # Get the domain and format it as a Kerberos realm (uppercase)
-        # Note: BASE_DN might be None, so we need to handle that
-        if BASE_DN:
-            domain_parts = BASE_DN.split(',')
-            domain_name = ".".join([part.split('=')[1] for part in domain_parts if part.startswith('dc=')])
-            self.realm = f"@{domain_name.upper()}"
-        else:
-            # Fallback - get from environment or use empty
-            import os
-            self.realm = f"@{os.environ.get('USERDNSDOMAIN', '').upper()}" if os.environ.get('USERDNSDOMAIN') else ""
+        self.realm = self._get_kerberos_realm()
         
         formLayout = QFormLayout()
         
@@ -694,6 +686,39 @@ class UsernamePasswordDialog(QDialog):
         
         self.setLayout(mainLayout)
 
+    def _get_kerberos_realm(self):
+        """Get the Kerberos realm from krb5.conf."""
+        try:
+            # Read the realm from krb5.conf
+            with open('/etc/krb5.conf', 'r') as f:
+                content = f.read()
+            
+            # Look for default_realm in [libdefaults] section
+            lines = content.split('\n')
+            in_libdefaults = False
+            
+            for line in lines:
+                line = line.strip()
+                
+                if line.startswith('[libdefaults]'):
+                    in_libdefaults = True
+                    continue
+                elif line.startswith('[') and in_libdefaults:
+                    # Moved to different section
+                    break
+                
+                if in_libdefaults and line.startswith('default_realm'):
+                    # Extract realm value
+                    if '=' in line:
+                        realm = line.split('=')[1].strip()
+                        return f"@{realm}"
+            
+        except Exception as e:
+            pass
+        
+        # Fallback if krb5.conf can't be read
+        return "@DOMAIN.COM"
+    
     def get_credentials(self):
         username = self.usernameInput.text()
         return username, self.passwordInput.text()

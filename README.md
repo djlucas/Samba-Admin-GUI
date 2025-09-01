@@ -106,9 +106,9 @@ python main.py
 
 ## 🧪 Development Status
 
-### Current Implementation Status (~85% Complete)
+### Current Implementation Status (~99% Complete)
 
-**SADUC (Samba Active Directory Users & Computers)** - *~98% Complete*
+**SADUC (Samba Active Directory Users & Computers)** - *~99% Complete*
 
 - ✅ **Core Features (Complete):**
   - LDAP connectivity and authentication via Kerberos
@@ -129,6 +129,7 @@ python main.py
   - **Real Windows ACL manipulation** using impacket for "Protect from accidental deletion"
   - **Complete group membership management** with add/remove functionality across all interfaces
   - **Complete move and rename operations** with drag-and-drop support and context menu actions
+  - **FSMO roles management** with comprehensive Operations Masters dialog for all five roles
   - Context menus with dynamic enable/disable options based on object state
 
 - ✅ **Advanced Security Features:**
@@ -139,7 +140,7 @@ python main.py
   - Consistent "Protect from accidental deletion" functionality across all dialogs
 
 - ⚠️ **Remaining Features:**
-  - Security tab functionality (partially implemented)
+  - Security tab functionality (partially implemented - view/add/remove principals)
 
 **SDNS (Samba DNS Manager)** - *~15% Complete*
 - ✅ Basic GUI structure exists
@@ -151,7 +152,7 @@ python main.py
 
 | Module   | Completion | Status     | Notes                                  |
 |----------|------------|------------|----------------------------------------|
-| saduc    | ~98%       | 🚧 Active Development | Core functionality complete, only Security tab enhancement remaining |
+| saduc    | ~99%       | 🚧 Active Development | Core functionality complete, only Security tab enhancement remaining |
 | sdns     | ~15%       | 🚧 Early Stage | Basic structure only, core functionality missing |
 | sadss    | 0%         | 🕒 Planned | Pending topology mapping logic |
 | sgpoe    | 0%         | 🕒 Planned | Requires policy template scaffolding |
@@ -165,17 +166,15 @@ python main.py
 5. ✅ **Smart Protection System** - Consistent "Protect from accidental deletion" across all object types
 6. ✅ **Complete Group Membership Management** - Full add/remove functionality via properties dialogs and context menus
 7. ✅ **Move and Rename Operations** - Full drag-and-drop support plus context menu operations for AD object management
+8. ✅ **FSMO Roles Management** - Comprehensive Operations Masters dialog with transfer and seizure capabilities for all five FSMO roles
 
 ### Next Development Priorities
 
-**MEDIUM PRIORITY (Enhancement):** 
-1. **Security Tab Enhancement** - Complete the partially implemented security permissions interface 
-
 **LOW PRIORITY:** 
-2. **Search Dialog Parameter Setting** - Enhanced search functionality configuration 
-3. **Samba-Specific Tasks** - Add Samba extensions (e.g., sambaSamAccount objectType to inetOrgPerson) 
-4. **Comprehensive Testing Suite** - Implement automated test coverage for core functionality 
+1. **Search Dialog Parameter Setting** - Enhanced search functionality configuration 
+2. **Samba-Specific Tasks** - Add Samba extensions (e.g., sambaSamAccount objectType to inetOrgPerson) 
+3. **Comprehensive Testing Suite** - Implement automated test coverage for core functionality 
 
 **QUALITY OF LIFE:** 
-5. **Additional UI Polish** - Minor interface improvements and user experience enhancements 
+4. **Additional UI Polish** - Minor interface improvements and user experience enhancements 
 

@@ -766,3 +766,40 @@ samba_backend.error.invalid_dn=Invalid DN format: {0}
 samba_backend.error.invalid_rdn=Invalid RDN format: {0}
 samba_backend.error.object_not_found=Object not found: {0}
 samba_backend.error.name_exists=An object with the name '{0}' already exists in this location.
+
+# Security tab additional permission strings
+security_tab.permission.list_contents=List Contents
+security_tab.permission.read_all_properties=Read All Properties
+security_tab.permission.write_all_properties=Write All Properties
+security_tab.permission.delete=Delete
+security_tab.permission.delete_subtree=Delete Subtree
+security_tab.permission.read_permissions=Read Permissions
+security_tab.permission.modify_permissions=Modify Permissions
+security_tab.permission.modify_owner=Modify Owner
+security_tab.permission.create_all_child_objects=Create All Child Objects
+security_tab.permission.delete_all_child_objects=Delete All Child Objects
+
+# Operations Masters Dialog
+dialog.operations_masters.title=Operations Masters
+dialog.operations_masters.header=The following servers hold operations master roles:
+dialog.operations_masters.roles_group=FSMO Role Assignments
+dialog.operations_masters.current_server=Connected to server:
+dialog.operations_masters.button.transfer=Transfer All Roles
+dialog.operations_masters.button.seize=Seize All Roles
+dialog.operations_masters.button.refresh=Refresh
+dialog.operations_masters.unknown=Unknown
+dialog.operations_masters.error.load_failed=Failed to load FSMO role information.
+dialog.operations_masters.error.exception=Error: {0}
+dialog.operations_masters.all_roles_current=All FSMO roles are already held by the current server.
+
+# Transfer All Operations
+dialog.operations_masters.transfer_all.confirm.title=Confirm Role Transfer
+dialog.operations_masters.transfer_all.confirm.text=This will transfer {0} FSMO role(s) to server {1}. Are you sure you want to continue?
+dialog.operations_masters.transfer_all.success=Successfully transferred {0} FSMO role(s).
+dialog.operations_masters.transfer_all.partial=Transferred {0} role(s) successfully, but {1} failed.
+
+# Seize All Operations  
+dialog.operations_masters.seize_all.warning.title=Seize FSMO Roles - Warning
+dialog.operations_masters.seize_all.warning.text=WARNING: Seizing FSMO roles should only be done in emergency situations when the current role holder is permanently offline.\n\nThis will forcibly seize ALL five FSMO roles to server {0}.\n\nAre you sure you want to continue?
+dialog.operations_masters.seize_all.success=Successfully seized {0} FSMO role(s).
+dialog.operations_masters.seize_all.partial=Seized {0} role(s) successfully, but {1} failed.

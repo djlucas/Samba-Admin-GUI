@@ -17,6 +17,7 @@ from container_properties import ContainerPropertiesDialog
 from printer_properties import PrinterPropertiesDialog
 from find_dialog import FindObjectsDialog
 from column_editor import ColumnEditorDialog
+from fsmo_roles_dialog import FSMORolesDialog
 
 def on_new_user_action_triggered(main_window):
     main_window.logger.info("New User action triggered. Opening NewUserWizard.")
@@ -647,7 +648,9 @@ def on_raise_domain_functional_level_action_triggered(main_window):
     QMessageBox.information(main_window, "Not Implemented", "'Raise Domain functional level...' is not yet implemented.")
 
 def on_operations_masters_action_triggered(main_window):
-    QMessageBox.information(main_window, "Not Implemented", "'Operations Masters...' is not yet implemented.")
+    main_window.logger.info("Operations Masters action triggered. Opening FSMORolesDialog.")
+    dialog = FSMORolesDialog(main_window, samba_conn=main_window.samba_conn)
+    dialog.exec_()
 
 def on_new_folder_action_triggered(main_window):
     """Create a new folder for organizing saved queries."""
