@@ -178,3 +178,4 @@ python main.py
 **QUALITY OF LIFE:** 
 4. **Additional UI Polish** - Minor interface improvements and user experience enhancements 
 
+  
