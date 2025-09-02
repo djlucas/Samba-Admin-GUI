@@ -893,4 +893,39 @@ class SADUCMainWindow(QMainWindow):
         
         # Refresh the current container to reflect changes
         self.refresh_current_container()
+    
+    def reconnect_to_dc(self, new_dc):
+        """Reconnect to a different domain controller."""
+        from samba_backend import get_ldap_conn_with_server
+        
+        self.logger.info(f"Attempting to reconnect to domain controller: {new_dc}")
+        
+        try:
+            # Close existing connection
+            if self.samba_conn:
+                self.samba_conn.unbind()
+            
+            # Establish new connection to specified DC
+            new_samba_conn, actual_server = get_ldap_conn_with_server(new_dc)
+            
+            if new_samba_conn:
+                self.samba_conn = new_samba_conn
+                self.connected_server = actual_server
+                
+                # Update window title to reflect new connection
+                self.setWindowTitle(self.i18n.get_string("main.window_title") + f" - {actual_server}")
+                
+                # Refresh all data with new connection
+                self._setup_tree_view_model()
+                self.treePane.expandAll() if self.should_auto_expand else None
+                
+                self.logger.info(f"Successfully reconnected to: {actual_server}")
+                return True
+            else:
+                self.logger.error(f"Failed to establish connection to: {new_dc}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error reconnecting to DC {new_dc}: {str(e)}")
+            return False
 

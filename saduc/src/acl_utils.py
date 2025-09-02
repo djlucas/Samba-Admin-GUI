@@ -435,3 +435,319 @@ def _create_protection_deny_ace():
     except Exception as e:
         logger.error(f"Error creating protection ACE: {e}")
         return None
+
+
+def add_principal_to_acl(samba_conn, object_dn, principal_dn, permissions_mask=0x001F01FF):
+    """
+    Add a principal (user/group) to the ACL with specified permissions.
+    
+    Args:
+        samba_conn: LDAP connection
+        object_dn: Distinguished name of the object to modify
+        principal_dn: Distinguished name of the principal to add
+        permissions_mask: Permission mask (default: Full Control)
+        
+    Returns:
+        bool: True if operation succeeded, False otherwise
+    """
+    logger.info(f"Adding principal {principal_dn} to ACL of {object_dn}")
+    
+    try:
+        # Get the principal's SID
+        principal_sid = _get_object_sid(samba_conn, principal_dn)
+        if not principal_sid:
+            logger.error(f"Could not get SID for principal {principal_dn}")
+            return False
+        
+        # Get the current security descriptor
+        res = samba_conn.search_s(object_dn, ldap.SCOPE_BASE, '(objectClass=*)', ['nTSecurityDescriptor'])
+        if not res or 'nTSecurityDescriptor' not in res[0][1]:
+            logger.error(f"Could not retrieve security descriptor for {object_dn}")
+            return False
+            
+        sd_data = res[0][1]['nTSecurityDescriptor'][0]
+        
+        # Add the ACE
+        modified_sd = _add_allow_ace(sd_data, principal_sid, permissions_mask)
+        if not modified_sd:
+            return False
+            
+        # Write back the modified security descriptor
+        mod_list = [(ldap.MOD_REPLACE, 'nTSecurityDescriptor', [modified_sd])]
+        samba_conn.modify_s(object_dn, mod_list)
+        
+        logger.info(f"Successfully added principal {principal_dn} to ACL")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error adding principal to ACL: {e}")
+        return False
+
+
+def remove_principal_from_acl(samba_conn, object_dn, principal_dn):
+    """
+    Remove a principal (user/group) from the ACL by DN.
+    
+    Args:
+        samba_conn: LDAP connection
+        object_dn: Distinguished name of the object to modify
+        principal_dn: Distinguished name of the principal to remove
+        
+    Returns:
+        bool: True if operation succeeded, False otherwise
+    """
+    logger.info(f"Removing principal {principal_dn} from ACL of {object_dn}")
+    
+    try:
+        # Get the principal's SID
+        principal_sid = _get_object_sid(samba_conn, principal_dn)
+        if not principal_sid:
+            logger.error(f"Could not get SID for principal {principal_dn}")
+            return False
+        
+        return remove_principal_from_acl_by_sid(samba_conn, object_dn, principal_sid)
+        
+    except Exception as e:
+        logger.error(f"Error removing principal from ACL: {e}")
+        return False
+
+
+def remove_principal_from_acl_by_sid(samba_conn, object_dn, principal_sid):
+    """
+    Remove a principal (user/group) from the ACL by SID.
+    
+    Args:
+        samba_conn: LDAP connection
+        object_dn: Distinguished name of the object to modify
+        principal_sid: SID bytes of the principal to remove
+        
+    Returns:
+        bool: True if operation succeeded, False otherwise
+    """
+    logger.info(f"Removing principal SID from ACL of {object_dn}")
+    
+    try:
+        # Get the current security descriptor
+        res = samba_conn.search_s(object_dn, ldap.SCOPE_BASE, '(objectClass=*)', ['nTSecurityDescriptor'])
+        if not res or 'nTSecurityDescriptor' not in res[0][1]:
+            logger.error(f"Could not retrieve security descriptor for {object_dn}")
+            return False
+            
+        sd_data = res[0][1]['nTSecurityDescriptor'][0]
+        
+        # Remove ACEs for this principal
+        modified_sd = _remove_principal_aces(sd_data, principal_sid)
+        if not modified_sd:
+            return False
+            
+        # Write back the modified security descriptor
+        mod_list = [(ldap.MOD_REPLACE, 'nTSecurityDescriptor', [modified_sd])]
+        samba_conn.modify_s(object_dn, mod_list)
+        
+        logger.info(f"Successfully removed principal SID from ACL")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error removing principal from ACL by SID: {e}")
+        return False
+
+
+def _get_object_sid(samba_conn, object_dn):
+    """Get the objectSid for a given DN."""
+    try:
+        res = samba_conn.search_s(object_dn, ldap.SCOPE_BASE, '(objectClass=*)', ['objectSid'])
+        if res and 'objectSid' in res[0][1]:
+            return res[0][1]['objectSid'][0]
+        return None
+    except Exception as e:
+        logger.error(f"Error getting SID for {object_dn}: {e}")
+        return None
+
+
+def get_dn_from_sid(samba_conn, sid_bytes):
+    """Get the DN for a given SID."""
+    try:
+        # Search for object with this SID
+        from samba_backend import BASE_DN
+        if not BASE_DN:
+            logger.error("BASE_DN not available for SID lookup")
+            return None
+        
+        # Create LDAP filter for binary SID search
+        # Convert SID bytes to escaped format for LDAP filter
+        sid_hex = ''.join(f'\\{b:02x}' for b in sid_bytes)
+        filter_str = f'(objectSid={sid_hex})'
+        
+        res = samba_conn.search_s(
+            BASE_DN, 
+            ldap.SCOPE_SUBTREE, 
+            filter_str,
+            ['distinguishedName']
+        )
+        
+        if res and 'distinguishedName' in res[0][1]:
+            return res[0][1]['distinguishedName'][0].decode('utf-8')
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error getting DN for SID: {e}")
+        return None
+
+
+def _add_allow_ace(sd_bytes, principal_sid, permissions_mask):
+    """Add an ALLOW ACE for the specified principal to the DACL."""
+    try:
+        if len(sd_bytes) < 20:
+            return None
+            
+        # Get DACL offset
+        dacl_offset = int.from_bytes(sd_bytes[16:20], 'little')
+        if dacl_offset == 0 or dacl_offset >= len(sd_bytes):
+            return None
+            
+        # Extract DACL
+        dacl_data = sd_bytes[dacl_offset:]
+        if len(dacl_data) < 8:
+            return None
+            
+        # Create new ALLOW ACE
+        new_ace = _create_allow_ace(principal_sid, permissions_mask)
+        if not new_ace:
+            return None
+            
+        # Insert new ACE at beginning of DACL (after header)
+        dacl_header = dacl_data[:8]
+        existing_aces = dacl_data[8:]
+        
+        # Update ACE count and size in DACL header
+        ace_count = int.from_bytes(dacl_header[4:6], 'little') + 1
+        dacl_size = int.from_bytes(dacl_header[2:4], 'little') + len(new_ace)
+        
+        new_dacl_header = (
+            dacl_header[:2] +  # Revision and padding
+            dacl_size.to_bytes(2, 'little') +  # New size
+            ace_count.to_bytes(2, 'little') +  # New count  
+            dacl_header[6:8]   # Reserved bytes
+        )
+        
+        new_dacl = new_dacl_header + new_ace + existing_aces
+        
+        # Reconstruct security descriptor
+        new_sd = (
+            sd_bytes[:dacl_offset] +  # SD header
+            new_dacl +                # Modified DACL
+            sd_bytes[dacl_offset + len(dacl_data):]  # Rest (SACL, Owner, Group)
+        )
+        
+        return new_sd
+        
+    except Exception as e:
+        logger.error(f"Error adding ALLOW ACE: {e}")
+        return None
+
+
+def _remove_principal_aces(sd_bytes, principal_sid):
+    """Remove all ACEs for the specified principal from the DACL."""
+    try:
+        if len(sd_bytes) < 20:
+            return None
+            
+        # Get DACL offset  
+        dacl_offset = int.from_bytes(sd_bytes[16:20], 'little')
+        if dacl_offset == 0 or dacl_offset >= len(sd_bytes):
+            return None
+            
+        # Extract DACL
+        dacl_data = sd_bytes[dacl_offset:]
+        if len(dacl_data) < 8:
+            return None
+            
+        # Parse and filter ACEs
+        dacl_header = dacl_data[:8]
+        ace_count = int.from_bytes(dacl_header[4:6], 'little')
+        
+        new_aces = []
+        offset = 8
+        removed_count = 0
+        
+        for i in range(ace_count):
+            if offset + 8 > len(dacl_data):
+                break
+                
+            ace_size = int.from_bytes(dacl_data[offset + 2:offset + 4], 'little')
+            if offset + ace_size > len(dacl_data):
+                break
+                
+            ace_data = dacl_data[offset:offset + ace_size]
+            
+            # Extract SID from ACE (starts at offset 8 in ACE)
+            if len(ace_data) > 8:
+                ace_sid = ace_data[8:]
+                
+                # Compare SIDs - if they don't match, keep the ACE
+                if ace_sid != principal_sid:
+                    new_aces.append(ace_data)
+                else:
+                    removed_count += 1
+                    
+            offset += ace_size
+        
+        if removed_count == 0:
+            logger.info("No ACEs found for the specified principal")
+            return sd_bytes  # No changes needed
+            
+        # Rebuild DACL
+        new_ace_data = b''.join(new_aces)
+        new_dacl_size = 8 + len(new_ace_data)
+        new_ace_count = ace_count - removed_count
+        
+        new_dacl_header = (
+            dacl_header[:2] +  # Revision and padding
+            new_dacl_size.to_bytes(2, 'little') +  # New size
+            new_ace_count.to_bytes(2, 'little') +  # New count
+            dacl_header[6:8]   # Reserved bytes
+        )
+        
+        new_dacl = new_dacl_header + new_ace_data
+        
+        # Reconstruct security descriptor
+        new_sd = (
+            sd_bytes[:dacl_offset] +  # SD header
+            new_dacl +                # Modified DACL
+            sd_bytes[dacl_offset + len(dacl_data):]  # Rest
+        )
+        
+        logger.info(f"Removed {removed_count} ACE(s) for principal")
+        return new_sd
+        
+    except Exception as e:
+        logger.error(f"Error removing principal ACEs: {e}")
+        return None
+
+
+def _create_allow_ace(principal_sid, permissions_mask):
+    """Create an ALLOW ACE for the specified principal."""
+    try:
+        # ACE structure for ACCESS_ALLOWED_ACE:
+        # - AceType (1 byte): 0 = ACCESS_ALLOWED_ACE
+        # - AceFlags (1 byte): 0 = no inheritance flags
+        # - AceSize (2 bytes): total ACE size
+        # - AccessMask (4 bytes): permissions
+        # - SID: principal SID
+        
+        ace_type = bytes([0])  # ACCESS_ALLOWED_ACE
+        ace_flags = bytes([0])  # No flags
+        access_mask = permissions_mask.to_bytes(4, 'little')
+        
+        # Calculate total ACE size
+        ace_size = (1 + 1 + 2 + 4 + len(principal_sid)).to_bytes(2, 'little')
+        
+        # Assemble the ACE
+        ace = ace_type + ace_flags + ace_size + access_mask + principal_sid
+        
+        logger.debug(f"Created ALLOW ACE: {len(ace)} bytes, mask=0x{permissions_mask:08x}")
+        return ace
+        
+    except Exception as e:
+        logger.error(f"Error creating ALLOW ACE: {e}")
+        return None

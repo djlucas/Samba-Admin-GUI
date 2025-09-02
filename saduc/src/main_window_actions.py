@@ -1024,7 +1024,29 @@ def on_container_properties_action_triggered(main_window):
 
 def on_change_dc_action_triggered(main_window):
     main_window.logger.info("Change Domain Controller action triggered.")
-    QMessageBox.information(main_window, "Not Implemented", "Changing the domain controller is not yet implemented.")
+    from dc_selection_dialog import DCSelectionDialog
+    
+    # Get current server info
+    current_server = getattr(main_window, 'connected_server', 'Unknown')
+    
+    # Show DC selection dialog
+    dialog = DCSelectionDialog(main_window.samba_conn, current_server, main_window)
+    if dialog.exec_() == QDialog.Accepted:
+        selected_dc = dialog.get_selected_dc()
+        if selected_dc and selected_dc != current_server:
+            # Attempt to reconnect to the selected DC
+            success = main_window.reconnect_to_dc(selected_dc)
+            if success:
+                success_text = main_window.i18n.get_string("dialog.dc.connection.success", "Successfully connected to {0}")
+                QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), 
+                                      success_text.format(selected_dc))
+            else:
+                failed_text = main_window.i18n.get_string("dialog.dc.connection.failed", "Failed to connect to {0}")
+                QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), 
+                                   failed_text.format(selected_dc))
+        else:
+            QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.info.title", "Information"), 
+                                  main_window.i18n.get_string("dialog.dc.connection.no_change", "No domain controller change was made."))
 
 def on_properties_action_triggered(main_window):
     """Open properties dialog for the currently selected object based on its object class."""

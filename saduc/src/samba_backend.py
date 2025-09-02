@@ -313,6 +313,86 @@ def get_ldap_conn():
     logger.critical("Samba backend: Failed to connect to any LDAP servers.")
     return None, None
 
+def get_ldap_conn_with_server(target_server):
+    """
+    Establishes an authenticated LDAP connection to a specific server using GSSAPI/Kerberos.
+    
+    Args:
+        target_server (str): The specific domain controller to connect to
+        
+    Returns:
+        tuple: (ldap_connection, connected_server) or (None, None) if failed
+    """
+    global BASE_DN, NON_EXPANDABLE_CONTAINERS
+    
+    # Check for a valid Kerberos ticket before attempting connection
+    logger.info("Checking for a valid Kerberos ticket...")
+    result = subprocess.run(['klist', '-s'], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise NoKerberosTicketError(f"No valid Kerberos ticket found. Please run 'kinit' first.")
+    logger.info("Kerberos ticket found.")
+    
+    # Try different connection methods for the target server
+    connection_attempts = [
+        (target_server, 'ldaps', 'ldaps', 636),     # LDAPS (SSL)
+        (target_server, 'starttls', 'ldap', 389),  # StartTLS
+        (target_server, 'none', 'ldap', 389)       # Plain LDAP
+    ]
+    
+    for server, ssl_method, protocol, port in connection_attempts:
+        try:
+            logger.info(f"Attempting to connect to {ssl_method.upper()} server: {server}:{port}")
+            conn = ldap.initialize(f'{protocol}://{server}:{port}')
+            conn.set_option(ldap.OPT_PROTOCOL_VERSION, 3)
+            conn.set_option(ldap.OPT_REFERRALS, 0)
+            
+            if ssl_method == 'ldaps':
+                # For LDAPS, set SSL options
+                conn.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
+                # Disable SASL channel binding for GSSAPI over LDAPS compatibility
+                conn.set_option(ldap.OPT_X_SASL_NOCANON, 1)
+                # Additional TLS settings for GSSAPI compatibility
+                conn.set_option(ldap.OPT_X_TLS_NEWCTX, 0)
+            elif ssl_method == 'starttls':
+                # For StartTLS, enable TLS on the connection
+                conn.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
+                conn.start_tls_s()
+                # Disable SASL channel binding for GSSAPI compatibility
+                conn.set_option(ldap.OPT_X_SASL_NOCANON, 1)
+            else:
+                # For plain LDAP, still disable SASL channel binding for compatibility
+                conn.set_option(ldap.OPT_X_SASL_NOCANON, 1)
+            
+            # Attempt GSSAPI authentication
+            conn.sasl_non_interactive_bind_s('GSSAPI')
+            logger.info(f"Successfully authenticated with GSSAPI to {server} using {ssl_method.upper()}")
+            
+            # Discover and setup BASE_DN if needed
+            if BASE_DN is None:
+                _discover_base_dn_and_setup(conn, server)
+            
+            return conn, server
+            
+        except ldap.SERVER_DOWN:
+            logger.error(f"Server {server}:{port} ({ssl_method}) is not reachable")
+            conn = None
+        except ldap.INVALID_CREDENTIALS:
+            logger.error(f"Invalid credentials for server {server}:{port} ({ssl_method})")
+            conn = None
+        except ldap.INAPPROPRIATE_AUTH:
+            logger.error(f"Authentication method not supported by server {server}:{port} ({ssl_method})")
+            conn = None
+        except ldap.UNWILLING_TO_PERFORM:
+            logger.error(f"Server {server}:{port} ({ssl_method}) is unwilling to perform the operation")
+            conn = None
+        except Exception as e:
+            logger.error(f"Unexpected error connecting to {server}:{port} ({ssl_method}): {e}")
+            conn = None
+    
+    # If we get here, all connection attempts failed
+    logger.critical(f"Failed to connect to target server: {target_server}")
+    return None, None
+
 def _discover_base_dn_and_setup(conn, server):
     """Helper function to discover BASE_DN and setup containers after successful connection."""
     global BASE_DN, NON_EXPANDABLE_CONTAINERS

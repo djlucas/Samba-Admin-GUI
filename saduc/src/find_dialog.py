@@ -408,7 +408,7 @@ class FindObjectsDialog(QDialog):
     
     def _get_current_search_data(self):
         """Get current search parameters as a dictionary."""
-        current_tab = self.tabs.currentWidget()
+        current_tab = self.tab_widget.currentWidget()
         
         if current_tab == self.find_details_tab:
             # Simple search

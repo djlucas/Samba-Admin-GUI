@@ -15,6 +15,7 @@
 import logging
 import os
 import copy
+import ldap
 from PyQt5.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QFormLayout, QLineEdit,
     QDialogButtonBox, QGroupBox, QHBoxLayout, QLabel, QPushButton, QComboBox,
@@ -24,7 +25,7 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
 
 from i18n_manager import I18nManager
-from samba_backend import get_all_container_attributes_with_schema_info
+from samba_backend import get_all_container_attributes_with_schema_info, update_object_attributes
 from rotating_tab_widget import RotatingTabWidget
 from tab_styles import STYLE_DEFAULT
 from shared_properties_tabs import ObjectTab, SecurityTab, ManagedByTab, ComPlusTab
@@ -73,6 +74,8 @@ class ContainerPropertiesDialog(QDialog):
 
         # --- Dialog Buttons ---
         self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Apply)
+        # Initially disable the Apply button
+        self.button_box.button(QDialogButtonBox.Apply).setEnabled(False)
 
     def _create_layout(self):
         main_layout = QVBoxLayout(self)
@@ -161,7 +164,7 @@ class ContainerPropertiesDialog(QDialog):
 
     def _connect_signals(self):
         """Connect all UI element signals to the attribute change handler."""
-        self.button_box.accepted.connect(self.accept)
+        self.button_box.accepted.connect(self._accept_dialog)
         self.button_box.rejected.connect(self.reject)
         self.button_box.button(QDialogButtonBox.Apply).clicked.connect(self.apply_changes)
 
@@ -203,6 +206,23 @@ class ContainerPropertiesDialog(QDialog):
             else:
                 self.logger.debug(f"Attribute '{attr_name}' set to '{new_value}'")
                 self.editable_container_props[attr_name] = [new_value]
+            
+            # Check for changes and enable/disable Apply button
+            self._check_for_changes()
+    
+    def _check_for_changes(self):
+        """Check if there are any changes and enable/disable the Apply button accordingly."""
+        has_changes = False
+        
+        # Check if editable properties differ from original properties
+        for attr_name, new_values in self.editable_container_props.items():
+            old_values = self.container_props.get(attr_name, [])
+            if old_values != new_values:
+                has_changes = True
+                break
+        
+        # Enable/disable the Apply button based on changes
+        self.button_box.button(QDialogButtonBox.Apply).setEnabled(has_changes)
     
 
     def apply_changes(self):
@@ -294,8 +314,12 @@ class ContainerPropertiesDialog(QDialog):
             ldap_success, message = update_object_attributes(self.samba_conn, self.container_dn, modifications)
             
             if ldap_success:
-                # Update local properties with changes
-                self.container_props.update(self.editable_container_props)
+                # Reload data from Active Directory to get fresh state
+                self._load_container_data()
+                
+                # Disable the Apply button since changes are now saved
+                self.button_box.button(QDialogButtonBox.Apply).setEnabled(False)
+                
                 self.logger.info(f"Successfully applied {len(modifications)} LDAP changes to container {self.container_dn}")
             else:
                 self.logger.error(f"Failed to apply LDAP changes to container {self.container_dn}: {message}")
@@ -329,9 +353,26 @@ class ContainerPropertiesDialog(QDialog):
             )
             self.logger.info(f"Successfully applied changes to container {self.container_dn}")
         else:
-            # No changes
-            QMessageBox.information(
-                self, 
-                self.i18n.get_string("dialog.common.info.title"),
-                self.i18n.get_string("container_properties.apply.no_changes")
-            )
+            # No dialog shown for "no changes" case - just silently complete
+            pass
+    
+    def _accept_dialog(self):
+        """Handle OK button click - only apply changes if there are any."""
+        # Check if there are any changes
+        has_changes = False
+        for attr_name, new_values in self.editable_container_props.items():
+            old_values = self.container_props.get(attr_name, [])
+            if old_values != new_values:
+                has_changes = True
+                break
+        
+        # Only apply changes if there are any
+        if has_changes:
+            self.apply_changes()
+        
+        # Close the dialog
+        self.accept()
+    
+    def accept(self):
+        """Override accept to close the dialog."""
+        super().accept()

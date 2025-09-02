@@ -260,6 +260,9 @@ class RotatingTabWidget(QWidget):
 
     def currentIndex(self):
         return self._stack.currentIndex()
+    
+    def count(self):
+        return self._stack.count()
 
     def setCurrentIndex(self, index):
         if 0 <= index < self._stack.count():

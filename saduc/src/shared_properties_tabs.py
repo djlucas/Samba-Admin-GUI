@@ -385,49 +385,60 @@ class SecurityTab(QWidget):
 
     def _add_principal(self):
         """Add a new principal (user/group) to the security descriptor."""
-        from find_dialog import FindObjectsDialog
+        from search_dialogs import PrincipalPickerDialog
         
-        # Use the universal search dialog to find users/groups
-        search_base = get_base_dn(self.samba_conn)
-        dialog = FindObjectsDialog(self.samba_conn, search_base, self)
-        dialog.setWindowTitle("Select User, Computer, Service Account, or Group")
-        
-        # Set the dialog to search for users and groups by default
-        user_index = -1
-        for i in range(dialog.find_combo.count()):
-            if "User" in dialog.find_combo.itemText(i):
-                user_index = i
-                break
-        if user_index >= 0:
-            dialog.find_combo.setCurrentIndex(user_index)
+        # Use the principal picker dialog to select users/groups
+        dialog = PrincipalPickerDialog(self.samba_conn, self)
         
         if dialog.exec_() == QDialog.Accepted:
             selected_object = dialog.get_selected_object()
             if not selected_object:
-                QMessageBox.information(self, "Add Principal", "Please select a user or group.")
+                QMessageBox.information(self, 
+                    self.i18n.get_string("security_tab.add_principal.title"), 
+                    self.i18n.get_string("security_tab.add_principal.select_prompt"))
                 return
             
             principal_dn = selected_object.get('dn', '')
             principal_name = selected_object.get('name', selected_object.get('cn', [''])[0] if isinstance(selected_object.get('cn'), list) else selected_object.get('cn', ''))
             
             if not principal_dn:
-                QMessageBox.warning(self, "Add Principal", "Could not retrieve the principal information.")
+                QMessageBox.warning(self, 
+                    self.i18n.get_string("security_tab.add_principal.title"), 
+                    self.i18n.get_string("security_tab.add_principal.no_info"))
                 return
             
-            # For now, show that the feature needs more implementation
-            QMessageBox.information(
-                self, 
-                "Security Tab", 
-                f"Adding principal '{principal_name}' to security permissions.\n\n"
-                "Note: This is a simplified security interface. Full ACL editing requires "
-                "advanced security management tools and careful permission configuration."
+            # Add the principal to the ACL with Full Control permissions
+            from acl_utils import add_principal_to_acl
+            
+            success = add_principal_to_acl(
+                self.samba_conn, 
+                self.parent_props.object_dn, 
+                principal_dn, 
+                permissions_mask=0x001F01FF  # Full Control
             )
+            
+            if success:
+                QMessageBox.information(
+                    self, 
+                    self.i18n.get_string("dialog.common.success.title"), 
+                    self.i18n.get_text("security_tab.add_principal.success", principal_name)
+                )
+                # Refresh the security display
+                self._load_security_info()
+            else:
+                QMessageBox.critical(
+                    self, 
+                    self.i18n.get_string("dialog.common.error.title"), 
+                    self.i18n.get_text("security_tab.add_principal.failed", principal_name)
+                )
 
     def _remove_principal(self):
         """Remove the selected principal from the security descriptor."""
         selected_items = self.principals_list.selectedItems()
         if not selected_items:
-            QMessageBox.information(self, "Remove Principal", "Please select a principal to remove.")
+            QMessageBox.information(self, 
+                self.i18n.get_string("security_tab.remove_principal.title"), 
+                self.i18n.get_string("security_tab.remove_principal.select_prompt"))
             return
         
         selected_item = selected_items[0]
@@ -435,21 +446,44 @@ class SecurityTab(QWidget):
         
         reply = QMessageBox.question(
             self, 
-            "Remove Principal", 
-            f"Are you sure you want to remove '{principal_name}' from the security permissions?\n\n"
-            "This will remove all permissions for this principal.",
+            self.i18n.get_string("security_tab.remove_principal.title"), 
+            self.i18n.get_text("dialog.common.confirm_removal", principal_name) + "\n\n" +
+            self.i18n.get_string("security_tab.remove_principal.warning"),
             QMessageBox.Yes | QMessageBox.No
         )
         
         if reply == QMessageBox.Yes:
-            # For now, show that the feature needs more implementation
-            QMessageBox.information(
-                self, 
-                "Security Tab", 
-                f"Removing principal '{principal_name}' from security permissions.\n\n"
-                "Note: This is a simplified security interface. Full ACL editing requires "
-                "advanced security management tools and careful permission configuration."
+            # Get the principal's SID from the selected item's data
+            principal_sid = selected_item.data(Qt.UserRole)
+            if not principal_sid:
+                QMessageBox.warning(self, 
+                    self.i18n.get_string("security_tab.remove_principal.title"), 
+                    self.i18n.get_string("security_tab.remove_principal.no_info"))
+                return
+            
+            # Remove the principal from the ACL
+            from acl_utils import remove_principal_from_acl_by_sid
+            
+            success = remove_principal_from_acl_by_sid(
+                self.samba_conn, 
+                self.parent_props.object_dn, 
+                principal_sid
             )
+            
+            if success:
+                QMessageBox.information(
+                    self, 
+                    self.i18n.get_string("dialog.common.success.title"), 
+                    self.i18n.get_text("security_tab.remove_principal.success", principal_name)
+                )
+                # Refresh the security display
+                self._load_security_info()
+            else:
+                QMessageBox.critical(
+                    self, 
+                    self.i18n.get_string("dialog.common.error.title"), 
+                    self.i18n.get_text("security_tab.remove_principal.failed", principal_name)
+                )
 
     def _open_advanced_security(self):
         """Open advanced security settings."""
@@ -580,14 +614,20 @@ class ComPlusTab(QWidget):
 
 class MemberOfTab(QWidget):
     """A reusable Member Of tab."""
-    def __init__(self, samba_conn, object_dn, parent_props, show_primary_group=False, parent=None):
+    def __init__(self, samba_conn, object_dn, parent_props, show_primary_group=False, parent=None, change_callback=None):
         super().__init__(parent)
         self.samba_conn = samba_conn
         self.object_dn = object_dn
         self.parent_props = parent_props
         self.show_primary_group = show_primary_group
+        self.change_callback = change_callback  # Callback to notify parent of changes
         self.logger = logging.getLogger("saduc_app." + self.__class__.__name__)
         self.i18n = I18nManager()
+
+        # Track pending changes
+        self.pending_additions = set()  # Group DNs to add
+        self.pending_removals = set()   # Group DNs to remove
+        self.original_groups = set()    # Original group memberships
 
         self._create_widgets()
         self._create_layout()
@@ -712,25 +752,23 @@ class MemberOfTab(QWidget):
             self.member_of_table.setItem(row, 0, name_item)
             path_item = QTableWidgetItem(self._get_display_path_from_dn(group_info['dn']))
             self.member_of_table.setItem(row, 1, path_item)
+        
+        # Store original group memberships (excluding primary group if shown)
+        if self.show_primary_group and all_groups:
+            self.original_groups = {group['dn'] for group in all_groups[1:]}  # Skip primary group
+        else:
+            self.original_groups = {group['dn'] for group in all_groups}
+        
+        # Reset pending changes
+        self.pending_additions.clear()
+        self.pending_removals.clear()
 
     def _add_to_group(self):
-        """Add this object to a selected group using the universal search dialog."""
-        from find_dialog import FindObjectsDialog
-        from samba_backend import get_base_dn, add_user_to_group_samba
+        """Add this object to a selected group (staged until Apply/OK)."""
+        from search_dialogs import GroupPickerDialog
         
-        # Use the universal search dialog to find groups
-        search_base = get_base_dn(self.samba_conn)
-        dialog = FindObjectsDialog(self.samba_conn, search_base, self)
-        dialog.setWindowTitle("Find Groups")
-        
-        # Set the dialog to search for groups by default
-        group_index = -1
-        for i in range(dialog.find_combo.count()):
-            if "Group" in dialog.find_combo.itemText(i):
-                group_index = i
-                break
-        if group_index >= 0:
-            dialog.find_combo.setCurrentIndex(group_index)
+        # Use the group picker dialog to select a group
+        dialog = GroupPickerDialog(self.samba_conn, self)
         
         if dialog.exec_() == QDialog.Accepted:
             selected_object = dialog.get_selected_object()
@@ -739,49 +777,121 @@ class MemberOfTab(QWidget):
                 return
             
             group_dn = selected_object.get('dn', '')
-            group_name = selected_object.get('name', selected_object.get('cn', [''])[0] if isinstance(selected_object.get('cn'), list) else selected_object.get('cn', ''))
+            group_name = selected_object.get('display_name', selected_object.get('name', selected_object.get('cn', '')))
             
             if not group_dn:
                 QMessageBox.warning(self, self.i18n.get_string("dialog.common.error.title"), "Could not retrieve the group DN.")
                 return
             
-            # Check if already a member
-            current_member_of = self.parent_props.get('memberOf', [])
-            if isinstance(current_member_of[0], bytes) if current_member_of else False:
-                current_member_of = [m.decode('utf-8') for m in current_member_of]
-            
-            if group_dn in current_member_of:
-                QMessageBox.information(self, self.i18n.get_string("dialog.common.info.title"), f"This object is already a member of '{group_name}'.")
+            # Check if already a member or pending addition
+            current_groups = self._get_current_display_groups()
+            if group_dn in current_groups:
+                QMessageBox.information(self, 
+                    self.i18n.get_string("dialog.common.info.title"), 
+                    f"This object is already a member of group '{group_name}'.")
                 return
             
+            # Stage the addition
+            self.pending_additions.add(group_dn)
+            self.pending_removals.discard(group_dn)  # Remove from removals if it was there
+            
+            # Update the display to show the pending change
+            self._refresh_display()
+            
+            # Mark parent dialog as modified
+            if hasattr(self.parent_props, 'mark_modified'):
+                self.parent_props.mark_modified()
+            
+            # Notify parent dialog of changes
+            if self.change_callback:
+                self.change_callback()
+    
+    def _get_current_display_groups(self):
+        """Get the current set of groups (original + additions - removals)."""
+        current_groups = self.original_groups.copy()
+        current_groups.update(self.pending_additions)
+        current_groups.difference_update(self.pending_removals)
+        return current_groups
+    
+    def _refresh_display(self):
+        """Refresh the table display to show current groups including pending changes."""
+        from samba_backend import get_group_properties
+        
+        # Clear the table
+        self.member_of_table.setRowCount(0)
+        
+        # Get current groups (original + pending changes)
+        current_groups = self._get_current_display_groups()
+        
+        # Add primary group if showing primary group
+        if self.show_primary_group:
+            primary_group_id = self.parent_props.get('primaryGroupID', ['513'])[0]
+            primary_group_info = get_group_by_rid(self.samba_conn, primary_group_id)
+            if primary_group_info:
+                primary_group_dn = primary_group_info['dn']
+                # Add primary group to current groups
+                current_groups.add(primary_group_dn)
+        
+        # Display all groups with visual indicators for pending changes
+        for group_dn in current_groups:
+            # Skip groups that are staged for removal - they should not appear in UI
+            if group_dn in self.pending_removals:
+                continue
+                
+            group_props = get_group_properties(self.samba_conn, group_dn, ['cn', 'displayName'])
+            if group_props:
+                row = self.member_of_table.rowCount()
+                self.member_of_table.insertRow(row)
+                
+                # Group name with change indicator
+                display_name = group_props.get('displayName', [group_props.get('cn', [group_dn])[0]])[0]
+                
+                # Add visual indicator for pending additions only
+                if group_dn in self.pending_additions:
+                    display_name += " (will be added)"
+                
+                name_item = QTableWidgetItem(display_name)
+                name_item.setData(Qt.UserRole, group_dn)
+                self.member_of_table.setItem(row, 0, name_item)
+                
+                path_item = QTableWidgetItem(self._get_display_path_from_dn(group_dn))
+                self.member_of_table.setItem(row, 1, path_item)
+    
+    def apply_changes(self):
+        """Apply all pending group membership changes to the directory."""
+        from samba_backend import add_user_to_group_samba, remove_user_from_group_samba
+        
+        errors = []
+        
+        # Apply additions
+        for group_dn in self.pending_additions:
             try:
-                # Actually add the user to the group
                 add_user_to_group_samba(self.samba_conn, self.object_dn, group_dn)
-                
-                # Update the local properties and refresh the display
-                self.parent_props['memberOf'] = self.parent_props.get('memberOf', []) + [group_dn]
-                self._load_membership_data()
-                
-                QMessageBox.information(
-                    self, 
-                    self.i18n.get_string("dialog.common.success.title"), 
-                    f"Successfully added this object to group '{group_name}'."
-                )
-                
-                self.logger.info(f"Successfully added object {self.object_dn} to group {group_dn}")
-                
+                self.logger.info(f"Applied addition: {self.object_dn} to group {group_dn}")
             except Exception as e:
-                QMessageBox.critical(
-                    self, 
-                    self.i18n.get_string("dialog.common.error.title"), 
-                    f"Failed to add object to group '{group_name}': {str(e)}"
-                )
-                self.logger.error(f"Failed to add object {self.object_dn} to group {group_dn}: {e}")
+                errors.append(f"Failed to add to group {group_dn}: {e}")
+                self.logger.error(f"Failed to add {self.object_dn} to group {group_dn}: {e}")
+        
+        # Apply removals
+        for group_dn in self.pending_removals:
+            try:
+                remove_user_from_group_samba(self.samba_conn, self.object_dn, group_dn)
+                self.logger.info(f"Applied removal: {self.object_dn} from group {group_dn}")
+            except Exception as e:
+                errors.append(f"Failed to remove from group {group_dn}: {e}")
+                self.logger.error(f"Failed to remove {self.object_dn} from group {group_dn}: {e}")
+        
+        # Clear pending changes if all succeeded
+        if not errors:
+            self.pending_additions.clear()
+            self.pending_removals.clear()
+            # Reload to get current state
+            self._load_membership_data()
+        
+        return errors
 
     def _remove_from_group(self):
-        """Remove this object from the selected group."""
-        from samba_backend import remove_user_from_group_samba
-        
+        """Remove this object from the selected group (staged until Apply/OK)."""
         selected_items = self.member_of_table.selectedItems()
         if not selected_items:
             QMessageBox.information(self, self.i18n.get_string("dialog.common.info.title"), "Please select a group to remove this object from.")
@@ -794,15 +904,21 @@ class MemberOfTab(QWidget):
             return
         
         group_dn = group_item.data(Qt.UserRole)
-        group_name = group_item.text()
+        group_name = group_item.text().replace(" (will be added)", "").replace(" (will be removed)", "")  # Clean display name
         
         # Check if this is the primary group (can't be removed)
         if self.show_primary_group:
+            from samba_backend import get_group_by_rid
             primary_group_id = self.parent_props.get('primaryGroupID', ['513'])[0]
             primary_group_info = get_group_by_rid(self.samba_conn, primary_group_id)
             if primary_group_info and group_dn == primary_group_info['dn']:
                 QMessageBox.warning(self, self.i18n.get_string("dialog.common.error.title"), "Cannot remove an object from its primary group. Change the primary group first.")
                 return
+        
+        # Check if this group can be removed (must be in original groups or pending additions)
+        if group_dn not in self.original_groups and group_dn not in self.pending_additions:
+            QMessageBox.information(self, self.i18n.get_string("dialog.common.info.title"), f"This object is not a member of '{group_name}'.")
+            return
         
         # Confirm removal
         reply = QMessageBox.question(
@@ -813,33 +929,24 @@ class MemberOfTab(QWidget):
         )
         
         if reply == QMessageBox.Yes:
-            try:
-                # Actually remove the user from the group
-                remove_user_from_group_samba(self.samba_conn, self.object_dn, group_dn)
-                
-                # Update the local properties and refresh the display
-                current_member_of = self.parent_props.get('memberOf', [])
-                if group_dn in current_member_of:
-                    current_member_of.remove(group_dn)
-                    self.parent_props['memberOf'] = current_member_of
-                
-                self._load_membership_data()
-                
-                QMessageBox.information(
-                    self, 
-                    self.i18n.get_string("dialog.common.success.title"), 
-                    f"Successfully removed this object from group '{group_name}'."
-                )
-                
-                self.logger.info(f"Successfully removed object {self.object_dn} from group {group_dn}")
-                
-            except Exception as e:
-                QMessageBox.critical(
-                    self, 
-                    self.i18n.get_string("dialog.common.error.title"), 
-                    f"Failed to remove object from group '{group_name}': {str(e)}"
-                )
-                self.logger.error(f"Failed to remove object {self.object_dn} from group {group_dn}: {e}")
+            # Stage the removal
+            if group_dn in self.pending_additions:
+                # If it was a pending addition, just remove it from additions
+                self.pending_additions.discard(group_dn)
+            else:
+                # If it's an original group, mark for removal
+                self.pending_removals.add(group_dn)
+            
+            # Update the display to show the pending change
+            self._refresh_display()
+            
+            # Mark parent dialog as modified
+            if hasattr(self.parent_props, 'mark_modified'):
+                self.parent_props.mark_modified()
+            
+            # Notify parent dialog of changes
+            if self.change_callback:
+                self.change_callback()
 
     def _set_primary_group(self):
         current_row = self.member_of_table.currentRow()

@@ -52,6 +52,11 @@ class GroupPropertiesDialog(QDialog):
         self.group_props = {}
         self.schema_info = {}
         self.editable_group_props = {}
+        
+        # Track pending member changes
+        self.pending_member_additions = set()  # Member DNs to add
+        self.pending_member_removals = set()   # Member DNs to remove
+        self.original_members = set()          # Original member DNs
 
         self.setWindowTitle(self.i18n.get_string("group_properties.window_title"))
         self.setMinimumSize(450, 400)
@@ -284,6 +289,12 @@ class GroupPropertiesDialog(QDialog):
         # 3. Combine member lists and remove duplicates
         all_member_dns = list(set(member_dns + primary_member_dns))
         self.logger.info(f"Total unique members to fetch: {len(all_member_dns)}")
+        
+        # Initialize original members set for change tracking
+        self.original_members = set(all_member_dns)
+        # Clear pending changes
+        self.pending_member_additions.clear()
+        self.pending_member_removals.clear()
 
         # 4. Fetch details for all members individually to ensure robustness
         members = []
@@ -307,6 +318,11 @@ class GroupPropertiesDialog(QDialog):
             if not isinstance(entry, dict):
                 self.logger.warning(f"Skipping non-dict entry for member: {member_dn}")
                 continue
+            
+            # Skip members that are staged for removal
+            if member_dn in self.pending_member_removals:
+                continue
+                
             try:
                 name = (entry.get('displayName') or entry.get('cn', [b'']))[0].decode('utf-8')
                 obj_classes = [oc.decode('utf-8') for oc in entry.get('objectClass', [])]
@@ -326,6 +342,8 @@ class GroupPropertiesDialog(QDialog):
                 name_item = QTableWidgetItem(name)
                 if icon:
                     name_item.setIcon(icon)
+                # Store the member DN in UserRole for later retrieval
+                name_item.setData(Qt.UserRole, member_dn)
 
                 row = self.members_table.rowCount()
                 self.members_table.insertRow(row)
@@ -353,6 +371,13 @@ class GroupPropertiesDialog(QDialog):
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
         self.button_box.button(QDialogButtonBox.Apply).clicked.connect(self.apply_changes)
+        
+        # Initially disable Apply button until changes are made
+        self.apply_button = self.button_box.button(QDialogButtonBox.Apply)
+        self.apply_button.setEnabled(False)
+        
+        # Connect change signals
+        self._connect_change_signals()
         
         # Members tab signals
         self.add_member_btn.clicked.connect(self._add_member)
@@ -415,6 +440,49 @@ class GroupPropertiesDialog(QDialog):
             if self.editable_group_props.get(attr_name, [''])[0] != new_value:
                 self.logger.debug(f"Attribute '{attr_name}' changed from '{self.editable_group_props.get(attr_name, [''])[0]}' to '{new_value}'")
                 self.editable_group_props[attr_name] = [new_value]
+
+    def _check_for_changes(self):
+        """Check if there are any pending changes and update Apply button state."""
+        has_changes = False
+        
+        # Simple comparison of original vs current values
+        for attr_name, original_values in self.group_props.items():
+            current_values = self.editable_group_props.get(attr_name, [])
+            if current_values != original_values:
+                has_changes = True
+                break
+        
+        # Check for pending member changes
+        if not has_changes:
+            if self.pending_member_additions or self.pending_member_removals:
+                has_changes = True
+        
+        # Enable/disable Apply button based on changes
+        self.apply_button.setEnabled(has_changes)
+    
+    def _connect_change_signals(self):
+        """Connect all input widgets to check for changes."""
+        # Get all widgets that might exist and connect their change signals
+        text_widget_names = [
+            'group_name_edit', 'description_edit', 'email_edit', 'notes_edit'
+        ]
+        
+        for widget_name in text_widget_names:
+            if hasattr(self, widget_name):
+                widget = getattr(self, widget_name)
+                if hasattr(widget, 'textChanged'):
+                    widget.textChanged.connect(self._check_for_changes)
+        
+        # Connect checkbox changes  
+        checkbox_widget_names = [
+            'security_group_radio', 'distribution_group_radio'
+        ]
+        
+        for widget_name in checkbox_widget_names:
+            if hasattr(self, widget_name):
+                widget = getattr(self, widget_name)
+                if hasattr(widget, 'toggled'):
+                    widget.toggled.connect(self._check_for_changes)
 
     def apply_changes(self):
         """Apply the changes made in the dialog to Active Directory."""
@@ -492,6 +560,66 @@ class GroupPropertiesDialog(QDialog):
                 self.logger.error(f"Error preparing modification for {attr_name}: {e}")
                 continue
         
+        # Required attributes that cannot be empty
+        REQUIRED_ATTRIBUTES = {'groupType', 'cn', 'objectCategory', 'objectClass', 'sAMAccountName'}
+        
+        # Validate required attributes first
+        validation_errors = []
+        for attr_name, new_values in self.editable_group_props.items():
+            old_values = self.group_props.get(attr_name, [])
+            if old_values == new_values:
+                continue
+                
+            # Check for attempts to modify read-only attributes
+            if attr_name in READ_ONLY_ATTRIBUTES:
+                validation_errors.append(f"'{attr_name}' is a system attribute and cannot be modified")
+                continue
+                
+            # Check required attributes are not empty
+            if attr_name in REQUIRED_ATTRIBUTES:
+                if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
+                    validation_errors.append(f"'{attr_name}' is required and cannot be empty")
+        
+        if validation_errors:
+            error_msg = "The following errors must be corrected before saving:\n\n" + "\n".join(validation_errors)
+            QMessageBox.warning(
+                self, 
+                self.i18n.get_string("dialog.common.error.title"),
+                error_msg
+            )
+            # Reset invalid changes back to original values
+            self.editable_group_props = copy.deepcopy(self.group_props)
+            self._populate_tabs()
+            return
+        
+        # Build modifications for valid changes
+        for attr_name, new_values in self.editable_group_props.items():
+            old_values = self.group_props.get(attr_name, [])
+            
+            # Skip if values haven't changed or read-only
+            if old_values == new_values or attr_name in READ_ONLY_ATTRIBUTES:
+                continue
+            
+            try:
+                # Handle empty values (delete attribute)
+                if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
+                    modifications.append((ldap.MOD_DELETE, attr_name, None))
+                else:
+                    # Filter out empty strings and encode for LDAP
+                    encoded_values = []
+                    for value in new_values:
+                        if value.strip():
+                            encoded_values.append(value.encode('utf-8'))
+                    
+                    if encoded_values:
+                        modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
+                    else:
+                        modifications.append((ldap.MOD_DELETE, attr_name, None))
+                        
+            except Exception as e:
+                self.logger.error(f"Error preparing modification for {attr_name}: {e}")
+                continue
+        
         # Apply modifications if any exist
         if modifications:
             success, message = update_object_attributes(self.samba_conn, self.group_dn, modifications)
@@ -507,6 +635,10 @@ class GroupPropertiesDialog(QDialog):
                 )
                 
                 self.logger.info(f"Successfully applied {len(modifications)} changes to group {self.group_dn}")
+                # Apply member changes if successful
+                self._apply_member_changes()
+                # Disable Apply button since changes have been applied
+                self.apply_button.setEnabled(False)
             else:
                 QMessageBox.critical(
                     self, 
@@ -515,11 +647,11 @@ class GroupPropertiesDialog(QDialog):
                 )
                 self.logger.error(f"Failed to apply changes to group {self.group_dn}: {message}")
         else:
-            QMessageBox.information(
-                self, 
-                self.i18n.get_string("dialog.common.info.title"),
-                self.i18n.get_string("group_properties.apply.no_changes")
-            )
+            # Even if no property modifications, still apply member changes
+            member_changes_applied = self._apply_member_changes()
+            # Disable Apply button if no changes were made
+            if not member_changes_applied:
+                self.apply_button.setEnabled(False)
     
     def accept(self):
         """Override accept to apply changes before closing."""
@@ -529,53 +661,116 @@ class GroupPropertiesDialog(QDialog):
         # Close the dialog
         super().accept()
     
+    def _apply_member_changes(self):
+        """Apply all pending member changes to the directory. Returns True if changes were applied."""
+        from samba_backend import add_user_to_group_samba, remove_user_from_group_samba
+        
+        changes_applied = False
+        errors = []
+        
+        # Debug logging
+        self.logger.info(f"Applying member changes: {len(self.pending_member_additions)} additions, {len(self.pending_member_removals)} removals")
+        self.logger.info(f"Pending additions: {list(self.pending_member_additions)}")
+        self.logger.info(f"Pending removals: {list(self.pending_member_removals)}")
+        
+        # Apply member additions
+        for member_dn in self.pending_member_additions:
+            try:
+                success, message_key, extra = add_user_to_group_samba(self.samba_conn, member_dn, self.group_dn)
+                if success:
+                    self.logger.info(f"Applied addition: {member_dn} to group {self.group_dn}")
+                    changes_applied = True
+                else:
+                    message = self.i18n.get_text(message_key, *extra) if extra else self.i18n.get_string(message_key)
+                    errors.append(f"Failed to add member {member_dn}: {message}")
+                    self.logger.error(f"Failed to add member {member_dn} to group {self.group_dn}: {message}")
+            except Exception as e:
+                errors.append(f"Failed to add member {member_dn}: {e}")
+                self.logger.error(f"Failed to add member {member_dn} to group {self.group_dn}: {e}")
+        
+        # Apply member removals
+        for member_dn in self.pending_member_removals:
+            if not member_dn:  # Skip None values
+                self.logger.error(f"Skipping None member_dn in removals")
+                continue
+            try:
+                self.logger.info(f"Attempting to remove member: {member_dn}")
+                success, message_key, extra = remove_user_from_group_samba(self.samba_conn, member_dn, self.group_dn)
+                if success:
+                    self.logger.info(f"Applied removal: {member_dn} from group {self.group_dn}")
+                    changes_applied = True
+                else:
+                    message = self.i18n.get_text(message_key, *extra) if extra else self.i18n.get_string(message_key)
+                    errors.append(f"Failed to remove member {member_dn}: {message}")
+                    self.logger.error(f"Failed to remove member {member_dn} from group {self.group_dn}: {message}")
+            except Exception as e:
+                errors.append(f"Failed to remove member {member_dn}: {e}")
+                self.logger.error(f"Failed to remove member {member_dn} from group {self.group_dn}: {e}")
+        
+        # Show errors if any occurred
+        if errors:
+            error_msg = "Some member changes failed:\n\n" + "\n".join(errors)
+            QMessageBox.warning(self, 
+                self.i18n.get_string("dialog.common.error.title"),
+                error_msg)
+        
+        # Clear pending changes and reload if any changes were applied
+        if changes_applied:
+            self.pending_member_additions.clear()
+            self.pending_member_removals.clear()
+            # Reload group data to show current state
+            self._populate_all_tabs()
+        
+        return changes_applied
+    
     def _on_member_selection_changed(self):
         """Enable/disable Remove button based on selection."""
         selected_items = self.members_table.selectedItems()
         self.remove_member_btn.setEnabled(len(selected_items) > 0)
     
     def _add_member(self):
-        """Add new members to the group using the Add to Group dialog."""
-        from group_membership_dialogs import AddToGroupDialog
-        from samba_backend import add_user_to_group_samba
+        """Add new members to the group (staged until Apply is clicked)."""
+        from search_dialogs import StandardSearchDialog
         
-        dialog = AddToGroupDialog(self.samba_conn, self)
+        dialog = StandardSearchDialog(self.samba_conn, ['user', 'contact', 'computer', 'group', 'serviceAccount'], parent=self)
         
         if dialog.exec_() == QDialog.Accepted:
             selected_objects = dialog.get_selected_objects()
             if not selected_objects:
                 return
                 
-            # Add each selected object to the group
-            success_count = 0
+            # Stage each selected object for addition
+            added_count = 0
             for obj in selected_objects:
                 obj_dn = obj['dn']
                 obj_display = obj['display_text']
                 
-                # Add to group via backend
-                success, message_key, extra = add_user_to_group_samba(self.samba_conn, obj_dn, self.group_dn)
+                # Check if already a member or already staged for addition
+                current_members = self._get_current_display_members()
+                if obj_dn in current_members:
+                    QMessageBox.information(self, self.i18n.get_string("dialog.common.info.title"), 
+                                          f"'{obj_display}' is already a member of this group.")
+                    continue
                 
-                if success:
-                    success_count += 1
-                    # Add to the table immediately
-                    self._add_member_to_table(obj_dn, obj_display)
-                    
-                    # Update local group properties for Apply functionality
-                    current_members = self.editable_group_props.get('member', [])
-                    if isinstance(current_members[0], bytes) if current_members else False:
-                        current_members = [m.decode('utf-8') for m in current_members]
-                    if obj_dn not in current_members:
-                        current_members.append(obj_dn)
-                        self.editable_group_props['member'] = current_members
-                else:
-                    # Show error message
-                    message = self.i18n.get_text(message_key, *extra) if extra else self.i18n.get_string(message_key)
-                    QMessageBox.warning(self, "Add Member Failed", f"Failed to add '{obj_display}':\n{message}")
-            
-            if success_count > 0:
-                message = f"Successfully added {success_count} member(s) to the group."
-                QMessageBox.information(self, "Add Members", message)
-                self.logger.info(f"Added {success_count} members to group {self.group_dn}")
+                # Stage the addition
+                self.pending_member_additions.add(obj_dn)
+                self.pending_member_removals.discard(obj_dn)  # Remove from removals if it was there
+                
+                # Add to table with visual indicator
+                self._add_member_to_table(obj_dn, obj_display + " (will be added)")
+                added_count += 1
+                
+            if added_count > 0:
+                QMessageBox.information(self, self.i18n.get_string("dialog.common.info.title"), 
+                                      f"Staged {added_count} member(s) for addition. Click Apply to save changes.")
+                self._check_for_changes()  # Update Apply button state
+    
+    def _get_current_display_members(self):
+        """Get the current set of members (original + additions - removals)."""
+        current_members = self.original_members.copy()
+        current_members.update(self.pending_member_additions)
+        current_members.difference_update(self.pending_member_removals)
+        return current_members
                 
     def _add_member_to_table(self, member_dn, display_text=None):
         """Add a member to the members table."""
@@ -633,7 +828,7 @@ class GroupPropertiesDialog(QDialog):
         self.members_table.setItem(row, 1, QTableWidgetItem(display_path))
     
     def _remove_member(self):
-        """Remove selected member from the group."""
+        """Remove selected member from the group (staged until Apply is clicked)."""
         selected_items = self.members_table.selectedItems()
         if not selected_items:
             return
@@ -645,7 +840,12 @@ class GroupPropertiesDialog(QDialog):
             return
         
         member_dn = member_item.data(Qt.UserRole)
-        member_name = member_item.text()
+        if not member_dn:  # Fix for NoneType error
+            QMessageBox.warning(self, self.i18n.get_string("dialog.common.error.title"), 
+                              "Could not retrieve member information.")
+            return
+            
+        member_name = member_item.text().replace(" (will be added)", "").replace(" (will be removed)", "")  # Clean display name
         
         # Confirm removal
         reply = QMessageBox.question(
@@ -656,29 +856,22 @@ class GroupPropertiesDialog(QDialog):
         )
         
         if reply == QMessageBox.Yes:
-            # Remove from group via backend
-            from samba_backend import remove_user_from_group_samba
+            # Debug logging
+            self.logger.info(f"Staging removal of member: {member_dn}")
             
-            success, message_key, extra = remove_user_from_group_samba(self.samba_conn, member_dn, self.group_dn)
-            
-            if success:
-                # Remove from table
+            # Stage the removal
+            if member_dn in self.pending_member_additions:
+                # If it was a pending addition, just remove it from additions
+                self.pending_member_additions.discard(member_dn)
+                # Remove from table immediately since it was never actually added
                 self.members_table.removeRow(row)
-                
-                # Update local group properties for consistency
-                current_members = self.editable_group_props.get('member', [])
-                if isinstance(current_members[0], bytes) if current_members else False:
-                    current_members = [m.decode('utf-8') for m in current_members]
-                
-                if member_dn in current_members:
-                    current_members.remove(member_dn)
-                    self.editable_group_props['member'] = current_members
-                    
-                self.logger.info(f"Removed member {member_dn} from group {self.group_dn}")
-                QMessageBox.information(self, "Remove Member", "Member removed successfully.")
+                self.logger.info(f"Removed pending addition: {member_dn}")
             else:
-                # Show error message
-                message = self.i18n.get_text(message_key, *extra) if extra else self.i18n.get_string(message_key)
-                QMessageBox.warning(self, "Remove Member Failed", f"Failed to remove '{member_name}':\n{message}")
-                self.logger.error(f"Failed to remove member {member_dn} from group {self.group_dn}: {message}")
+                # If it's an original member, stage for removal and hide from UI
+                self.pending_member_removals.add(member_dn)
+                # Remove from table immediately to hide it from UI
+                self.members_table.removeRow(row)
+                self.logger.info(f"Added to pending removals and hidden from UI: {member_dn}")
+            
+            self._check_for_changes()  # Update Apply button state
             self._on_member_selection_changed()

@@ -68,6 +68,7 @@ class UserPropertiesDialog(QDialog):
         self._create_widgets()
         self._create_layout()
         self._load_user_data()
+        self._connect_change_signals()
 
     def _create_widgets(self):
         """Create all widgets for the dialog"""
@@ -89,6 +90,10 @@ class UserPropertiesDialog(QDialog):
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
         self.button_box.button(QDialogButtonBox.Apply).clicked.connect(self.apply_changes)
+        
+        # Initially disable Apply button until changes are made
+        self.apply_button = self.button_box.button(QDialogButtonBox.Apply)
+        self.apply_button.setEnabled(False)
 
     def _create_general_tab(self):
         """Create the General tab"""
@@ -502,7 +507,7 @@ class UserPropertiesDialog(QDialog):
         # Add tabs according to specified order
         if not self.is_advanced_view:
             # Normal view: Member Of, COM+
-            self.tab_widget.addTab(MemberOfTab(self.samba_conn, self.user_dn, self.user_props, show_primary_group=True), self.i18n.get_string("user_properties.tab.member_of"))
+            self.tab_widget.addTab(MemberOfTab(self.samba_conn, self.user_dn, self.user_props, show_primary_group=True, change_callback=self._check_for_changes), self.i18n.get_string("user_properties.tab.member_of"))
             self.tab_widget.addTab(ComPlusTab(), self.i18n.get_string("user_properties.tab.com_plus"))
         else:
             # Advanced view: Row 2: Password Replication, Object, Security, COM+, Attribute Editor
@@ -514,7 +519,7 @@ class UserPropertiesDialog(QDialog):
             self.tab_widget.addTab(AttributeEditorTab(self.samba_conn, self.user_dn), "Attribute Editor")
             # Row 3 tabs
             self.tab_widget.addTab(PublishedCertificatesTab(self.samba_conn, self.user_dn), self.i18n.get_string("user_properties.tab.published_certificates"))
-            self.tab_widget.addTab(MemberOfTab(self.samba_conn, self.user_dn, self.user_props, show_primary_group=True), self.i18n.get_string("user_properties.tab.member_of"))
+            self.tab_widget.addTab(MemberOfTab(self.samba_conn, self.user_dn, self.user_props, show_primary_group=True, change_callback=self._check_for_changes), self.i18n.get_string("user_properties.tab.member_of"))
             self.tab_widget.addTab(EmailTab(self.samba_conn, self.user_dn, self.user_props), self.i18n.get_string("user_properties.tab.email"))
 
     def _connect_signals(self):
@@ -734,6 +739,10 @@ class UserPropertiesDialog(QDialog):
                 )
                 
                 self.logger.info(f"Successfully applied {len(modifications)} changes to user {self.user_dn}")
+                # Apply Member Of tab changes if successful
+                self._apply_member_of_changes()
+                # Disable Apply button since changes have been applied
+                self.apply_button.setEnabled(False)
             else:
                 QMessageBox.critical(
                     self, 
@@ -744,11 +753,126 @@ class UserPropertiesDialog(QDialog):
                 self._reset_invalid_changes()
                 self.logger.error(f"Failed to apply changes to user {self.user_dn}: {message}")
         else:
-            QMessageBox.information(
-                self, 
-                self.i18n.get_string("dialog.common.info.title"),
-                self.i18n.get_string("user_properties.apply.no_changes")
-            )
+            # Even if no property modifications, still apply Member Of changes
+            member_of_changes_applied = self._apply_member_of_changes()
+            # Disable Apply button if no changes were made
+            if not member_of_changes_applied:
+                self.apply_button.setEnabled(False)
+    
+    def _apply_member_of_changes(self):
+        """Apply Member Of tab changes if any exist. Returns True if changes were applied."""
+        changes_applied = False
+        
+        # Find the Member Of tab and apply its changes
+        for i in range(self.tab_widget.count()):
+            widget = self.tab_widget.widget(i)
+            if hasattr(widget, 'apply_changes') and hasattr(widget, 'pending_additions'):
+                # This is a Member Of tab with pending changes
+                if widget.pending_additions or widget.pending_removals:
+                    errors = widget.apply_changes()
+                    changes_applied = True
+                    
+                    if errors:
+                        # Show errors if any occurred
+                        error_msg = "Some group membership changes failed:\n\n" + "\n".join(errors)
+                        QMessageBox.warning(self, 
+                            self.i18n.get_string("dialog.common.error.title"),
+                            error_msg)
+                    else:
+                        self.logger.info("Successfully applied Member Of tab changes")
+                        # Refresh the user properties to show updated membership
+                        self._refresh_user_properties()
+                        # Disable Apply button since changes have been applied
+                        self.apply_button.setEnabled(False)
+        
+        return changes_applied
+    
+    def _refresh_user_properties(self):
+        """Refresh all user properties from the directory and update all tabs."""
+        # Reload user data from directory
+        self.user_props, self.schema_info = get_all_user_attributes_with_schema_info(self.samba_conn, self.user_dn)
+        if not self.user_props:
+            self.logger.error(f"Could not refresh properties for user: {self.user_dn}")
+            return
+        
+        # Update editable props with fresh data
+        self.editable_user_props = copy.deepcopy(self.user_props)
+        
+        # Repopulate all tabs with fresh data
+        self._populate_all_tabs()
+        
+        # Find Member Of tabs and refresh them with fresh data
+        for i in range(self.tab_widget.count()):
+            widget = self.tab_widget.widget(i)
+            if hasattr(widget, '_load_membership_data'):
+                # Update the parent_props reference to fresh data and reload
+                widget.parent_props = self.user_props
+                widget._load_membership_data()
+    
+    def _check_for_changes(self):
+        """Check if there are any pending changes and update Apply button state."""
+        has_changes = False
+        
+        # Check for property modifications
+        modifications = self._build_modifications()
+        if modifications:
+            has_changes = True
+        
+        # Check for Member Of tab changes
+        if not has_changes:
+            for i in range(self.tab_widget.count()):
+                widget = self.tab_widget.widget(i)
+                if hasattr(widget, 'pending_additions') and hasattr(widget, 'pending_removals'):
+                    if widget.pending_additions or widget.pending_removals:
+                        has_changes = True
+                        break
+        
+        # Enable/disable Apply button based on changes
+        self.apply_button.setEnabled(has_changes)
+    
+    def _connect_change_signals(self):
+        """Connect all input widgets to check for changes."""
+        # Define potential widget names and connect them if they exist
+        text_widget_names = [
+            'first_name_edit', 'initials_edit', 'last_name_edit', 
+            'display_name_edit', 'description_edit', 'office_edit',
+            'telephone_edit', 'email_edit', 'web_page_edit',
+            'user_logon_name_edit', 'user_logon_name_pre2000_edit',
+            'profile_path_edit', 'logon_script_edit', 'local_path_edit',
+            'connect_path_edit'
+        ]
+        
+        for widget_name in text_widget_names:
+            if hasattr(self, widget_name):
+                widget = getattr(self, widget_name)
+                if hasattr(widget, 'textChanged'):
+                    widget.textChanged.connect(self._check_for_changes)
+        
+        # Connect checkbox changes  
+        checkbox_widget_names = [
+            'user_must_change_password_check', 'user_cannot_change_password_check',
+            'password_never_expires_check', 'account_disabled_check',
+            'unlock_account_check', 'reversible_encryption_check',
+            'smartcard_required_check', 'account_trusted_for_delegation_check',
+            'account_sensitive_check', 'use_des_encryption_check'
+        ]
+        
+        for widget_name in checkbox_widget_names:
+            if hasattr(self, widget_name):
+                widget = getattr(self, widget_name)
+                if hasattr(widget, 'toggled'):
+                    widget.toggled.connect(self._check_for_changes)
+        
+        # Connect combo box changes
+        combo_widget_names = ['domain_combo', 'drive_combo', 'partition_combo']
+        
+        for widget_name in combo_widget_names:
+            if hasattr(self, widget_name):
+                widget = getattr(self, widget_name)
+                if hasattr(widget, 'currentTextChanged'):
+                    widget.currentTextChanged.connect(self._check_for_changes)
+                elif hasattr(widget, 'currentIndexChanged'):
+                    widget.currentIndexChanged.connect(self._check_for_changes)
     
     def accept(self):
         """Override accept to apply changes before closing."""

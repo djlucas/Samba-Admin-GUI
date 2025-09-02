@@ -72,6 +72,8 @@ class ComputerPropertiesDialog(QDialog):
         self._create_location_tab()
 
         self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Apply)
+        # Initially disable the Apply button
+        self.button_box.button(QDialogButtonBox.Apply).setEnabled(False)
 
     def _create_general_tab(self):
         self.general_tab = QWidget()
@@ -141,7 +143,7 @@ class ComputerPropertiesDialog(QDialog):
             elif isinstance(widget, QRadioButton):
                 widget.toggled.connect(self._on_attribute_change)
         
-        self.button_box.accepted.connect(self.accept)
+        self.button_box.accepted.connect(self._accept_dialog)
         self.button_box.rejected.connect(self.reject)
         self.button_box.button(QDialogButtonBox.Apply).clicked.connect(self.apply_changes)
         self.trust_specified_radio.toggled.connect(self.specified_services_group.setEnabled)
@@ -178,6 +180,23 @@ class ComputerPropertiesDialog(QDialog):
             else:
                 self.logger.debug(f"Attribute '{attr_name}' set to '{new_value}'")
                 self.editable_computer_props[attr_name] = [new_value]
+            
+            # Check for changes and enable/disable Apply button
+            self._check_for_changes()
+
+    def _check_for_changes(self):
+        """Check if there are any changes and enable/disable the Apply button accordingly."""
+        has_changes = False
+        
+        # Check if editable properties differ from original properties
+        for attr_name, new_values in self.editable_computer_props.items():
+            old_values = self.computer_props.get(attr_name, [])
+            if old_values != new_values:
+                has_changes = True
+                break
+        
+        # Enable/disable the Apply button based on changes
+        self.button_box.button(QDialogButtonBox.Apply).setEnabled(has_changes)
 
     def _layout_general_tab(self):
         self.tab_widget.addTab(self.general_tab, self.i18n.get_string("computer_properties.tab.general"))
@@ -474,8 +493,11 @@ class ComputerPropertiesDialog(QDialog):
             success, message = update_object_attributes(self.samba_conn, self.computer_dn, modifications)
             
             if success:
-                # Update local properties with changes
-                self.computer_props.update(self.editable_computer_props)
+                # Reload data from Active Directory to get fresh state
+                self._load_computer_data()
+                
+                # Disable the Apply button since changes are now saved
+                self.button_box.button(QDialogButtonBox.Apply).setEnabled(False)
                 
                 QMessageBox.information(
                     self, 
@@ -492,18 +514,28 @@ class ComputerPropertiesDialog(QDialog):
                 )
                 self.logger.error(f"Failed to apply changes to computer {self.computer_dn}: {message}")
         else:
-            QMessageBox.information(
-                self, 
-                self.i18n.get_string("dialog.common.info.title"),
-                self.i18n.get_string("computer_properties.apply.no_changes")
-            )
+            # No dialog shown for "no changes" case - just silently complete
+            pass
     
-    def accept(self):
-        """Override accept to apply changes before closing."""
-        # Apply changes first
-        self.apply_changes()
+    def _accept_dialog(self):
+        """Handle OK button click - only apply changes if there are any."""
+        # Check if there are any changes
+        has_changes = False
+        for attr_name, new_values in self.editable_computer_props.items():
+            old_values = self.computer_props.get(attr_name, [])
+            if old_values != new_values:
+                has_changes = True
+                break
+        
+        # Only apply changes if there are any
+        if has_changes:
+            self.apply_changes()
         
         # Close the dialog
+        self.accept()
+    
+    def accept(self):
+        """Override accept to close the dialog."""
         super().accept()
     
     def _browse_location(self):

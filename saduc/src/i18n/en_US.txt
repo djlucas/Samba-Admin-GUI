@@ -3,6 +3,21 @@ dialog.auth.title=Authenticate to Active Directory
 dialog.auth.username=User Name
 dialog.auth.password=Password
 
+# Domain Controller Selection Dialog
+dialog.dc.selection.title=Change Domain Controller
+dialog.dc.selection.current=Current Domain Controller: {0}
+dialog.dc.selection.instruction=Select a domain controller to connect to:
+dialog.dc.selection.discovering=Discovering domain controllers...
+dialog.dc.selection.found=Found {0} domain controllers
+dialog.dc.selection.none_found=No domain controllers found. You can still enter a DC name manually.
+dialog.dc.selection.manual=[Enter DC name manually]
+dialog.dc.selection.manual.title=Enter Domain Controller
+dialog.dc.selection.manual.prompt=Domain Controller name or IP:
+dialog.dc.selection.refresh=Refresh
+dialog.dc.connection.success=Successfully connected to {0}
+dialog.dc.connection.failed=Failed to connect to {0}
+dialog.dc.connection.no_change=No domain controller change was made.
+
 # Main Window
 main.window_title=Samba Active Directory Users & Computers
 main.toolbar.main=Main Toolbar
@@ -209,6 +224,78 @@ samba_backend.error.object_has_children = Cannot delete '{0}': object has child 
 samba_backend.error.ou_has_children = Cannot delete OU '{0}': contains {1} child objects.
 samba_backend.error.insufficient_access = Insufficient access to delete user '{0}'.
 error.backend.fetch_failed=Failed to fetch objects from the directory. Please check the connection and permissions. Details: {0}
+
+# Standard Search Dialog
+search_dialog.select_object_type=Select this object type:
+search_dialog.from_location=From this location:
+search_dialog.enter_object_names=Enter the object names to select:
+search_dialog.object_types_button=Object Types...
+search_dialog.locations_button=Locations...
+search_dialog.check_names_button=Check Names
+search_dialog.advanced_button=Advanced...
+search_dialog.names_placeholder=Type names separated by semicolons
+
+# Object Types
+object_type.users=Users
+object_type.contacts=Contacts  
+object_type.computers=Computers
+object_type.groups=Groups
+object_type.service_accounts=Service Accounts
+object_type.inet_org_person=InetOrgPerson
+object_type.organizational_person=Organizational Person
+object_type.group_managed_service_accounts=Group Managed Service Accounts
+object_type.managed_service_accounts=Managed Service Accounts
+object_type.devices=Devices
+object_type.user=User
+object_type.group=Group
+object_type.computer=Computer
+object_type.contact=Contact
+object_type.object=Object
+
+# Object Type Selection Dialog
+object_type_dialog.title=Object Types
+object_type_dialog.prompt=Select the types of objects you want to find:
+object_type_dialog.select_all=Select All
+object_type_dialog.clear_all=Clear All
+object_type_dialog.no_selection_warning=Please select at least one object type.
+
+# Location Selection Dialog  
+location_dialog.title=Select Location
+location_dialog.prompt=Select the location to search in:
+location_dialog.selected=Selected: {0}
+location_dialog.no_selection_warning=Please select a location.
+
+# Multiple Match Selection Dialog
+multi_match_dialog.title=Multiple matches for '{0}'
+multi_match_dialog.prompt=Multiple objects match '{0}'. Please select one:
+multi_match_dialog.table.name=Name
+multi_match_dialog.table.type=Type
+multi_match_dialog.table.location=Location
+multi_match_dialog.table.description=Description
+multi_match_dialog.no_selection_warning=Please select an object from the list.
+
+# Search Dialog Validation
+search_dialog.unvalidated_names_title=Unvalidated Names
+search_dialog.unvalidated_names_message=The following names have not been validated:\n{0}\n\nDo you want to validate them now, or proceed with only the validated names?
+search_dialog.no_selection_warning=Please enter object names or use Advanced search to select objects.
+search_dialog.no_types_selected=No object types selected
+search_dialog.select_title_format=Select {0}
+search_dialog.select_objects_title=Select Objects
+search_dialog.entire_directory=Entire Directory
+search_dialog.select_object_types_title=Select Object Types
+search_dialog.name_not_found_title=Name Not Found
+search_dialog.name_not_found_message=The name '{0}' could not be found.
+search_dialog.error_title=Error
+search_dialog.resolve_error=Error resolving name '{0}': {1}
+search_dialog.multiple_matches_title=Multiple Names Found
+search_dialog.multiple_matches_message=Multiple objects were found for '{0}'. Please select the correct one:
+search_dialog.no_types_title=No Object Types Selected
+search_dialog.no_types_message=Please select at least one object type before using advanced search.
+search_dialog.no_selection_title=No Selection
+search_dialog.no_selection_message=Please enter and validate at least one object name.
+search_dialog.select_location_title=Select Location
+search_dialog.select_location_instruction=Choose a location to search in:
+search_dialog.location_tree_header=Active Directory Locations
 
 # User Properties Dialog
 user_properties.window_title=User Properties
@@ -778,6 +865,22 @@ security_tab.permission.modify_permissions=Modify Permissions
 security_tab.permission.modify_owner=Modify Owner
 security_tab.permission.create_all_child_objects=Create All Child Objects
 security_tab.permission.delete_all_child_objects=Delete All Child Objects
+
+# Security Tab ACL Management
+security_tab.add_principal.title=Add Principal
+security_tab.add_principal.select_prompt=Please select a user or group.
+security_tab.add_principal.no_info=Could not retrieve the principal information.
+security_tab.add_principal.success=Successfully added '{0}' to the security permissions with Full Control access.
+security_tab.add_principal.failed=Failed to add '{0}' to the security permissions. Check the debug log for details.
+security_tab.remove_principal.title=Remove Principal
+security_tab.remove_principal.select_prompt=Please select a principal to remove.
+security_tab.remove_principal.no_info=Could not determine the principal to remove.
+security_tab.remove_principal.success=Successfully removed '{0}' from the security permissions.
+security_tab.remove_principal.failed=Failed to remove '{0}' from the security permissions. Check the debug log for details.
+security_tab.remove_principal.warning=This will remove all permissions for this principal.
+
+# Common confirmation dialog
+dialog.common.confirm_removal=Are you sure you want to remove '{0}' from the security permissions?
 
 # Operations Masters Dialog
 dialog.operations_masters.title=Operations Masters

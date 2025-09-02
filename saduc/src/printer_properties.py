@@ -56,6 +56,8 @@ class PrinterPropertiesDialog(QDialog):
         self._create_general_tab()
 
         self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Apply)
+        # Initially disable the Apply button
+        self.button_box.button(QDialogButtonBox.Apply).setEnabled(False)
 
     def _create_general_tab(self):
         self.general_tab = QWidget()
@@ -77,9 +79,67 @@ class PrinterPropertiesDialog(QDialog):
         self._layout_general_tab()
 
     def _connect_signals(self):
-        self.button_box.accepted.connect(self.accept)
+        self.button_box.accepted.connect(self._accept_dialog)
         self.button_box.rejected.connect(self.reject)
         self.button_box.button(QDialogButtonBox.Apply).clicked.connect(self.apply_changes)
+        
+        # Connect change signals for all editable widgets
+        self._connect_change_signals()
+    
+    def _connect_change_signals(self):
+        """Connect change signals from UI widgets to change detection."""
+        # Map widgets to their corresponding LDAP attributes
+        self.widget_to_attribute_map = {
+            self.location_edit: 'location',
+            self.model_edit: 'driverName',
+            self.description_edit: 'description',
+            self.color_check: 'printColor',
+            self.staple_check: 'printStaplingSupported',
+            self.double_sided_check: 'printDuplexSupported',
+            self.speed_edit: 'printRate',
+            self.resolution_edit: 'printMaxResolutionSupported'
+        }
+        
+        # Connect signals
+        for widget in self.widget_to_attribute_map.keys():
+            if hasattr(widget, 'textChanged'):
+                widget.textChanged.connect(self._on_widget_change)
+            elif hasattr(widget, 'stateChanged'):
+                widget.stateChanged.connect(self._on_widget_change)
+    
+    def _on_widget_change(self):
+        """Handle widget value changes."""
+        sender = self.sender()
+        if sender in self.widget_to_attribute_map:
+            attr_name = self.widget_to_attribute_map[sender]
+            
+            # Get new value based on widget type
+            if hasattr(sender, 'text'):
+                new_value = sender.text()
+            elif hasattr(sender, 'isChecked'):
+                new_value = 'TRUE' if sender.isChecked() else 'FALSE'
+            else:
+                return
+            
+            # Update the editable properties
+            self.editable_printer_props[attr_name] = [new_value] if new_value or hasattr(sender, 'isChecked') else []
+            
+            # Check for changes and enable/disable Apply button
+            self._check_for_changes()
+    
+    def _check_for_changes(self):
+        """Check if there are any changes and enable/disable the Apply button accordingly."""
+        has_changes = False
+        
+        # Check if editable properties differ from original properties
+        for attr_name, new_values in self.editable_printer_props.items():
+            old_values = self.printer_props.get(attr_name, [])
+            if old_values != new_values:
+                has_changes = True
+                break
+        
+        # Enable/disable the Apply button based on changes
+        self.button_box.button(QDialogButtonBox.Apply).setEnabled(has_changes)
 
     def _layout_general_tab(self):
         self.tab_widget.addTab(self.general_tab, self.i18n.get_string("printer_properties.tab.general"))
@@ -129,7 +189,10 @@ class PrinterPropertiesDialog(QDialog):
             return
 
         self.editable_printer_props = copy.deepcopy(self.printer_props)
+        self._populate_all_tabs()
 
+    def _populate_all_tabs(self):
+        """Populate all tabs with data from self.printer_props."""
         cn = self.printer_props.get('cn', [''])[0]
         self.printer_name_header.setText(cn)
 
@@ -142,21 +205,20 @@ class PrinterPropertiesDialog(QDialog):
         self.speed_edit.setText(self.printer_props.get('printRate', [''])[0])
         self.resolution_edit.setText(self.printer_props.get('printMaxResolutionSupported', [''])[0])
 
-        # Add Managed By tab
-        self.tab_widget.addTab(ManagedByTab(self.samba_conn, self.printer_props), self.i18n.get_string("computer_properties.tab.managed_by"))
+        # Only add tabs if they haven't been added yet
+        if self.tab_widget.count() == 1:  # Only General tab exists
+            # Add Managed By tab
+            self.tab_widget.addTab(ManagedByTab(self.samba_conn, self.printer_props), self.i18n.get_string("computer_properties.tab.managed_by"))
 
-        if self.is_advanced_view:
-            self.tab_widget.addTab(ObjectTab(self.samba_conn, self.printer_dn, self.printer_props), "Object")
-            self.tab_widget.addTab(SecurityTab(self.samba_conn, self.printer_dn), "Security")
-            self.tab_widget.addTab(EmailTab(self.samba_conn, self.printer_dn, self.printer_props), self.i18n.get_string("user_properties.tab.email"))
-            self.tab_widget.addTab(AttributeEditorTab(self.samba_conn, self.printer_dn), "Attribute Editor")
+            if self.is_advanced_view:
+                self.tab_widget.addTab(ObjectTab(self.samba_conn, self.printer_dn, self.printer_props), "Object")
+                self.tab_widget.addTab(SecurityTab(self.samba_conn, self.printer_dn), "Security")
+                self.tab_widget.addTab(EmailTab(self.samba_conn, self.printer_dn, self.printer_props), self.i18n.get_string("user_properties.tab.email"))
+                self.tab_widget.addTab(AttributeEditorTab(self.samba_conn, self.printer_dn), "Attribute Editor")
 
     def apply_changes(self):
         """Apply the changes made in the dialog to Active Directory."""
         self.logger.info(f"Applying changes for printer: {self.printer_dn}")
-        
-        # Update local properties from UI
-        self._update_local_properties_from_ui()
         
         # Build LDAP modifications
         modifications = []
@@ -174,7 +236,11 @@ class PrinterPropertiesDialog(QDialog):
         
         # Validate required attributes first
         validation_errors = []
-        for attr_name, new_values in getattr(self, 'printer_props', {}).items():
+        for attr_name, new_values in self.editable_printer_props.items():
+            old_values = self.printer_props.get(attr_name, [])
+            if old_values == new_values:
+                continue
+                
             # Check for attempts to modify read-only attributes
             if attr_name in READ_ONLY_ATTRIBUTES:
                 validation_errors.append(f"'{attr_name}' is a system attribute and cannot be modified")
@@ -192,65 +258,84 @@ class PrinterPropertiesDialog(QDialog):
                 self.i18n.get_string("dialog.common.error.title"),
                 error_msg
             )
+            # Reset invalid changes back to original values
+            self.editable_printer_props = copy.deepcopy(self.printer_props)
+            self._populate_all_tabs()
             return
         
         # Build modifications for valid changes
-        for attr_name, new_values in getattr(self, 'printer_props', {}).items():
-            if attr_name in READ_ONLY_ATTRIBUTES:
+        for attr_name, new_values in self.editable_printer_props.items():
+            old_values = self.printer_props.get(attr_name, [])
+            
+            # Skip if values haven't changed or read-only
+            if old_values == new_values or attr_name in READ_ONLY_ATTRIBUTES:
                 continue
                 
             try:
+                # Handle empty values (delete attribute)
                 if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
                     modifications.append((ldap.MOD_DELETE, attr_name, None))
                 else:
-                    encoded_values = [v.encode('utf-8') for v in new_values if v.strip()]
+                    # Filter out empty strings and encode for LDAP
+                    encoded_values = []
+                    for value in new_values:
+                        if value.strip():
+                            encoded_values.append(value.encode('utf-8'))
+                    
                     if encoded_values:
                         modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
                     else:
                         modifications.append((ldap.MOD_DELETE, attr_name, None))
+                        
             except Exception as e:
                 self.logger.error(f"Error preparing modification for {attr_name}: {e}")
+                continue
         
-        # Apply modifications
+        # Apply modifications if any exist
         if modifications:
             success, message = update_object_attributes(self.samba_conn, self.printer_dn, modifications)
             
             if success:
+                # Reload data from Active Directory to get fresh state
+                self._load_printer_data()
+                
+                # Disable the Apply button since changes are now saved
+                self.button_box.button(QDialogButtonBox.Apply).setEnabled(False)
+                
                 QMessageBox.information(
                     self, 
                     self.i18n.get_string("dialog.common.success.title"),
-                    self.i18n.get_text("printer_properties.apply.success", str(len(modifications)))
+                    f"Successfully applied {len(modifications)} changes."
                 )
                 self.logger.info(f"Successfully applied {len(modifications)} changes to printer {self.printer_dn}")
             else:
                 QMessageBox.critical(
                     self, 
                     self.i18n.get_string("dialog.common.error.title"),
-                    self.i18n.get_string("printer_properties.apply.error") + "\n\n" + message
+                    f"Failed to apply changes: {message}"
                 )
                 self.logger.error(f"Failed to apply changes to printer {self.printer_dn}: {message}")
         else:
-            QMessageBox.information(
-                self, 
-                self.i18n.get_string("dialog.common.info.title"),
-                self.i18n.get_string("printer_properties.apply.no_changes")
-            )
+            # No dialog shown for "no changes" case - just silently complete
+            pass
     
-    def _update_local_properties_from_ui(self):
-        """Update local printer properties from UI fields."""
-        self.printer_props['location'] = [self.location_edit.text()]
-        self.printer_props['driverName'] = [self.model_edit.text()]  
-        self.printer_props['description'] = [self.description_edit.text()]
-        self.printer_props['printColor'] = ['TRUE' if self.color_check.isChecked() else 'FALSE']
-        self.printer_props['printStaplingSupported'] = ['TRUE' if self.staple_check.isChecked() else 'FALSE']
-        self.printer_props['printDuplexSupported'] = ['TRUE' if self.double_sided_check.isChecked() else 'FALSE']
-        self.printer_props['printRate'] = [self.speed_edit.text()]
-        self.printer_props['printMaxResolutionSupported'] = [self.resolution_edit.text()]
-    
-    def accept(self):
-        """Override accept to apply changes before closing."""
-        # Apply changes first
-        self.apply_changes()
+    def _accept_dialog(self):
+        """Handle OK button click - only apply changes if there are any."""
+        # Check if there are any changes
+        has_changes = False
+        for attr_name, new_values in self.editable_printer_props.items():
+            old_values = self.printer_props.get(attr_name, [])
+            if old_values != new_values:
+                has_changes = True
+                break
+        
+        # Only apply changes if there are any
+        if has_changes:
+            self.apply_changes()
         
         # Close the dialog
+        self.accept()
+    
+    def accept(self):
+        """Override accept to close the dialog."""
         super().accept()
