@@ -24,7 +24,7 @@ from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtCore import Qt
 
 from i18n_manager import I18nManager
-from samba_backend import get_all_group_attributes_with_schema_info, BASE_DN, get_paged_results, get_base_dn
+from samba_backend import get_all_group_attributes_with_schema_info, BASE_DN, get_paged_results, get_base_dn, update_object_attributes
 from rotating_tab_widget import RotatingTabWidget
 from tab_styles import STYLE_DEFAULT
 from shared_properties_tabs import ObjectTab, SecurityTab, ManagedByTab, MemberOfTab, EmailTab
@@ -57,6 +57,9 @@ class GroupPropertiesDialog(QDialog):
         self.pending_member_additions = set()  # Member DNs to add
         self.pending_member_removals = set()   # Member DNs to remove
         self.original_members = set()          # Original member DNs
+        
+        # Set base DN for path display
+        self.base_dn = BASE_DN
 
         self.setWindowTitle(self.i18n.get_string("group_properties.window_title"))
         self.setMinimumSize(450, 400)
@@ -560,6 +563,9 @@ class GroupPropertiesDialog(QDialog):
                 self.logger.error(f"Error preparing modification for {attr_name}: {e}")
                 continue
         
+        # Collect changes from tabs
+        self._collect_tab_changes(modifications)
+        
         # Required attributes that cannot be empty
         REQUIRED_ATTRIBUTES = {'groupType', 'cn', 'objectCategory', 'objectClass', 'sAMAccountName'}
         
@@ -718,10 +724,59 @@ class GroupPropertiesDialog(QDialog):
         if changes_applied:
             self.pending_member_additions.clear()
             self.pending_member_removals.clear()
-            # Reload group data to show current state
+            # Refresh group data from AD to show current state
+            self.group_props, self.schema_info = get_all_group_attributes_with_schema_info(self.samba_conn, self.group_dn)
+            self.editable_group_props = copy.deepcopy(self.group_props)
             self._populate_all_tabs()
         
         return changes_applied
+    
+    def _collect_tab_changes(self, modifications):
+        """Collect changes from individual tabs and add to modifications list."""
+        import ldap
+        
+        # Check each tab in the tab widget for changes
+        for i in range(self.tab_widget.count()):
+            tab = self.tab_widget.widget(i)
+            
+            # Check if this tab has a get_changes method
+            if hasattr(tab, 'get_changes'):
+                try:
+                    tab_changes = tab.get_changes()
+                    self.logger.info(f"Tab {i} ({type(tab).__name__}) returned changes: {tab_changes}")
+                    
+                    # Process each change from the tab
+                    for attr_name, new_values in tab_changes.items():
+                        old_values = self.group_props.get(attr_name, [])
+                        
+                        # Skip if values haven't changed
+                        if old_values == new_values:
+                            continue
+                        
+                        try:
+                            # Handle empty values (delete attribute)
+                            if not new_values:
+                                modifications.append((ldap.MOD_DELETE, attr_name, None))
+                                self.logger.info(f"Will delete attribute {attr_name}")
+                            else:
+                                # Encode values for LDAP
+                                encoded_values = []
+                                for value in new_values:
+                                    if value:
+                                        encoded_values.append(value.encode('utf-8'))
+                                
+                                if encoded_values:
+                                    modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
+                                    self.logger.info(f"Will replace {attr_name} with {new_values}")
+                                else:
+                                    modifications.append((ldap.MOD_DELETE, attr_name, None))
+                                    self.logger.info(f"Will delete attribute {attr_name}")
+                                    
+                        except Exception as e:
+                            self.logger.error(f"Error preparing modification for {attr_name} from tab: {e}")
+                            
+                except Exception as e:
+                    self.logger.error(f"Error getting changes from tab {i}: {e}")
     
     def _on_member_selection_changed(self):
         """Enable/disable Remove button based on selection."""
@@ -732,12 +787,18 @@ class GroupPropertiesDialog(QDialog):
         """Add new members to the group (staged until Apply is clicked)."""
         from search_dialogs import StandardSearchDialog
         
-        dialog = StandardSearchDialog(self.samba_conn, ['user', 'contact', 'computer', 'group', 'serviceAccount'], parent=self)
+        dialog = StandardSearchDialog(self.samba_conn, ['user', 'group', 'computer'], parent=self)
         
         if dialog.exec_() == QDialog.Accepted:
             selected_objects = dialog.get_selected_objects()
             if not selected_objects:
                 return
+            
+            # Debug logging
+            print(f"DEBUG: selected_objects type: {type(selected_objects)}")
+            print(f"DEBUG: selected_objects length: {len(selected_objects)}")
+            for i, obj in enumerate(selected_objects):
+                print(f"DEBUG: Object {i}: type={type(obj)}, value={obj}")
                 
             # Stage each selected object for addition
             added_count = 0
@@ -757,12 +818,11 @@ class GroupPropertiesDialog(QDialog):
                 self.pending_member_removals.discard(obj_dn)  # Remove from removals if it was there
                 
                 # Add to table with visual indicator
-                self._add_member_to_table(obj_dn, obj_display + " (will be added)")
+                self._add_member_to_table(obj_dn, obj_display)
                 added_count += 1
                 
+            # Members added silently - no popup needed
             if added_count > 0:
-                QMessageBox.information(self, self.i18n.get_string("dialog.common.info.title"), 
-                                      f"Staged {added_count} member(s) for addition. Click Apply to save changes.")
                 self._check_for_changes()  # Update Apply button state
     
     def _get_current_display_members(self):
@@ -823,39 +883,29 @@ class GroupPropertiesDialog(QDialog):
         name_item.setData(Qt.UserRole, member_dn)
         self.members_table.setItem(row, 0, name_item)
         
-        # Create path display (simplified)
-        display_path = member_dn.replace(f",{self.base_dn}", "").replace(",", " / ")
+        # Create path display using the same method as existing members
+        display_path = self._get_display_path_from_dn(member_dn)
         self.members_table.setItem(row, 1, QTableWidgetItem(display_path))
     
     def _remove_member(self):
-        """Remove selected member from the group (staged until Apply is clicked)."""
+        """Remove selected members from the group (staged until Apply is clicked)."""
         selected_items = self.members_table.selectedItems()
         if not selected_items:
             return
         
-        # Get the selected row
-        row = selected_items[0].row()
-        member_item = self.members_table.item(row, 0)
-        if not member_item:
-            return
+        # Get all unique selected rows
+        selected_rows = list(set(item.row() for item in selected_items))
+        selected_rows.sort(reverse=True)  # Process in reverse order to avoid index shifting
         
-        member_dn = member_item.data(Qt.UserRole)
-        if not member_dn:  # Fix for NoneType error
-            QMessageBox.warning(self, self.i18n.get_string("dialog.common.error.title"), 
-                              "Could not retrieve member information.")
-            return
+        for row in selected_rows:
+            member_item = self.members_table.item(row, 0)
+            if not member_item:
+                continue
             
-        member_name = member_item.text().replace(" (will be added)", "").replace(" (will be removed)", "")  # Clean display name
-        
-        # Confirm removal
-        reply = QMessageBox.question(
-            self, 
-            "Remove Member", 
-            f"Are you sure you want to remove '{member_name}' from this group?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
+            member_dn = member_item.data(Qt.UserRole)
+            if not member_dn:  # Fix for NoneType error
+                continue
+                
             # Debug logging
             self.logger.info(f"Staging removal of member: {member_dn}")
             
@@ -863,15 +913,14 @@ class GroupPropertiesDialog(QDialog):
             if member_dn in self.pending_member_additions:
                 # If it was a pending addition, just remove it from additions
                 self.pending_member_additions.discard(member_dn)
-                # Remove from table immediately since it was never actually added
-                self.members_table.removeRow(row)
                 self.logger.info(f"Removed pending addition: {member_dn}")
             else:
                 # If it's an original member, stage for removal and hide from UI
                 self.pending_member_removals.add(member_dn)
-                # Remove from table immediately to hide it from UI
-                self.members_table.removeRow(row)
                 self.logger.info(f"Added to pending removals and hidden from UI: {member_dn}")
             
-            self._check_for_changes()  # Update Apply button state
-            self._on_member_selection_changed()
+            # Remove from table immediately to hide it from UI
+            self.members_table.removeRow(row)
+        
+        self._check_for_changes()  # Update Apply button state
+        self._on_member_selection_changed()

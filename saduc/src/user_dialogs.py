@@ -685,6 +685,30 @@ class UsernamePasswordDialog(QDialog):
         mainLayout.addWidget(self.buttonBox)
         
         self.setLayout(mainLayout)
+        
+        # Center the dialog on screen or parent
+        self._center_dialog()
+
+    def _center_dialog(self):
+        """Center the dialog on the screen or parent widget."""
+        # Make sure the dialog has been sized properly first
+        self.adjustSize()
+        
+        if self.parent():
+            # Center on parent widget
+            parent_rect = self.parent().geometry()
+            dialog_size = self.size()
+            x = parent_rect.x() + (parent_rect.width() - dialog_size.width()) // 2
+            y = parent_rect.y() + (parent_rect.height() - dialog_size.height()) // 2
+            self.move(x, y)
+        else:
+            # Center on screen
+            from PyQt5.QtWidgets import QApplication
+            screen = QApplication.desktop().screenGeometry()
+            dialog_size = self.size()
+            x = (screen.width() - dialog_size.width()) // 2
+            y = (screen.height() - dialog_size.height()) // 2
+            self.move(x, y)
 
     def _get_kerberos_realm(self):
         """Get the Kerberos realm from krb5.conf."""

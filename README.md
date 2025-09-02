@@ -129,6 +129,8 @@ python main.py
   - **Real Windows ACL manipulation** using impacket for "Protect from accidental deletion"
   - **Complete group membership management** with add/remove functionality across all interfaces
   - **Advanced search dialog system** with intelligent name validation, object type filtering, and location browsing
+  - **Unified search experience** - Single StandardSearchDialog replaces all legacy search dialogs for consistent UX
+  - **Enhanced property tabs** - Improved Members, Member Of, and Managed By tabs with multi-select, staging, and proper write-back
   - **Complete move and rename operations** with drag-and-drop support and context menu actions
   - **FSMO roles management** with comprehensive Operations Masters dialog for all five roles
   - Context menus with dynamic enable/disable options based on object state
@@ -177,6 +179,10 @@ python main.py
 7. ✅ **Move and Rename Operations** - Full drag-and-drop support plus context menu operations for AD object management
 8. ✅ **FSMO Roles Management** - Comprehensive Operations Masters dialog with transfer and seizure capabilities for all five FSMO roles
 9. ✅ **StandardSearchDialog Implementation** - Advanced search system with name validation, blue text formatting, object type selection, tree-based location browsing, and protected text editing
+10. ✅ **Unified Search Dialog System** - Replaced all custom search dialogs (AddToGroupDialog, GroupPickerDialog, UserPickerDialog) with the StandardSearchDialog for consistent UX across all property tabs
+11. ✅ **Enhanced Group Management** - Improved member addition/removal with multi-select support, immediate UI feedback, and staging behavior for all group operations
+12. ✅ **Manager Selection Enhancement** - Implemented manager selection in Managed By tab using StandardSearchDialog with single-selection validation and proper write-back to Active Directory
+13. ✅ **Member Of Tab Improvements** - Enhanced user/group membership management with multi-select removal, no confirmation dialogs, and consistent staging behavior
 
 ### Next Development Priorities
 

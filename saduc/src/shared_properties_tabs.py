@@ -590,7 +590,69 @@ class ManagedByTab(QWidget):
         self.clear_manager_btn.setEnabled(has_manager)
 
     def _change_manager(self):
-        QMessageBox.information(self, "Not Implemented", "A user search dialog is not yet implemented.")
+        """Open manager selection dialog."""
+        from search_dialogs import StandardSearchDialog
+        
+        self.logger.info("Opening manager selection dialog")
+        dialog = StandardSearchDialog(self.samba_conn, ['user'], parent=self)
+        while dialog.exec_() == QDialog.Accepted:
+            selected_objects = dialog.get_selected_objects()
+            self.logger.info(f"Dialog returned {len(selected_objects) if selected_objects else 0} objects")
+            
+            if not selected_objects:
+                self.logger.info("No objects selected, breaking")
+                break
+            
+            if len(selected_objects) > 1:
+                self.logger.info(f"Too many selections: {len(selected_objects)}")
+                QMessageBox.warning(dialog, "Too Many Selections", 
+                                  "Please select only one manager. Multiple selections are not allowed.")
+                # Don't close dialog, continue the loop to let user try again
+                continue
+            
+            # Exactly one selection - process it
+            selected_user = selected_objects[0]
+            self.logger.info(f"Selected user object: {selected_user}")
+            manager_dn = selected_user.get('dn', '')
+            display_name = selected_user.get('display_text', selected_user.get('cn', ''))
+            
+            self.logger.info(f"Extracted - DN: '{manager_dn}', Display: '{display_name}'")
+            
+            if manager_dn:
+                self.logger.info(f"Setting manager field to: '{display_name}'")
+                self.manager_name_edit.setText(display_name)
+                
+                # Store the DN for potential write-back
+                self.manager_dn = manager_dn
+                
+                # Mark the parent dialog as modified
+                if hasattr(self.parent(), '_check_for_changes'):
+                    self.parent()._check_for_changes()
+                
+                self.logger.info(f"Successfully selected manager: {display_name} ({manager_dn})")
+            else:
+                self.logger.warning("No manager DN found in selected object")
+            
+            # Successfully processed, break out of loop
+            break
+
+    def get_changes(self):
+        """Return any changes made to the manager field."""
+        changes = {}
+        
+        # Check if manager was changed
+        original_manager_dn = self.parent_props.get('managedBy', [None])[0]
+        current_manager_dn = getattr(self, 'manager_dn', None)
+        
+        if current_manager_dn != original_manager_dn:
+            if current_manager_dn:
+                changes['managedBy'] = [current_manager_dn]
+            else:
+                changes['managedBy'] = []  # Clear the manager
+            
+            self.logger.info(f"Manager change detected: {original_manager_dn} -> {current_manager_dn}")
+        
+        return changes
 
 
 class ComPlusTab(QWidget):
@@ -765,38 +827,40 @@ class MemberOfTab(QWidget):
 
     def _add_to_group(self):
         """Add this object to a selected group (staged until Apply/OK)."""
-        from search_dialogs import GroupPickerDialog
+        from search_dialogs import StandardSearchDialog
         
-        # Use the group picker dialog to select a group
-        dialog = GroupPickerDialog(self.samba_conn, self)
+        # Use the standard search dialog to select a group
+        dialog = StandardSearchDialog(self.samba_conn, ['group'], parent=self)
         
         if dialog.exec_() == QDialog.Accepted:
-            selected_object = dialog.get_selected_object()
-            if not selected_object:
-                QMessageBox.information(self, self.i18n.get_string("dialog.common.info.title"), "Please select a group.")
+            selected_objects = dialog.get_selected_objects()
+            if not selected_objects:
                 return
             
-            group_dn = selected_object.get('dn', '')
-            group_name = selected_object.get('display_name', selected_object.get('name', selected_object.get('cn', '')))
+            added_count = 0
+            for obj in selected_objects:
+                obj_dn = obj.get('dn', '')
+                obj_display = obj.get('display_text', obj.get('cn', ''))
+                
+                if not obj_dn:
+                    continue
+                
+                # Check if already a member or pending addition
+                current_groups = self._get_current_display_groups()
+                if obj_dn in current_groups:
+                    QMessageBox.information(self, 
+                        self.i18n.get_string("dialog.common.info.title"), 
+                        f"This object is already a member of group '{obj_display}'.")
+                    continue
+                
+                # Stage the addition
+                self.pending_additions.add(obj_dn)
+                self.pending_removals.discard(obj_dn)  # Remove from removals if it was there
+                added_count += 1
             
-            if not group_dn:
-                QMessageBox.warning(self, self.i18n.get_string("dialog.common.error.title"), "Could not retrieve the group DN.")
-                return
-            
-            # Check if already a member or pending addition
-            current_groups = self._get_current_display_groups()
-            if group_dn in current_groups:
-                QMessageBox.information(self, 
-                    self.i18n.get_string("dialog.common.info.title"), 
-                    f"This object is already a member of group '{group_name}'.")
-                return
-            
-            # Stage the addition
-            self.pending_additions.add(group_dn)
-            self.pending_removals.discard(group_dn)  # Remove from removals if it was there
-            
-            # Update the display to show the pending change
-            self._refresh_display()
+            # Update the display to show the pending changes
+            if added_count > 0:
+                self._refresh_display()
             
             # Mark parent dialog as modified
             if hasattr(self.parent_props, 'mark_modified'):
@@ -843,12 +907,8 @@ class MemberOfTab(QWidget):
                 row = self.member_of_table.rowCount()
                 self.member_of_table.insertRow(row)
                 
-                # Group name with change indicator
+                # Group name without change indicators
                 display_name = group_props.get('displayName', [group_props.get('cn', [group_dn])[0]])[0]
-                
-                # Add visual indicator for pending additions only
-                if group_dn in self.pending_additions:
-                    display_name += " (will be added)"
                 
                 name_item = QTableWidgetItem(display_name)
                 name_item.setData(Qt.UserRole, group_dn)
@@ -891,62 +951,52 @@ class MemberOfTab(QWidget):
         return errors
 
     def _remove_from_group(self):
-        """Remove this object from the selected group (staged until Apply/OK)."""
+        """Remove this object from selected groups (staged until Apply/OK)."""
         selected_items = self.member_of_table.selectedItems()
         if not selected_items:
-            QMessageBox.information(self, self.i18n.get_string("dialog.common.info.title"), "Please select a group to remove this object from.")
             return
         
-        # Get the selected row
-        row = selected_items[0].row()
-        group_item = self.member_of_table.item(row, 0)
-        if not group_item:
-            return
+        # Get all unique selected rows
+        selected_rows = list(set(item.row() for item in selected_items))
+        selected_rows.sort(reverse=True)  # Process in reverse order to avoid index shifting
         
-        group_dn = group_item.data(Qt.UserRole)
-        group_name = group_item.text().replace(" (will be added)", "").replace(" (will be removed)", "")  # Clean display name
-        
-        # Check if this is the primary group (can't be removed)
-        if self.show_primary_group:
-            from samba_backend import get_group_by_rid
-            primary_group_id = self.parent_props.get('primaryGroupID', ['513'])[0]
-            primary_group_info = get_group_by_rid(self.samba_conn, primary_group_id)
-            if primary_group_info and group_dn == primary_group_info['dn']:
-                QMessageBox.warning(self, self.i18n.get_string("dialog.common.error.title"), "Cannot remove an object from its primary group. Change the primary group first.")
-                return
-        
-        # Check if this group can be removed (must be in original groups or pending additions)
-        if group_dn not in self.original_groups and group_dn not in self.pending_additions:
-            QMessageBox.information(self, self.i18n.get_string("dialog.common.info.title"), f"This object is not a member of '{group_name}'.")
-            return
-        
-        # Confirm removal
-        reply = QMessageBox.question(
-            self, 
-            "Remove from Group", 
-            f"Are you sure you want to remove this object from '{group_name}'?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
+        for row in selected_rows:
+            group_item = self.member_of_table.item(row, 0)
+            if not group_item:
+                continue
+            
+            group_dn = group_item.data(Qt.UserRole)
+            if not group_dn:
+                continue
+            
+            # Check if this is the primary group (can't be removed)
+            if self.show_primary_group:
+                from samba_backend import get_group_by_rid
+                primary_group_id = self.parent_props.get('primaryGroupID', ['513'])[0]
+                primary_group_info = get_group_by_rid(self.samba_conn, primary_group_id)
+                if primary_group_info and group_dn == primary_group_info['dn']:
+                    QMessageBox.warning(self, self.i18n.get_string("dialog.common.error.title"), "Cannot remove an object from its primary group. Change the primary group first.")
+                    continue
+            
             # Stage the removal
             if group_dn in self.pending_additions:
                 # If it was a pending addition, just remove it from additions
                 self.pending_additions.discard(group_dn)
+                self.logger.info(f"Removed pending addition: {group_dn}")
             else:
-                # If it's an original group, mark for removal
+                # If it's an original group, mark for removal and hide from UI
                 self.pending_removals.add(group_dn)
+                self.logger.info(f"Added to pending removals and hidden from UI: {group_dn}")
             
-            # Update the display to show the pending change
-            self._refresh_display()
-            
-            # Mark parent dialog as modified
-            if hasattr(self.parent_props, 'mark_modified'):
-                self.parent_props.mark_modified()
-            
-            # Notify parent dialog of changes
-            if self.change_callback:
-                self.change_callback()
+            # Remove from table immediately to hide it from UI
+            self.member_of_table.removeRow(row)
+        
+        # Mark parent dialog as modified and notify of changes
+        if hasattr(self.parent_props, 'mark_modified'):
+            self.parent_props.mark_modified()
+        
+        if self.change_callback:
+            self.change_callback()
 
     def _set_primary_group(self):
         current_row = self.member_of_table.currentRow()
@@ -1095,22 +1145,24 @@ class OrganizationTab(QWidget):
 
     def _select_manager(self):
         """Open manager selection dialog."""
-        from search_dialogs import UserPickerDialog
+        from search_dialogs import StandardSearchDialog
         
-        dialog = UserPickerDialog(self.samba_conn, self)
+        dialog = StandardSearchDialog(self.samba_conn, ['user'], parent=self)
         if dialog.exec_() == QDialog.Accepted:
-            selected_user = dialog.get_selected_object()
-            if selected_user:
-                # Update the manager field
-                manager_dn = selected_user['dn']
-                display_name = selected_user['display_name']
+            selected_objects = dialog.get_selected_objects()
+            if selected_objects:
+                # Take only the first selected user (limit to one)
+                selected_user = selected_objects[0]
+                manager_dn = selected_user.get('dn', '')
+                display_name = selected_user.get('display_text', selected_user.get('cn', ''))
                 
-                self.manager_edit.setText(display_name)
-                
-                # Store the DN for potential write-back
-                self.manager_dn = manager_dn
-                
-                self.logger.info(f"Selected manager: {display_name} ({manager_dn})")
+                if manager_dn:
+                    self.manager_edit.setText(display_name)
+                    
+                    # Store the DN for potential write-back
+                    self.manager_dn = manager_dn
+                    
+                    self.logger.info(f"Selected manager: {display_name} ({manager_dn})")
 
 
 class PasswordReplicationTab(QWidget):

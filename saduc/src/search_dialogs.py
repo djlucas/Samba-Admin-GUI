@@ -16,7 +16,8 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QDialogButtonBox,
     QGroupBox, QCheckBox, QComboBox, QMessageBox, QProgressBar, QTextEdit,
-    QSplitter, QFrame, QAbstractItemView, QTreeWidget, QTreeWidgetItem
+    QSplitter, QFrame, QAbstractItemView, QTreeWidget, QTreeWidgetItem,
+    QWidget
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QIcon, QKeySequence, QTextCharFormat, QColor, QTextCursor
@@ -25,6 +26,160 @@ from i18n_manager import I18nManager
 from search_backend import search_users, search_groups, search_containers
 
 logger = logging.getLogger("saduc_app.search_dialogs")
+
+class ValidatedToken(QWidget):
+    """A widget representing a single validated name token."""
+    
+    def __init__(self, display_name, match_object, parent_dialog):
+        super().__init__()
+        self.display_name = display_name
+        self.match_object = match_object
+        self.parent_dialog = parent_dialog
+        
+        # Create the layout
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(3, 2, 3, 2)
+        layout.setSpacing(2)
+        
+        # Create the label with blue styling
+        self.label = QLabel(display_name + ";")
+        self.label.setStyleSheet("""
+            QLabel {
+                color: blue;
+                text-decoration: underline;
+                background-color: #f0f8ff;
+                border: 1px solid #add8e6;
+                border-radius: 3px;
+                padding: 2px 4px;
+            }
+        """)
+        
+        # Create remove button (small X)
+        self.remove_btn = QPushButton("×")
+        self.remove_btn.setFixedSize(16, 16)
+        self.remove_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ff6b6b;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 10px;
+            }
+            QPushButton:hover {
+                background-color: #ff5252;
+            }
+        """)
+        self.remove_btn.clicked.connect(self.remove_token)
+        
+        layout.addWidget(self.label)
+        layout.addWidget(self.remove_btn)
+        
+        # Make the whole widget clickable
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
+        
+    def mousePressEvent(self, event):
+        """Handle mouse clicks to select the token."""
+        # Visual feedback for selection could be added here
+        super().mousePressEvent(event)
+        
+    def remove_token(self):
+        """Remove this token from the dialog."""
+        self.parent_dialog.remove_validated_token(self)
+        
+    def show_context_menu(self, position):
+        """Show context menu for the token."""
+        from PyQt5.QtWidgets import QMenu
+        menu = QMenu(self)
+        remove_action = menu.addAction(self.parent_dialog.i18n.get_string("dialog.common.remove"))
+        remove_action.triggered.connect(self.remove_token)
+        menu.exec_(self.mapToGlobal(position))
+
+class TokenTextEdit(QTextEdit):
+    """A QTextEdit that displays validated names as removable tokens."""
+    
+    def __init__(self, parent_dialog):
+        super().__init__()
+        self.parent_dialog = parent_dialog
+        self.setAcceptRichText(True)
+        
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            # Don't add newline, trigger name checking instead
+            self.parent_dialog._check_names()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+    
+    def insertTokenWidget(self, display_name, match_object):
+        """Insert a token widget at the current cursor position."""
+        cursor = self.textCursor()
+        
+        # Create a simple text representation with styling
+        token_text = f"{display_name}; "
+        cursor.insertText(token_text)
+        
+        # Apply blue formatting to just the name part
+        cursor.setPosition(cursor.position() - len(token_text))
+        cursor.setPosition(cursor.position() + len(display_name), QTextCursor.KeepAnchor)
+        
+        # Create blue format
+        blue_format = QTextCharFormat()
+        blue_format.setForeground(QColor(0, 0, 255))
+        blue_format.setUnderlineStyle(QTextCharFormat.SingleUnderline)
+        blue_format.setBackground(QColor(240, 248, 255))  # Light blue background
+        
+        cursor.setCharFormat(blue_format)
+        
+        # Move cursor to end
+        cursor.setPosition(cursor.position() + len("; "))
+        self.setTextCursor(cursor)
+        
+        # Track this token
+        start_pos = cursor.position() - len(token_text)
+        end_pos = start_pos + len(display_name)
+        self.parent_dialog.validated_ranges.append((start_pos, end_pos, display_name))
+    
+    def mousePressEvent(self, event):
+        """Handle mouse clicks to select tokens."""
+        # Get click position
+        cursor = self.cursorForPosition(event.pos())
+        click_pos = cursor.position()
+        
+        # Check if we clicked in a validated range
+        for start, end, display_name in self.parent_dialog.validated_ranges:
+            if start <= click_pos < end:
+                # Select the entire token
+                cursor.setPosition(start)
+                cursor.setPosition(end, QTextCursor.KeepAnchor)
+                self.setTextCursor(cursor)
+                return
+        
+        # If not in a validated range, use normal behavior
+        super().mousePressEvent(event)
+    
+    def contextMenuEvent(self, event):
+        """Show custom context menu for tokens."""
+        cursor = self.cursorForPosition(event.pos())
+        click_pos = cursor.position()
+        
+        # Check if we clicked on a validated token
+        for start, end, display_name in self.parent_dialog.validated_ranges:
+            if start <= click_pos < end:
+                from PyQt5.QtWidgets import QMenu
+                menu = QMenu(self)
+                remove_action = menu.addAction(self.parent_dialog.i18n.get_string("dialog.common.remove"))
+                remove_action.triggered.connect(lambda: self._remove_token(display_name))
+                menu.exec_(event.globalPos())
+                return
+        
+        # Default context menu for non-token areas
+        super().contextMenuEvent(event)
+    
+    def _remove_token(self, display_name):
+        """Remove a token by display name."""
+        self.parent_dialog._remove_token_by_name(display_name)
 
 class SearchWorker(QThread):
     """Worker thread for performing searches without blocking the UI."""
@@ -252,7 +407,8 @@ class UserPickerDialog(ObjectPickerDialog):
         """Perform user search."""
         name_filter = self.name_edit.text().strip()
         if not name_filter:
-            QMessageBox.information(self, "Search", "Please enter a name to search for.")
+            QMessageBox.information(self, self.i18n.get_string("search_dialog.search_title"), 
+                                   self.i18n.get_string("search_dialog.enter_name_message"))
             return
             
         self._show_progress("Searching for users...")
@@ -306,7 +462,8 @@ class UserPickerDialog(ObjectPickerDialog):
     def _on_search_error(self, error_msg):
         """Handle search errors."""
         self._hide_progress()
-        QMessageBox.critical(self, "Search Error", f"Search failed: {error_msg}")
+        QMessageBox.critical(self, self.i18n.get_string("search_dialog.error_title"), 
+                             self.i18n.get_string("search_dialog.search_failed_message").format(error_msg))
 
 class GroupPickerDialog(ObjectPickerDialog):
     """Dialog for picking group objects."""
@@ -318,7 +475,8 @@ class GroupPickerDialog(ObjectPickerDialog):
         """Perform group search."""
         name_filter = self.name_edit.text().strip()
         if not name_filter:
-            QMessageBox.information(self, "Search", "Please enter a name to search for.")
+            QMessageBox.information(self, self.i18n.get_string("search_dialog.search_title"), 
+                                   self.i18n.get_string("search_dialog.enter_name_message"))
             return
             
         self._show_progress("Searching for groups...")
@@ -340,7 +498,8 @@ class GroupPickerDialog(ObjectPickerDialog):
     def _on_search_error(self, error_msg):
         """Handle search errors."""
         self._hide_progress()
-        QMessageBox.critical(self, "Search Error", f"Search failed: {error_msg}")
+        QMessageBox.critical(self, self.i18n.get_string("search_dialog.error_title"), 
+                             self.i18n.get_string("search_dialog.search_failed_message").format(error_msg))
 
 class ContainerBrowserDialog(ObjectPickerDialog):
     """Dialog for browsing and selecting containers/OUs."""
@@ -405,7 +564,8 @@ class ContainerBrowserDialog(ObjectPickerDialog):
     def _on_search_error(self, error_msg):
         """Handle search errors."""
         self._hide_progress()
-        QMessageBox.critical(self, "Search Error", f"Search failed: {error_msg}")
+        QMessageBox.critical(self, self.i18n.get_string("search_dialog.error_title"), 
+                             self.i18n.get_string("search_dialog.search_failed_message").format(error_msg))
 
 
 class PrincipalPickerDialog(ObjectPickerDialog):
@@ -469,7 +629,8 @@ class PrincipalPickerDialog(ObjectPickerDialog):
         """Perform principal search."""
         name_filter = self.name_edit.text().strip()
         if not name_filter:
-            QMessageBox.information(self, "Search", "Please enter a name to search for.")
+            QMessageBox.information(self, self.i18n.get_string("search_dialog.search_title"), 
+                                   self.i18n.get_string("search_dialog.enter_name_message"))
             return
             
         object_type = self.type_combo.currentData()
@@ -560,7 +721,8 @@ class PrincipalPickerDialog(ObjectPickerDialog):
     def _on_search_error(self, error_msg):
         """Handle search errors."""
         self._hide_progress()
-        QMessageBox.critical(self, "Search Error", f"Search failed: {error_msg}")
+        QMessageBox.critical(self, self.i18n.get_string("search_dialog.error_title"), 
+                             self.i18n.get_string("search_dialog.search_failed_message").format(error_msg))
 
 
 class StandardSearchDialog(QDialog):
@@ -683,71 +845,118 @@ class StandardSearchDialog(QDialog):
             def __init__(self, parent_dialog):
                 super().__init__()
                 self.parent_dialog = parent_dialog
+                self.setContextMenuPolicy(Qt.CustomContextMenu)
+                self.customContextMenuRequested.connect(self._show_context_menu)
                 
             def keyPressEvent(self, event):
                 if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
                     self.parent_dialog._check_names()
                 elif event.key() in [Qt.Key_Backspace, Qt.Key_Delete]:
-                    # Handle backspace/delete with protected ranges
-                    if not self._handle_protected_deletion(event):
-                        return  # Don't allow the deletion
+                    # Handle delete with token selection
+                    if self._handle_token_deletion(event):
+                        return  # Token was deleted
                     super().keyPressEvent(event)
                 else:
-                    # Check if we're trying to type in a protected range
-                    cursor = self.textCursor()
-                    if self._is_in_protected_range(cursor.position()):
-                        return  # Don't allow typing in protected ranges
                     super().keyPressEvent(event)
             
-            def _handle_protected_deletion(self, event):
-                """Handle backspace/delete in protected ranges."""
-                cursor = self.textCursor()
-                pos = cursor.position()
+            def mousePressEvent(self, event):
+                """Handle mouse clicks to select tokens."""
+                # Get click position BEFORE calling super() to avoid cursor positioning issues
+                cursor = self.cursorForPosition(event.pos())
+                click_pos = cursor.position()
                 
-                # Check if we're trying to delete within or adjacent to a protected range
+                # Check if we clicked in a validated range
                 for start, end, display_name in self.parent_dialog.validated_ranges:
-                    if event.key() == Qt.Key_Backspace:
-                        # Backspace: check if cursor is right after a protected range
-                        if pos == end:
-                            self._delete_entire_validated_entry(start, end, display_name)
-                            return False
-                        # Or if cursor is within the range
-                        elif start < pos <= end:
-                            return False  # Block partial deletion
-                    elif event.key() == Qt.Key_Delete:
-                        # Delete: check if cursor is right before a protected range
-                        if pos == start:
-                            self._delete_entire_validated_entry(start, end, display_name)
-                            return False
-                        # Or if cursor is within the range
-                        elif start <= pos < end:
-                            return False  # Block partial deletion
+                    if start <= click_pos < end:
+                        # Don't call super() - we'll handle the click ourselves
+                        # Select the entire token
+                        cursor.setPosition(start)
+                        cursor.setPosition(end, QTextCursor.KeepAnchor)
+                        self.setTextCursor(cursor)
+                        return
                 
-                return True  # Allow normal deletion
+                # If not in a validated range, use normal behavior
+                super().mousePressEvent(event)
+            
+            def _handle_token_deletion(self, event):
+                """Handle deletion of tokens or normal text."""
+                cursor = self.textCursor()
+                
+                # Check if we have a selection
+                if cursor.hasSelection():
+                    # Check if the selection is a complete token
+                    start = cursor.selectionStart()
+                    end = cursor.selectionEnd()
+                    
+                    for token_start, token_end, display_name in self.parent_dialog.validated_ranges:
+                        if start == token_start and end == token_end:
+                            # Complete token is selected - delete it
+                            self._delete_entire_validated_entry(token_start, token_end, display_name)
+                            return True
+                else:
+                    # No selection - check if we're adjacent to a token
+                    pos = cursor.position()
+                    
+                    for token_start, token_end, display_name in self.parent_dialog.validated_ranges:
+                        if event.key() == Qt.Key_Backspace and pos == token_end:
+                            # Backspace right after a token - delete the token
+                            self._delete_entire_validated_entry(token_start, token_end, display_name)
+                            return True
+                        elif event.key() == Qt.Key_Delete and pos == token_start:
+                            # Delete right before a token - delete the token
+                            self._delete_entire_validated_entry(token_start, token_end, display_name)
+                            return True
+                        elif token_start <= pos < token_end:
+                            # Cursor is inside a token - delete the entire token
+                            self._delete_entire_validated_entry(token_start, token_end, display_name)
+                            return True
+                
+                return False  # Allow normal deletion
             
             def _delete_entire_validated_entry(self, start, end, display_name):
                 """Delete the entire validated entry including surrounding punctuation."""
-                text = self.toPlainText()
+                # Temporarily disconnect text change signal to prevent recursion
+                self.textChanged.disconnect(self.parent_dialog._on_text_changed)
                 
-                # Determine what to delete including semicolons and spaces
-                delete_start = start
-                delete_end = end
-                
-                # Check for semicolon and space after
-                if delete_end < len(text) and text[delete_end:delete_end+2] == '; ':
-                    delete_end += 2
-                # Check for semicolon and space before (if no semicolon after)
-                elif delete_start > 0 and text[delete_start-2:delete_start] == '; ':
-                    delete_start -= 2
-                
-                # Remove the entry
-                cursor = self.textCursor()
-                cursor.setPosition(delete_start)
-                cursor.setPosition(delete_end, QTextCursor.KeepAnchor)
-                cursor.removeSelectedText()
-                
-                # Remove from validated names and ranges
-                self.parent_dialog._remove_validated_entry(display_name)
+                try:
+                    text = self.toPlainText()
+                    
+                    # Find the actual position of the display name in current text
+                    actual_start = text.find(display_name)
+                    if actual_start == -1:
+                        return  # Name not found, already deleted?
+                    
+                    actual_end = actual_start + len(display_name)
+                    delete_start = actual_start
+                    delete_end = actual_end
+                    
+                    # Check for semicolon and space after
+                    if delete_end < len(text) and text[delete_end:delete_end+2] == '; ':
+                        delete_end += 2
+                    # Check for semicolon and space before (if no semicolon after)
+                    elif delete_start > 1 and text[delete_start-2:delete_start] == '; ':
+                        delete_start -= 2
+                    # Handle case where it's the first item followed by a semicolon
+                    elif delete_start == 0 and delete_end < len(text) and text[delete_end:delete_end+2] == '; ':
+                        delete_end += 2
+                    
+                    # Remove the entry
+                    cursor = self.textCursor()
+                    cursor.setPosition(delete_start)
+                    cursor.setPosition(delete_end, QTextCursor.KeepAnchor)
+                    cursor.removeSelectedText()
+                    
+                    # Position cursor at the deletion point
+                    cursor.setPosition(delete_start)
+                    self.setTextCursor(cursor)
+                    
+                    # Remove from validated names and ranges, then recalculate all ranges
+                    self.parent_dialog._remove_validated_entry(display_name)
+                    self.parent_dialog._recalculate_validated_ranges()
+                    
+                finally:
+                    # Reconnect the signal
+                    self.textChanged.connect(self.parent_dialog._on_text_changed)
             
             def _is_in_protected_range(self, pos):
                 """Check if position is within a protected range."""
@@ -755,13 +964,69 @@ class StandardSearchDialog(QDialog):
                     if start <= pos < end:
                         return True
                 return False
+            
+            def _show_context_menu(self, position):
+                """Show context menu for validated entries."""
+                from PyQt5.QtWidgets import QMenu, QAction
+                
+                try:
+                    # Get the cursor position at the click location
+                    click_cursor = self.cursorForPosition(position)
+                    click_pos = click_cursor.position()
+                    
+                    logger.debug(f"Context menu requested at position {click_pos}, ranges: {self.parent_dialog.validated_ranges}")
+                    
+                    # Check if we have a selected token or we're clicking on a validated range
+                    validated_entry = None
+                    entry_start = entry_end = 0
+                    
+                    cursor = self.textCursor()
+                    if cursor.hasSelection():
+                        # Check if the selection matches a token
+                        start = cursor.selectionStart()
+                        end = cursor.selectionEnd()
+                        for token_start, token_end, display_name in self.parent_dialog.validated_ranges:
+                            if start == token_start and end == token_end:
+                                validated_entry = display_name
+                                entry_start, entry_end = start, end
+                                break
+                    else:
+                        # Check if we're clicking on a validated range
+                        for start, end, display_name in self.parent_dialog.validated_ranges:
+                            if start <= click_pos < end:
+                                validated_entry = display_name
+                                entry_start, entry_end = start, end
+                                logger.debug(f"Found validated entry: {validated_entry}")
+                                break
+                    
+                    if validated_entry:
+                        menu = QMenu(self)
+                        delete_action = QAction(f"Remove '{validated_entry}'", self)
+                        delete_action.triggered.connect(lambda: self._delete_entire_validated_entry(entry_start, entry_end, validated_entry))
+                        menu.addAction(delete_action)
+                        
+                        # Show context menu at the clicked position
+                        menu.exec_(self.mapToGlobal(position))
+                    else:
+                        logger.debug("No validated entry found, showing standard menu")
+                        # Show default context menu for non-validated text
+                        menu = self.createStandardContextMenu()
+                        menu.exec_(self.mapToGlobal(position))
+                        
+                except Exception as e:
+                    logger.error(f"Error in context menu: {e}")
         
-        self.search_input = SearchTextEdit(self)
+        # Create a custom QTextEdit for token-based input that looks like the original
+        self.search_input = TokenTextEdit(self)
         self.search_input.setMaximumHeight(80)  # Approximately 4 lines
         self.search_input.setPlaceholderText(self.i18n.get_string("search_dialog.names_placeholder"))
         
-        # Add text change monitoring
-        self.search_input.textChanged.connect(self._on_text_changed)
+        # List to track validated tokens
+        self.validated_tokens = []
+        
+        # Initialize validated ranges and names
+        self.validated_ranges = []
+        self.validated_names = {}
         
         # Button layout (vertical alignment to top)
         button_layout = QVBoxLayout()
@@ -985,16 +1250,216 @@ class StandardSearchDialog(QDialog):
     
     def _check_names(self):
         """Check and validate the entered names."""
+        # Get the plain text content
         text = self.search_input.toPlainText().strip()
         if not text:
             return
         
-        # Split by semicolons and process each name
-        names = [name.strip() for name in text.split(';') if name.strip()]
+        # Extract only unvalidated text (text that's not in blue formatting)
+        unvalidated_text = self._extract_unvalidated_text()
+        if not unvalidated_text:
+            return
         
+        # Store current validated tokens before processing
+        current_validated = dict(self.validated_names)
+        
+        # Split by semicolons and process each name
+        names = [name.strip() for name in unvalidated_text.split(';') if name.strip()]
+        
+        # Process each new name
         for name in names:
-            if name not in self.validated_names:
-                self._resolve_name_with_display(name)
+            # Skip names that are already validated
+            if not self._is_name_already_validated(name):
+                self._resolve_name_to_token(name)
+        
+        # After processing, clean up the text to remove unvalidated portions
+        self._cleanup_text_after_validation()
+    
+    def _extract_unvalidated_text(self):
+        """Extract text that hasn't been validated yet."""
+        full_text = self.search_input.toPlainText()
+        
+        # Remove validated tokens from the text to get only new input
+        for start, end, display_name in self.validated_ranges:
+            # Replace validated names and their semicolons with empty space
+            token_text = display_name + "; "
+            full_text = full_text.replace(token_text, "", 1)
+        
+        return full_text.strip()
+    
+    def _cleanup_text_after_validation(self):
+        """Clean up the text by removing unvalidated portions and rebuilding tokens."""
+        # Clear the entire text edit
+        self.search_input.clear()
+        
+        # Clear validated ranges (will be rebuilt)
+        self.validated_ranges.clear()
+        
+        # Re-add only validated tokens
+        for display_name, match_object in self.validated_names.items():
+            self.search_input.insertTokenWidget(display_name, match_object)
+    
+    def _resolve_name_to_token(self, name):
+        """Resolve a name and create a validated token."""
+        try:
+            matches = self._search_for_name(name)
+            
+            if not matches:
+                # No matches found
+                QMessageBox.warning(self, self.i18n.get_string("search_dialog.name_not_found_title"), 
+                                  self.i18n.get_string("search_dialog.name_not_found_message").format(name))
+                return
+            
+            if len(matches) == 1:
+                # Single match - auto-create token
+                match = matches[0]
+                display_name = self._get_display_name(match)
+                self._create_validated_token(display_name, match)
+            else:
+                # Multiple matches - show picker
+                selected_items = self._show_multiple_matches_dialog(name, matches)
+                if selected_items:
+                    # Create tokens for all selected items
+                    for selected in selected_items:
+                        display_name = self._get_display_name(selected)
+                        self._create_validated_token(display_name, selected)
+                    
+        except Exception as e:
+            logger.error(f"Error resolving name '{name}': {e}")
+            QMessageBox.critical(self, self.i18n.get_string("search_dialog.error_title"), 
+                               self.i18n.get_string("search_dialog.error_message").format(str(e)))
+    
+    def _create_validated_token(self, display_name, match_object):
+        """Create a new validated token in the text edit."""
+        # Debug logging
+        logger.debug(f"_create_validated_token: display_name='{display_name}', match_object type={type(match_object)}")
+        logger.debug(f"match_object content: {match_object}")
+        
+        # Add to TokenTextEdit
+        self.search_input.insertTokenWidget(display_name, match_object)
+        
+        # Update validated_names for compatibility
+        self.validated_names[display_name] = match_object
+    
+    def remove_validated_token(self, token):
+        """Remove a validated token from the dialog."""
+        if token in self.validated_tokens:
+            self.validated_tokens.remove(token)
+            self.search_layout.removeWidget(token)
+            token.deleteLater()
+            
+            # Remove from validated_names
+            if token.display_name in self.validated_names:
+                del self.validated_names[token.display_name]
+    
+    def _is_name_already_validated(self, name):
+        """Check if a name is already validated by checking validated_ranges."""
+        for start, end, display_name in self.validated_ranges:
+            if display_name == name:
+                return True
+        return False
+    
+    def _remove_token_by_name(self, display_name):
+        """Remove a token by display name."""
+        # Find and remove from validated_ranges
+        self.validated_ranges = [(s, e, n) for s, e, n in self.validated_ranges if n != display_name]
+        
+        # Remove from validated_names
+        if display_name in self.validated_names:
+            del self.validated_names[display_name]
+        
+        # Remove from text and reformat
+        self._refresh_tokens()
+    
+    def _refresh_tokens(self):
+        """Refresh the text display by rebuilding all tokens."""
+        # Clear the text edit
+        self.search_input.clear()
+        self.validated_ranges.clear()
+        
+        # Re-add all validated tokens
+        for display_name, match_object in self.validated_names.items():
+            self.search_input.insertTokenWidget(display_name, match_object)
+    
+    def get_selected_objects(self):
+        """Return the selected LDAP objects for the calling dialog."""
+        logger.debug(f"get_selected_objects called. validated_names has {len(self.validated_names)} entries")
+        
+        # Debug what's actually in validated_names
+        for display_name, match_object in self.validated_names.items():
+            logger.debug(f"validated_names['{display_name}'] = type={type(match_object)}, value={match_object}")
+        
+        objects = []
+        
+        for display_name, match_object in self.validated_names.items():
+            # Ensure the object has the required keys for group_properties.py
+            if isinstance(match_object, dict):
+                # Add display_text if it doesn't exist
+                if 'display_text' not in match_object:
+                    match_object['display_text'] = display_name
+                objects.append(match_object)
+            else:
+                logger.error(f"match_object is not a dict: type={type(match_object)}, value={match_object}")
+        
+        # Debug logging
+        logger.debug(f"get_selected_objects returning {len(objects)} objects")
+        for i, obj in enumerate(objects):
+            logger.debug(f"Object {i}: type={type(obj)}, has_dn={'dn' in obj if isinstance(obj, dict) else 'NOT_DICT'}, has_display_text={'display_text' in obj if isinstance(obj, dict) else 'NOT_DICT'}")
+        
+        return objects
+    
+    def _resolve_name_with_position(self, name, position):
+        """Resolve a name at a specific position and update display with validation."""
+        try:
+            matches = self._search_for_name(name)
+            
+            if not matches:
+                # No matches found
+                QMessageBox.warning(self, self.i18n.get_string("search_dialog.name_not_found_title"), 
+                                  self.i18n.get_string("search_dialog.name_not_found_message").format(name))
+                return
+            
+            if len(matches) == 1:
+                # Single match - auto-select
+                match = matches[0]
+                display_name = self._get_display_name(match)
+                self._replace_name_with_display_at_position(name, display_name, position)
+                self.validated_names[display_name] = match
+            else:
+                # Multiple matches - show picker
+                selected_items = self._show_multiple_matches_dialog(name, matches)
+                if selected_items:
+                    # Handle multiple selected items - replace the original name with all selections
+                    for i, selected in enumerate(selected_items):
+                        display_name = self._get_display_name(selected)
+                        if i == 0:
+                            # Replace the original name with the first selection
+                            self._replace_name_with_display_at_position(name, display_name, position)
+                            self.validated_names[display_name] = selected
+                        else:
+                            # Add additional selections at the end
+                            text = self.search_input.toPlainText()
+                            self.search_input.setPlainText(text + display_name + "; ")
+                            
+                            # Apply blue formatting to the newly added name
+                            start_pos = len(text)
+                            cursor = self.search_input.textCursor()
+                            cursor.setPosition(start_pos)
+                            cursor.setPosition(start_pos + len(display_name), QTextCursor.KeepAnchor)
+                            
+                            blue_format = QTextCharFormat()
+                            blue_format.setForeground(QColor(0, 0, 255))
+                            blue_format.setUnderlineStyle(QTextCharFormat.SingleUnderline)
+                            cursor.setCharFormat(blue_format)
+                            
+                            # Track this as a validated range
+                            self.validated_ranges.append((start_pos, start_pos + len(display_name), display_name))
+                            self.validated_names[display_name] = selected
+                    
+        except Exception as e:
+            logger.error(f"Error resolving name '{name}': {e}")
+            QMessageBox.critical(self, self.i18n.get_string("search_dialog.error_title"), 
+                               self.i18n.get_string("search_dialog.error_message").format(str(e)))
     
     def _resolve_name_with_display(self, name):
         """Resolve a name and update display with validation."""
@@ -1012,22 +1477,37 @@ class StandardSearchDialog(QDialog):
                 match = matches[0]
                 display_name = self._get_display_name(match)
                 self._replace_name_with_display(name, display_name)
-                self.validated_names[name] = match
+                self.validated_names[display_name] = match
             else:
                 # Multiple matches - show picker
                 selected_items = self._show_multiple_matches_dialog(name, matches)
                 if selected_items:
-                    # Handle multiple selected items
-                    for selected in selected_items:
+                    # Handle multiple selected items - replace the original name with all selections
+                    for i, selected in enumerate(selected_items):
                         display_name = self._get_display_name(selected)
-                        # For multiple selections, add each as a separate validated name
-                        unique_key = f"{name}_{display_name}"
-                        self.validated_names[unique_key] = selected
-                    
-                    # Replace the original name with all selected display names
-                    display_names = [self._get_display_name(item) for item in selected_items]
-                    combined_display = "; ".join(display_names)
-                    self._replace_name_with_display(name, combined_display)
+                        if i == 0:
+                            # Replace the original name with the first selection
+                            self._replace_name_with_display(name, display_name)
+                            self.validated_names[display_name] = selected
+                        else:
+                            # Add additional selections at the end
+                            text = self.search_input.toPlainText()
+                            self.search_input.setPlainText(text + display_name + "; ")
+                            
+                            # Apply blue formatting to the newly added name
+                            start_pos = len(text)
+                            cursor = self.search_input.textCursor()
+                            cursor.setPosition(start_pos)
+                            cursor.setPosition(start_pos + len(display_name), QTextCursor.KeepAnchor)
+                            
+                            blue_format = QTextCharFormat()
+                            blue_format.setForeground(QColor(0, 0, 255))
+                            blue_format.setUnderlineStyle(QTextCharFormat.SingleUnderline)
+                            cursor.setCharFormat(blue_format)
+                            
+                            # Track this as a validated range
+                            self.validated_ranges.append((start_pos, start_pos + len(display_name), display_name))
+                            self.validated_names[display_name] = selected
                     
         except Exception as e:
             logger.error(f"Error resolving name '{name}': {e}")
@@ -1188,40 +1668,51 @@ class StandardSearchDialog(QDialog):
     
     def _replace_name_with_display(self, original_name, display_name):
         """Replace the original name with validated display name and apply blue formatting."""
+        # Find the position first
         text = self.search_input.toPlainText()
-        
-        # Find the position of the original name
         start_pos = text.find(original_name)
         if start_pos == -1:
             return
         
-        end_pos = start_pos + len(original_name)
+        # Use the position-based method for consistency
+        self._replace_name_with_display_at_position(original_name, display_name, start_pos)
+    
+    def _replace_name_with_display_at_position(self, original_name, display_name, position):
+        """Replace the original name at specific position with validated display name and apply blue formatting."""
+        # Temporarily disconnect text change signal to prevent recursion
+        self.search_input.textChanged.disconnect(self._on_text_changed)
         
-        # Replace the text
-        new_text = text[:start_pos] + display_name + text[end_pos:]
-        
-        # Update the text edit
-        cursor = self.search_input.textCursor()
-        self.search_input.selectAll()
-        self.search_input.insertPlainText(new_text)
-        
-        # Apply blue formatting to the display name
-        cursor.setPosition(start_pos)
-        cursor.setPosition(start_pos + len(display_name), QTextCursor.KeepAnchor)
-        
-        # Create blue format
-        blue_format = QTextCharFormat()
-        blue_format.setForeground(QColor(0, 0, 255))  # Blue color
-        blue_format.setUnderlineStyle(QTextCharFormat.SingleUnderline)
-        
-        cursor.setCharFormat(blue_format)
-        
-        # Track this as a validated range
-        self.validated_ranges.append((start_pos, start_pos + len(display_name), display_name))
-        
-        # Move cursor to end
-        cursor.setPosition(start_pos + len(display_name))
-        self.search_input.setTextCursor(cursor)
+        try:
+            # Use cursor-based replacement instead of selectAll to preserve formatting
+            cursor = self.search_input.textCursor()
+            
+            # Select the original name at the specific position
+            cursor.setPosition(position)
+            cursor.setPosition(position + len(original_name), QTextCursor.KeepAnchor)
+            
+            # Always add semicolon after display name for proper separation
+            display_with_semicolon = display_name + "; "
+            
+            # Replace the selected text
+            cursor.insertText(display_with_semicolon)
+            
+            # Now apply blue formatting to just the display name part
+            cursor.setPosition(position)
+            cursor.setPosition(position + len(display_name), QTextCursor.KeepAnchor)
+            
+            # Create blue format
+            blue_format = QTextCharFormat()
+            blue_format.setForeground(QColor(0, 0, 255))  # Blue color
+            blue_format.setUnderlineStyle(QTextCharFormat.SingleUnderline)
+            
+            cursor.setCharFormat(blue_format)
+            
+            # Track this as a validated range (only the display name, not semicolon)
+            self.validated_ranges.append((position, position + len(display_name), display_name))
+            
+        finally:
+            # Reconnect the signal
+            self.search_input.textChanged.connect(self._on_text_changed)
     
     def _remove_validated_entry(self, display_name):
         """Remove a validated entry from tracking."""
@@ -1239,6 +1730,42 @@ class StandardSearchDialog(QDialog):
             (start, end, name) for start, end, name in self.validated_ranges 
             if name != display_name
         ]
+    
+    def _recalculate_validated_ranges(self):
+        """Recalculate all validated ranges after text changes."""
+        text = self.search_input.toPlainText()
+        new_ranges = []
+        
+        for display_name in self.validated_names.keys():
+            # Find the display name in the current text
+            start_pos = text.find(display_name)
+            if start_pos != -1:
+                end_pos = start_pos + len(display_name)
+                new_ranges.append((start_pos, end_pos, display_name))
+                
+                # Reapply blue formatting
+                cursor = self.search_input.textCursor()
+                cursor.setPosition(start_pos)
+                cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
+                blue_format = QTextCharFormat()
+                blue_format.setForeground(QColor(0, 0, 255))
+                blue_format.setUnderlineStyle(QTextCharFormat.SingleUnderline)
+                cursor.setCharFormat(blue_format)
+        
+        self.validated_ranges = new_ranges
+    
+    def _is_name_already_validated(self, name):
+        """Check if a name is already validated by checking validated_names and validated_ranges."""
+        # Check if the name is already a validated display name
+        if name in self.validated_names:
+            return True
+            
+        # Check if the name is in any validated range
+        for _, _, display_name in self.validated_ranges:
+            if name == display_name:
+                return True
+                
+        return False
     
     def _open_advanced_search(self):
         """Open advanced search dialog."""
@@ -1271,9 +1798,12 @@ class StandardSearchDialog(QDialog):
         """Accept the dialog and prepare selected objects."""
         self.selected_objects = []
         
-        # Get all validated names
+        # Get all validated names - store the full LDAP objects, not just DNs
         for original_name, match_obj in self.validated_names.items():
-            self.selected_objects.append(match_obj['dn'])
+            # Add display_text if it doesn't exist
+            if 'display_text' not in match_obj:
+                match_obj['display_text'] = original_name
+            self.selected_objects.append(match_obj)  # Store full object, not just DN
         
         if not self.selected_objects:
             QMessageBox.warning(self, self.i18n.get_string("search_dialog.no_selection_title"), 

@@ -177,6 +177,7 @@ dialog.common.error.title=Error
 dialog.common.info.title=Information
 dialog.common.ok=OK
 dialog.common.cancel=Cancel
+dialog.common.remove=Remove
 dialog.common.error.generic=An unexpected error occurred. Check the debug log for details.
 common.unknown=Unknown
 
@@ -234,6 +235,9 @@ search_dialog.locations_button=Locations...
 search_dialog.check_names_button=Check Names
 search_dialog.advanced_button=Advanced...
 search_dialog.names_placeholder=Type names separated by semicolons
+search_dialog.search_title=Search
+search_dialog.enter_name_message=Please enter a name to search for.
+search_dialog.search_failed_message=Search failed: {0}
 
 # Object Types
 object_type.users=Users
