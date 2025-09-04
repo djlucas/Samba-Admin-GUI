@@ -150,15 +150,12 @@ The `--debug` flag enables verbose logging to both console and `saduc_debug.log`
   - Consistent "Protect from accidental deletion" functionality across all dialogs
 
 - ⚠️ **Remaining Features:**
-  - Security tab functionality (partially implemented - view/add/remove principals)
+  - Advanced Security tab functionality (partially implemented)
   - Advanced menu features:
-    - Change Domain functionality
+    - Change Domain functionality (may not be implemented due to Kerberos limitation)
     - Export/Import capabilities (Export List, Import Query Definition)
     - Domain management (Delegate Control, Raise Domain functional level)
-    - View customization (Large Icons, Small Icons, List, Detail views)
-    - Advanced filtering and UI customization options
-  - Enhanced search dialog features (member of tab, advanced filters)
-  - Specialized AD object creation (msDS-KeyCredential, msDS-ResourcePropertyList, etc.)
+    - Advanced filtering
 
 **SDNS (Samba DNS Manager)** - *~35% Complete*
 - ✅ **Complete Windows DNS Manager tree structure** - Proper DNS/Server/Forward Zones/Reverse Zones/Conditional Forwarders hierarchy
@@ -174,8 +171,8 @@ The `--debug` flag enables verbose logging to both console and `saduc_debug.log`
 
 | Module   | Completion | Status     | Notes                                  |
 |----------|------------|------------|----------------------------------------|
-| saduc    | ~95%       | 🚧 Active Development | Core functionality complete, advanced menu features and integrations remaining |
-| sdns     | ~35%       | 🚧 Active Development | Tree structure complete, record editing functionality needed |
+| saduc    | ~98%       | 🚧 Active Development | Core functionality complete, advanced menu features and integrations remaining |
+| sdns     | ~20%       | 🚧 Active Development | Tree structure complete, record editing functionality needed |
 | sadss    | 0%         | 🕒 Planned | Pending topology mapping logic |
 | sgpoe    | 0%         | 🕒 Planned | Requires policy template scaffolding |
 
@@ -217,20 +214,21 @@ The `--debug` flag enables verbose logging to both console and `saduc_debug.log`
 - **Documentation** - Installation, configuration, and user guides
 
 **🔴 HIGH PRIORITY (Beta Features):**
-- **Complete Security Tab** - Principal management interface implementation
-- **Advanced Menu Features** - Export/Import, Domain management, View customization  
+- **SADUC Complete Advanced Security Tab** - Principal management interface implementation
+- **SADUC Advanced Menu Features** - Export/Import, Domain management (undetermined)
+- **SDNS Record placement** - IPv6 PTR records and SRV records in wrong folders
+- **SDNS RootDNSZone removal** - For now, this is in the tree view until zone properties dialog is created
 - **SDNS Record Management** - DNS record editing, creation, and deletion functionality
 - **SDNS Zone Management** - Zone creation, deletion, and property management
 
 **🟡 MEDIUM PRIORITY (Enhancement):**
-- **Enhanced Search Features** - Member of tab functionality and advanced search filters
-- **Specialized Object Creation** - Support for advanced AD object types (msDS-KeyCredential, etc.)
+- **SADUC Enhanced Search Features** - finish advanced search filters
 - **Performance Optimization** - Large directory handling improvements
 
 **🟢 LOW PRIORITY (Future Releases):**
+- **SADUC Samba-Specific Extensions** - ex: sambaSamAccount objectType extension for inetOrgPerson
 - **SADSS Module Development** - Sites and Services functionality
 - **SGPOE Module Development** - Group Policy Object editing
-- **Samba-Specific Extensions** - sambaSamAccount objectType extensions
 - **UI/UX Polish** - Additional interface improvements and user preferences
 
 ## 🤝 Contributing
