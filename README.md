@@ -230,4 +230,6 @@ This project welcomes contributions! Please see our contributing guidelines for 
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the **GNU General Public License v3.0** (GPL-3.0) - see the LICENSE file for details.
+
+**Note:** This project uses PyQt5, which requires GPL v3 licensing for open source applications. All derivative works must also be licensed under GPL v3 or a compatible license.
