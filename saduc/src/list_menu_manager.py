@@ -35,7 +35,16 @@ class ListMenuManager:
                 self._build_contact_menu(menu)
 
         if not menu.isEmpty():
-            menu.exec_(self.main_window.listPane.viewport().mapToGlobal(position))
+            # Get the global position
+            global_pos = self.main_window.listPane.viewport().mapToGlobal(position)
+            
+            # If click is in bottom quarter of the list view, show menu above click point
+            viewport_height = self.main_window.listPane.viewport().height()
+            if position.y() > viewport_height * 0.75:  # Bottom quarter
+                menu_size = menu.sizeHint()
+                global_pos.setY(global_pos.y() - menu_size.height())
+            
+            menu.exec_(global_pos)
 
     def _build_user_menu(self, menu, user_data):
         uac = int(user_data.get('userAccountControl', '0'))

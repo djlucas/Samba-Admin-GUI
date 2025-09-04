@@ -323,23 +323,24 @@ def create_default_searches():
         name = search_data['name']
         if not config_manager.load_search(name):  # Only create if doesn't exist
             config_manager.save_search(name, search_data)
-            print(f"Created default search: {name}")
+            config_manager.logger.info(f"Created default search: {name}")
 
 
 if __name__ == '__main__':
     # Test the configuration system
     logging.basicConfig(level=logging.DEBUG)
+    logger = logging.getLogger(__name__)
     
-    print("Testing SAGUI Configuration Manager...")
+    logger.info("Testing SAGUI Configuration Manager...")
     
     # Test directory creation
-    print(f"Config directory: {config_manager.config_dir}")
+    logger.info(f"Config directory: {config_manager.config_dir}")
     
     # Create default searches
     create_default_searches()
     
     # List saved searches
     searches = config_manager.list_saved_searches()
-    print(f"\nFound {len(searches)} saved searches:")
+    logger.info(f"Found {len(searches)} saved searches:")
     for search in searches:
-        print(f"  - {search['name']}: {search['description']}")
+        logger.info(f"  - {search['name']}: {search['description']}")

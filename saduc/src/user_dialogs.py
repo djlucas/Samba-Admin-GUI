@@ -626,11 +626,303 @@ class CopyUserWizard(QWizard):
         super().accept()
 
 
+class ObjectRenameDialog(QDialog):
+    """
+    A general dialog for renaming AD objects with configurable fields based on object type.
+    """
+    
+    # Object type configurations
+    OBJECT_CONFIGS = {
+        'user': {
+            'title': 'Rename User',
+            'fields': [
+                {'name': 'cn', 'label': 'Full name:', 'widget': 'line_edit'},
+                {'name': 'givenName', 'label': 'First name:', 'widget': 'line_edit'},
+                {'name': 'sn', 'label': 'Last name:', 'widget': 'line_edit'},
+                {'name': 'displayName', 'label': 'Display name:', 'widget': 'line_edit'},
+                {'name': 'separator', 'widget': 'separator'},
+                {'name': 'userPrincipalName', 'label': 'User logon name:', 'widget': 'upn_combo'},
+                {'name': 'sAMAccountName', 'label': 'User logon name (pre-Windows 2000):', 'widget': 'netbios_edit'},
+            ],
+            'auto_update_display': True
+        },
+        'inetOrgPerson': {
+            'title': 'Rename inetOrgPerson',
+            'fields': [
+                {'name': 'cn', 'label': 'Full name:', 'widget': 'line_edit'},
+                {'name': 'givenName', 'label': 'First name:', 'widget': 'line_edit'},
+                {'name': 'sn', 'label': 'Last name:', 'widget': 'line_edit'},
+                {'name': 'displayName', 'label': 'Display name:', 'widget': 'line_edit'},
+                {'name': 'separator', 'widget': 'separator'},
+                {'name': 'userPrincipalName', 'label': 'User logon name:', 'widget': 'upn_combo'},
+                {'name': 'sAMAccountName', 'label': 'User logon name (pre-Windows 2000):', 'widget': 'netbios_edit'},
+            ],
+            'auto_update_display': True
+        },
+        'group': {
+            'title': 'Rename Group',
+            'fields': [
+                {'name': 'cn', 'label': 'Group name:', 'widget': 'line_edit'},
+                {'name': 'sAMAccountName', 'label': 'Group name (pre-Windows 2000):', 'widget': 'line_edit'},
+            ],
+            'auto_update_display': False
+        },
+        'contact': {
+            'title': 'Rename Contact',
+            'fields': [
+                {'name': 'cn', 'label': 'Full name:', 'widget': 'line_edit'},
+                {'name': 'givenName', 'label': 'First name:', 'widget': 'line_edit'},
+                {'name': 'sn', 'label': 'Last name:', 'widget': 'line_edit'},
+                {'name': 'displayName', 'label': 'Display name:', 'widget': 'line_edit'},
+            ],
+            'auto_update_display': True
+        }
+    }
+    
+    def __init__(self, parent=None, object_dn=None, current_object_data=None, object_type="user", samba_conn=None):
+        super().__init__(parent)
+        self.i18n = I18nManager()
+        self.object_dn = object_dn
+        self.current_object_data = current_object_data or {}
+        self.object_type = object_type.lower()
+        self.samba_conn = samba_conn
+        
+        # Get configuration for this object type
+        self.config = self.OBJECT_CONFIGS.get(self.object_type, {
+            'title': f'Rename {object_type.title()}',
+            'fields': [{'name': 'cn', 'label': 'Name:', 'widget': 'line_edit'}],
+            'auto_update_display': False
+        })
+        
+        self.setWindowTitle(self.config['title'])
+        self.setModal(True)
+        self.setMinimumWidth(400)
+        
+        # Store widgets by field name for easy access
+        self.field_widgets = {}
+        
+        self._create_widgets()
+        self._create_layout()
+        self._populate_current_data()
+        self._connect_signals()
+        
+    def _create_widgets(self):
+        """Create widgets based on object type configuration."""
+        # Always create button box
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        
+        # Create widgets for each field
+        for field_config in self.config['fields']:
+            field_name = field_config['name']
+            widget_type = field_config['widget']
+            
+            if widget_type == 'line_edit':
+                self.field_widgets[field_name] = QLineEdit()
+            elif widget_type == 'upn_combo':
+                # UPN field needs special handling
+                self.field_widgets[field_name + '_edit'] = QLineEdit()
+                self.field_widgets[field_name + '_combo'] = QComboBox()
+                self.field_widgets[field_name + '_combo'].setEditable(True)
+                self._populate_upn_combo()
+            elif widget_type == 'netbios_edit':
+                self.field_widgets[field_name + '_label'] = QLabel("DOMAIN\\")
+                self.field_widgets[field_name + '_label'].setStyleSheet("color: gray;")
+                self.field_widgets[field_name] = QLineEdit()
+                self._set_netbios_domain()
+            elif widget_type == 'separator':
+                self.field_widgets[field_name] = QFrame()
+                self.field_widgets[field_name].setFrameStyle(QFrame.HLine | QFrame.Sunken)
+        
+    def _create_layout(self):
+        """Create the dialog layout based on configuration."""
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        
+        form_layout = QFormLayout()
+        form_layout.setSpacing(8)
+        
+        for field_config in self.config['fields']:
+            field_name = field_config['name']
+            widget_type = field_config['widget']
+            label = field_config.get('label', '')
+            
+            if widget_type == 'separator':
+                form_layout.addRow(self.field_widgets[field_name], QLabel())
+            elif widget_type == 'line_edit':
+                form_layout.addRow(label, self.field_widgets[field_name])
+            elif widget_type == 'upn_combo':
+                upn_layout = QHBoxLayout()
+                upn_layout.addWidget(self.field_widgets[field_name + '_edit'])
+                upn_layout.addWidget(self.field_widgets[field_name + '_combo'])
+                form_layout.addRow(label, upn_layout)
+            elif widget_type == 'netbios_edit':
+                netbios_layout = QHBoxLayout()
+                netbios_layout.addWidget(self.field_widgets[field_name + '_label'])
+                netbios_layout.addWidget(self.field_widgets[field_name])
+                form_layout.addRow(label, netbios_layout)
+        
+        layout.addLayout(form_layout)
+        layout.addWidget(self.button_box)
+        self.setLayout(layout)
+        
+    def _populate_upn_combo(self):
+        """Populate the UPN suffix dropdown."""
+        if 'userPrincipalName_combo' in self.field_widgets:
+            combo = self.field_widgets['userPrincipalName_combo']
+            try:
+                if self.samba_conn:
+                    from samba_backend import get_forest_root_info
+                    forest_info = get_forest_root_info(self.samba_conn)
+                    if forest_info and 'name' in forest_info:
+                        combo.addItem(f"@{forest_info['name']}")
+                    else:
+                        combo.addItem("@domain.com")  # Fallback
+                else:
+                    combo.addItem("@domain.com")  # Fallback
+            except Exception:
+                combo.addItem("@domain.com")  # Fallback
+                
+    def _set_netbios_domain(self):
+        """Set the NetBIOS domain name."""
+        if 'sAMAccountName_label' in self.field_widgets:
+            label = self.field_widgets['sAMAccountName_label']
+            try:
+                if self.samba_conn:
+                    from samba_backend import get_netbios_name
+                    netbios_name = get_netbios_name(self.samba_conn)
+                    if netbios_name:
+                        label.setText(f"{netbios_name}\\")
+                        return
+            except Exception:
+                pass  # Keep default
+            # Keep the default "DOMAIN\\" if we couldn't get the real name
+            
+    def _populate_current_data(self):
+        """Pre-populate the form with current object data."""
+        if not self.current_object_data:
+            return
+            
+        for field_config in self.config['fields']:
+            field_name = field_config['name']
+            widget_type = field_config['widget']
+            
+            if field_name in self.current_object_data:
+                field_data = self.current_object_data[field_name]
+                
+                # Handle both list and string data
+                if isinstance(field_data, list):
+                    value = field_data[0] if field_data else ''
+                else:
+                    value = field_data if field_data else ''
+                
+                # Ensure value is a string
+                value = str(value) if value is not None else ''
+                
+                if widget_type == 'line_edit':
+                    if field_name in self.field_widgets:
+                        self.field_widgets[field_name].setText(value)
+                elif widget_type == 'upn_combo':
+                    # Handle UPN field specially
+                    if '@' in value:
+                        user_part, domain_part = value.split('@', 1)
+                        self.field_widgets[field_name + '_edit'].setText(user_part)
+                        # Set dropdown to match domain part
+                        combo = self.field_widgets[field_name + '_combo']
+                        for i in range(combo.count()):
+                            if combo.itemText(i) == f"@{domain_part}":
+                                combo.setCurrentIndex(i)
+                                break
+                    else:
+                        self.field_widgets[field_name + '_edit'].setText(value)
+                elif widget_type == 'netbios_edit':
+                    if field_name in self.field_widgets:
+                        self.field_widgets[field_name].setText(value)
+            
+    def _connect_signals(self):
+        """Connect widget signals."""
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        
+        # Auto-update display name for user/contact objects
+        if self.config.get('auto_update_display', False):
+            if 'givenName' in self.field_widgets:
+                self.field_widgets['givenName'].textChanged.connect(self._update_display_name)
+            if 'sn' in self.field_widgets:
+                self.field_widgets['sn'].textChanged.connect(self._update_display_name)
+        
+    def _update_display_name(self):
+        """Auto-update display name based on first and last name."""
+        if 'displayName' not in self.field_widgets:
+            return
+            
+        first = self.field_widgets.get('givenName', QLineEdit()).text().strip()
+        last = self.field_widgets.get('sn', QLineEdit()).text().strip()
+        current_display = self.field_widgets['displayName'].text().strip()
+        
+        # Only auto-update if:
+        # 1. Display name is empty, OR
+        # 2. Display name exactly matches "first last" pattern (auto-generated)
+        if first and last:
+            expected_display = f"{first} {last}"
+            if not current_display or current_display == expected_display:
+                self.field_widgets['displayName'].setText(expected_display)
+        elif not first and not last and not current_display:
+            # Clear display name if both first and last are empty and display is empty
+            self.field_widgets['displayName'].setText("")
+                
+    def get_rename_data(self):
+        """Get the new object data from the form."""
+        data = {}
+        
+        for field_config in self.config['fields']:
+            field_name = field_config['name']
+            widget_type = field_config['widget']
+            
+            if widget_type == 'line_edit':
+                if field_name in self.field_widgets:
+                    data[field_name] = self.field_widgets[field_name].text().strip()
+            elif widget_type == 'upn_combo':
+                user_part = self.field_widgets[field_name + '_edit'].text().strip()
+                domain_part = self.field_widgets[field_name + '_combo'].currentText()
+                if user_part and domain_part:
+                    data[field_name] = f"{user_part}{domain_part}"
+            elif widget_type == 'netbios_edit':
+                if field_name in self.field_widgets:
+                    data[field_name] = self.field_widgets[field_name].text().strip()
+        
+        return data
+
+# Keep the old UserRenameDialog as an alias for backwards compatibility
+class UserRenameDialog(ObjectRenameDialog):
+    def __init__(self, parent=None, user_dn=None, current_user_data=None, object_type="User"):
+        super().__init__(parent, user_dn, current_user_data, object_type.lower())
+
+
 # --- Custom Dialogs for Delete and Disable Actions ---
 def DeleteUserDialog(parent, username):
     i18n = I18nManager()
     title = i18n.get_string("dialog.delete_user.title")
     message = i18n.get_text("dialog.delete_user.message", username)
+    return QMessageBox.question(parent, title, message, QMessageBox.Yes | QMessageBox.No)
+
+def DeleteObjectDialog(parent, object_name, object_type):
+    """Generic delete dialog for any object type."""
+    i18n = I18nManager()
+    title = "Confirm Deletion"
+    
+    # Use object type-specific message if available, otherwise generic
+    object_type_names = {
+        'user': 'user',
+        'computer': 'computer', 
+        'contact': 'contact',
+        'group': 'group',
+        'printer': 'printer',
+        'organizationalUnit': 'organizational unit'
+    }
+    
+    type_name = object_type_names.get(object_type, 'object')
+    message = f"Are you sure you want to delete the {type_name} '{object_name}'? This action cannot be undone."
+    
     return QMessageBox.question(parent, title, message, QMessageBox.Yes | QMessageBox.No)
 
 def DisableUserDialog(parent, username):

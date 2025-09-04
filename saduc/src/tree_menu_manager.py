@@ -34,7 +34,16 @@ class TreeMenuManager:
             self._build_container_menu(menu, dn)
 
         if not menu.isEmpty():
-            menu.exec_(self.main_window.treePane.viewport().mapToGlobal(position))
+            # Get the global position  
+            global_pos = self.main_window.treePane.viewport().mapToGlobal(position)
+            
+            # If click is in bottom quarter of the tree view, show menu above click point
+            viewport_height = self.main_window.treePane.viewport().height()
+            if position.y() > viewport_height * 0.75:  # Bottom quarter
+                menu_size = menu.sizeHint()
+                global_pos.setY(global_pos.y() - menu_size.height())
+            
+            menu.exec_(global_pos)
 
     def _populate_view_menu(self, view_menu):
         view_menu.addAction(self.i18n.get_string("context_menu.view_add_remove_columns"), partial(actions.on_view_add_remove_columns_action_triggered, self.main_window))

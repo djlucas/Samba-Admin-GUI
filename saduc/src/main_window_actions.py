@@ -2,13 +2,13 @@
 import logging
 from PyQt5.QtWidgets import QDialog, QMessageBox
 from PyQt5.QtCore import Qt
-from user_dialogs import NewUserWizard, CopyUserWizard, DeleteUserDialog, DisableUserDialog, NewGroupDialog, NewOUDialog, DeleteOUDialog, EnableUserDialog, NewContactDialog, ConfigurableUserWizard
+from user_dialogs import NewUserWizard, CopyUserWizard, DeleteUserDialog, DeleteObjectDialog, DisableUserDialog, NewGroupDialog, NewOUDialog, DeleteOUDialog, EnableUserDialog, NewContactDialog, ConfigurableUserWizard, ObjectRenameDialog
 from computer_dialogs import DisableComputerDialog, EnableComputerDialog, NewComputerDialog
 from printer_dialogs import NewPrinterDialog
 from shared_folder_dialogs import NewSharedFolderDialog
 from generic_object_dialogs import GenericObjectDialog, GenericObjectWizard
 from password_reset_dialog import PasswordResetDialog
-from samba_backend import create_user_samba, copy_user_samba, get_user_properties, create_group_samba, create_ou_samba, delete_user_samba, delete_ou_samba, disable_user_samba, enable_user_samba, disable_computer_samba, enable_computer_samba, reset_password_samba, create_contact_samba, create_inetorgperson_samba, create_computer_samba, delete_object_samba, reset_computer_account_samba, create_printer_samba, create_shared_folder_samba, create_generic_object_samba, move_object_samba, rename_object_samba
+from samba_backend import create_user_samba, copy_user_samba, get_user_properties, create_group_samba, create_ou_samba, delete_user_samba, delete_ou_samba, disable_user_samba, enable_user_samba, disable_computer_samba, enable_computer_samba, reset_password_samba, create_contact_samba, create_inetorgperson_samba, create_computer_samba, delete_object_samba, reset_computer_account_samba, create_printer_samba, create_shared_folder_samba, create_generic_object_samba, move_object_samba, rename_object_samba, rename_object_with_attributes_samba
 from user_properties import UserPropertiesDialog
 from computer_properties import ComputerPropertiesDialog
 from group_properties import GroupPropertiesDialog
@@ -32,7 +32,7 @@ def on_new_user_action_triggered(main_window):
             message = main_window.i18n.get_text(message_key, *extra)
             if success:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-                main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+                main_window.refresh_current_container()
             else:
                 QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
     else:
@@ -71,7 +71,7 @@ def on_copy_user_action_triggered(main_window):
             message = main_window.i18n.get_text(message_key, user_data.get('full_name'))
             if success:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-                main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+                main_window.refresh_current_container()
             else:
                 QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
     else:
@@ -104,13 +104,13 @@ def on_delete_user_action_triggered(main_window):
                     object_type = 'group'
     
     main_window.logger.info(f"Delete action triggered for {object_type}: {object_name}.")
-    if DeleteUserDialog(main_window, object_name) == QMessageBox.Yes:
+    if DeleteObjectDialog(main_window, object_name, object_type) == QMessageBox.Yes:
         main_window.logger.info(f"User confirmed deletion of {object_type}: {object_name}")
         success, message_key, extra = delete_object_samba(main_window.samba_conn, main_window.current_selected_dn, object_type)
         message = main_window.i18n.get_text(message_key, *extra)
         if success:
             QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-            main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+            main_window.refresh_current_container()
         else:
             QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
     else:
@@ -129,7 +129,7 @@ def on_disable_user_action_triggered(main_window):
         message = main_window.i18n.get_text(message_key, *extra)
         if success:
             QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-            main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+            main_window.refresh_current_container()
         else:
             QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
     else:
@@ -148,7 +148,7 @@ def on_enable_user_action_triggered(main_window):
         message = main_window.i18n.get_text(message_key, *extra)
         if success:
             QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-            main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+            main_window.refresh_current_container()
         else:
             QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
     else:
@@ -164,7 +164,7 @@ def on_disable_computer_action_triggered(main_window):
         message = main_window.i18n.get_text(message_key, *extra)
         if success:
             QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-            main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+            main_window.refresh_current_container()
         else:
             QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
 
@@ -178,7 +178,7 @@ def on_enable_computer_action_triggered(main_window):
         message = main_window.i18n.get_text(message_key, *extra)
         if success:
             QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-            main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+            main_window.refresh_current_container()
         else:
             QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
 
@@ -374,7 +374,7 @@ def on_reset_password_action_triggered(main_window):
         message = main_window.i18n.get_text(message_key, *extra)
         if success:
             QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-            main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+            main_window.refresh_current_container()
         else:
             QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
 
@@ -453,61 +453,25 @@ def on_move_action_triggered(main_window):
                 main_window.logger.error(f"Exception during move operation: {e}")
 
 def on_rename_action_triggered(main_window):
-    """Rename the currently selected object."""
+    """Triggers inline rename for the selected object in the list view."""
+    main_window.logger.info("Rename action triggered - starting inline edit.")
+    
     if not main_window.current_selected_dn:
+        QMessageBox.warning(main_window, main_window.i18n.get_string("dialog.common.error.title"), "No object selected.")
         return
     
-    # Get the current object name for the dialog
-    current_name = main_window.current_selected_dn.split(',')[0].split('=')[1]  # Extract name from CN=name,... or OU=name,...
+    # Get the selected index
+    selected_index = main_window.listPane.selectionModel().currentIndex()
+    if not selected_index.isValid():
+        QMessageBox.warning(main_window, main_window.i18n.get_string("dialog.common.error.title"), "No object selected.")
+        return
     
-    # Simple input dialog for the new name
-    from PyQt5.QtWidgets import QInputDialog
-    new_name, ok = QInputDialog.getText(
-        main_window, 
-        "Rename Object", 
-        f"Enter new name for '{current_name}':",
-        text=current_name
-    )
+    # Make sure we're editing the name column (column 0)
+    name_index = main_window.tableModel.index(selected_index.row(), 0)
     
-    if ok and new_name.strip():
-        new_name = new_name.strip()
-        
-        # Don't proceed if the name hasn't changed
-        if new_name == current_name:
-            return
-        
-        # Confirm the rename
-        reply = QMessageBox.question(
-            main_window, 
-            "Rename Object", 
-            f"Are you sure you want to rename '{current_name}' to '{new_name}'?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            try:
-                # Perform the rename
-                success, message_key, extra = rename_object_samba(main_window.samba_conn, main_window.current_selected_dn, new_name)
-                message = main_window.i18n.get_text(message_key, *extra) if extra else main_window.i18n.get_string(message_key)
-                
-                if success:
-                    QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-                    main_window.logger.info(f"Successfully renamed object {main_window.current_selected_dn} to {new_name}")
-                    
-                    # Refresh the current container to show the new name
-                    main_window.refresh_current_container()
-                    
-                else:
-                    QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
-                    main_window.logger.error(f"Failed to rename object {main_window.current_selected_dn}: {message}")
-                    
-            except Exception as e:
-                QMessageBox.critical(
-                    main_window, 
-                    main_window.i18n.get_string("dialog.common.error.title"), 
-                    f"Unexpected error during rename operation: {str(e)}"
-                )
-                main_window.logger.error(f"Exception during rename operation: {e}")
+    # Start inline editing on the name column
+    main_window.listPane.edit(name_index)
+    return
 
 def on_stub_action_triggered(main_window):
     QMessageBox.information(main_window, "Not Implemented", "This feature is not yet implemented.")
@@ -618,7 +582,7 @@ def on_reset_account_action_triggered(main_window):
         message = main_window.i18n.get_text(message_key, *extra)
         if success:
             QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-            main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+            main_window.refresh_current_container()
         else:
             QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
     else:
@@ -766,7 +730,7 @@ def on_new_group_action_triggered(main_window):
             message = main_window.i18n.get_text(message_key, *args)
             if success:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-                main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+                main_window.refresh_current_container()
             else:
                 QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
         else:
@@ -786,7 +750,7 @@ def on_new_computer_action_triggered(main_window):
             message = main_window.i18n.get_text(message_key, *extra)
             if success:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-                main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+                main_window.refresh_current_container()
             else:
                 QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
     else:
@@ -825,7 +789,7 @@ def on_new_contact_action_triggered(main_window):
             message = main_window.i18n.get_text(message_key, *extra)
             if success:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-                main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+                main_window.refresh_current_container()
             else:
                 QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
     else:
@@ -843,7 +807,7 @@ def on_new_shared_folder_action_triggered(main_window):
             message = main_window.i18n.get_text(message_key, *extra)
             if success:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-                main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+                main_window.refresh_current_container()
             else:
                 QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
         else:
@@ -879,7 +843,7 @@ def on_new_inetorgperson_action_triggered(main_window):
             message = main_window.i18n.get_text(message_key, *extra)
             if success:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-                main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+                main_window.refresh_current_container()
             else:
                 QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
     else:
@@ -1112,7 +1076,7 @@ def on_new_printer_action_triggered(main_window):
             message = main_window.i18n.get_text(message_key, *extra)
             if success:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-                main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+                main_window.refresh_current_container()
             else:
                 QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
         else:
@@ -1154,7 +1118,7 @@ def on_new_generic_object_action_triggered(main_window, object_class, display_na
             message = main_window.i18n.get_text(message_key, *extra)
             if success:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
-                main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
+                main_window.refresh_current_container()
             else:
                 QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
         else:

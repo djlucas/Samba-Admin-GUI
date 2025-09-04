@@ -688,8 +688,7 @@ def create_user_samba(samba_conn, user_data):
     attrs.append(('sAMAccountName', [user_data['pre_win2k_logon'].encode('utf-8')]))
     attrs.append(('userAccountControl', [str(uac_value).encode('utf-8')]))
     
-    # Set primary group to Domain Users (RID 513)
-    attrs.append(('primaryGroupID', [b'513']))
+    # Note: primaryGroupID will be automatically set to 513 (Domain Users) by AD
     
     # Add optional attributes
     if user_data.get('first_name'):
@@ -825,8 +824,7 @@ def create_inetorgperson_samba(samba_conn, user_data):
     attrs.append(('sAMAccountName', [user_data['pre_win2k_logon'].encode('utf-8')]))
     attrs.append(('userAccountControl', [str(uac_value).encode('utf-8')]))
     
-    # Set primary group to Domain Users (RID 513)
-    attrs.append(('primaryGroupID', [b'513']))
+    # Note: primaryGroupID will be automatically set to 513 (Domain Users) by AD
     
     # Add optional attributes
     if user_data.get('first_name'):
@@ -1426,6 +1424,7 @@ def delete_object_samba(samba_conn, object_dn, object_type="object"):
         'user': {'filter': '(objectClass=user)', 'name_attrs': ['cn', 'sAMAccountName']},
         'computer': {'filter': '(objectClass=computer)', 'name_attrs': ['cn', 'sAMAccountName']},
         'contact': {'filter': '(objectClass=contact)', 'name_attrs': ['cn', 'displayName']},
+        'group': {'filter': '(objectClass=group)', 'name_attrs': ['cn', 'sAMAccountName']},
         'printer': {'filter': '(objectClass=printQueue)', 'name_attrs': ['cn', 'printerName']},
         'organizationalUnit': {'filter': '(objectClass=organizationalUnit)', 'name_attrs': ['ou', 'name']},
         'object': {'filter': '(objectClass=*)', 'name_attrs': ['cn', 'name', 'ou']}
@@ -3122,6 +3121,140 @@ def rename_object_samba(samba_conn, object_dn, new_name):
     except ldap.LDAPError as e:
         logger.error(f"LDAP error renaming object {object_dn}: {e}")
         return False, "samba_backend.error.rename_object", [str(e)]
+
+
+def rename_object_with_attributes_samba(samba_conn, object_dn, rename_data, object_type):
+    """
+    Renames an AD object by updating multiple attributes based on object type.
+    This is a comprehensive rename that updates all relevant naming attributes.
+    """
+    logger.info(f"Samba backend: Comprehensive rename of {object_type} object {object_dn}")
+    logger.debug(f"Rename data: {rename_data}")
+    
+    try:
+        import ldap.modlist
+        
+        # Get current object attributes to determine what needs to be changed
+        try:
+            res = samba_conn.search_s(object_dn, ldap.SCOPE_BASE, '(objectClass=*)', ['*'])
+            if not res:
+                return False, "samba_backend.error.object_not_found", [object_dn]
+            current_attrs = res[0][1]
+        except ldap.LDAPError as e:
+            logger.error(f"Error fetching current object attributes: {e}")
+            return False, "samba_backend.error.fetch_current", [str(e)]
+        
+        # Build the modification list based on object type and provided data
+        mod_list = []
+        
+        # Handle different object types and their specific attributes
+        if object_type in ['user', 'inetOrgPerson']:
+            # User/inetOrgPerson rename attributes
+            attribute_mappings = {
+                'cn': 'cn',
+                'displayName': 'displayName',
+                'givenName': 'givenName',
+                'sn': 'sn',
+                'sAMAccountName': 'sAMAccountName',
+                'userPrincipalName': 'userPrincipalName'
+            }
+        elif object_type == 'group':
+            # Group rename attributes
+            attribute_mappings = {
+                'cn': 'cn',
+                'sAMAccountName': 'sAMAccountName',
+                'displayName': 'displayName',
+                'description': 'description'
+            }
+        elif object_type == 'contact':
+            # Contact rename attributes
+            attribute_mappings = {
+                'displayName': 'displayName',
+                'givenName': 'givenName',
+                'sn': 'sn',
+                'cn': 'cn'
+            }
+        else:
+            # Generic object - just update cn and displayName if provided
+            attribute_mappings = {
+                'cn': 'cn',
+                'displayName': 'displayName'
+            }
+        
+        # Check if we need to rename the RDN (CN attribute change)
+        rdn_changed = False
+        new_cn = None
+        
+        # Process attribute changes
+        for form_field, ldap_attr in attribute_mappings.items():
+            if form_field in rename_data and rename_data[form_field].strip():
+                new_value = rename_data[form_field].strip()
+                current_value = current_attrs.get(ldap_attr)
+                
+                # Convert current value to string for comparison
+                if current_value:
+                    if isinstance(current_value, list):
+                        current_value_str = current_value[0].decode('utf-8') if isinstance(current_value[0], bytes) else str(current_value[0])
+                    else:
+                        current_value_str = current_value.decode('utf-8') if isinstance(current_value, bytes) else str(current_value)
+                else:
+                    current_value_str = ""
+                
+                # Only modify if the value has actually changed
+                if new_value != current_value_str:
+                    if ldap_attr == 'cn':
+                        new_cn = new_value
+                        rdn_changed = True
+                    else:
+                        # For non-CN attributes, add to modification list
+                        if current_value:
+                            mod_list.append((ldap.MOD_REPLACE, ldap_attr, [new_value.encode('utf-8')]))
+                        else:
+                            mod_list.append((ldap.MOD_ADD, ldap_attr, [new_value.encode('utf-8')]))
+        
+        # Apply attribute modifications first (before RDN change)
+        if mod_list:
+            logger.debug(f"Applying attribute modifications: {mod_list}")
+            samba_conn.modify_s(object_dn, mod_list)
+            logger.info(f"Successfully updated attributes for {object_dn}")
+        
+        # Handle RDN change (CN attribute) if needed
+        new_dn = object_dn  # Default to current DN
+        if rdn_changed and new_cn:
+            logger.debug(f"Performing RDN change from {object_dn} to CN={new_cn}")
+            
+            # Parse the current DN to build new RDN
+            import ldap.dn
+            dn_components = ldap.dn.explode_dn(object_dn)
+            if not dn_components:
+                return False, "samba_backend.error.invalid_dn", [object_dn]
+            
+            parent_dn = ','.join(dn_components[1:])  # Everything after the first component
+            new_rdn = f"CN={new_cn}"
+            new_dn = f"{new_rdn},{parent_dn}"
+            
+            # Perform the RDN change
+            samba_conn.rename_s(object_dn, new_rdn, delold=1)
+            logger.info(f"Successfully renamed RDN to: {new_dn}")
+        
+        logger.info(f"Comprehensive rename completed successfully. New DN: {new_dn}")
+        return True, "samba_backend.success.rename_object_comprehensive", [object_dn, new_dn]
+        
+    except ldap.NO_SUCH_OBJECT:
+        logger.error(f"Object not found: {object_dn}")
+        return False, "samba_backend.error.object_not_found", [object_dn]
+    except ldap.ALREADY_EXISTS:
+        logger.error(f"Object with new name already exists")
+        return False, "samba_backend.error.name_exists", [new_cn or "unknown"]
+    except ldap.UNWILLING_TO_PERFORM as e:
+        logger.error(f"Server unwilling to perform rename operation: {e}")
+        return False, "samba_backend.error.rename_unwilling", [str(e)]
+    except ldap.LDAPError as e:
+        logger.error(f"LDAP error in comprehensive rename of {object_dn}: {e}")
+        return False, "samba_backend.error.rename_object", [str(e)]
+    except Exception as e:
+        logger.error(f"Unexpected error in comprehensive rename of {object_dn}: {e}")
+        return False, "samba_backend.error.rename_unexpected", [str(e)]
 
 
 def get_fsmo_role_holders(samba_conn):

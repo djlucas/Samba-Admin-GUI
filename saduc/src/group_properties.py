@@ -100,7 +100,8 @@ class GroupPropertiesDialog(QDialog):
         self.group_icon_label = QLabel()
         self.group_name_header = QLabel()
         self.group_name_edit = QLineEdit()
-        self.description_edit = QTextEdit()
+        self.description_edit = QLineEdit()
+        self.email_edit = QLineEdit()
         self.group_scope_box = QGroupBox(self.i18n.get_string("group_properties.groupbox.scope"))
         self.domain_local_radio = QRadioButton(self.i18n.get_string("group_properties.radio.domain_local"))
         self.global_radio = QRadioButton(self.i18n.get_string("group_properties.radio.global"))
@@ -108,6 +109,7 @@ class GroupPropertiesDialog(QDialog):
         self.group_type_box = QGroupBox(self.i18n.get_string("group_properties.groupbox.type"))
         self.security_radio = QRadioButton(self.i18n.get_string("group_properties.radio.security"))
         self.distribution_radio = QRadioButton(self.i18n.get_string("group_properties.radio.distribution"))
+        self.notes_edit = QTextEdit()
 
         # Members Tab Widgets
         self.members_table = QTableWidget()
@@ -133,6 +135,7 @@ class GroupPropertiesDialog(QDialog):
     def _layout_general_tab(self):
         layout = QVBoxLayout(self.general_tab)
 
+        # Header with icon and group name
         header_layout = QHBoxLayout()
         icon_path = os.path.join(os.path.dirname(__file__), 'res', 'icons', 'group.png')
         self.group_icon_label.setPixmap(QIcon(icon_path).pixmap(32, 32))
@@ -141,31 +144,51 @@ class GroupPropertiesDialog(QDialog):
         header_layout.addWidget(self.group_name_header)
         header_layout.addStretch()
 
+        # Separator
         separator = QFrame()
         separator.setFrameShape(QFrame.HLine)
         separator.setFrameShadow(QFrame.Sunken)
 
+        # Form fields
         form_layout = QFormLayout()
-        self.description_edit.setFixedHeight(60)
         form_layout.addRow(self.i18n.get_string("group_properties.label.group_name"), self.group_name_edit)
         form_layout.addRow(self.i18n.get_string("group_properties.label.description"), self.description_edit)
+        form_layout.addRow(self.i18n.get_string("group_properties.label.email"), self.email_edit)
 
-        scope_layout = QHBoxLayout()
+        # Group scope and type side by side
+        scope_type_layout = QHBoxLayout()
+        
+        # Group scope (left side)
+        scope_layout = QVBoxLayout()
         scope_layout.addWidget(self.domain_local_radio)
         scope_layout.addWidget(self.global_radio)
         scope_layout.addWidget(self.universal_radio)
         self.group_scope_box.setLayout(scope_layout)
-        form_layout.addRow(self.group_scope_box)
-
-        type_layout = QHBoxLayout()
+        
+        # Group type (right side)
+        type_layout = QVBoxLayout()
         type_layout.addWidget(self.security_radio)
         type_layout.addWidget(self.distribution_radio)
         self.group_type_box.setLayout(type_layout)
-        form_layout.addRow(self.group_type_box)
+        
+        # Add both group boxes side by side
+        scope_type_layout.addWidget(self.group_scope_box)
+        scope_type_layout.addWidget(self.group_type_box)
+        scope_type_layout.addStretch()
 
+        # Notes field
+        notes_layout = QVBoxLayout()
+        notes_label = QLabel(self.i18n.get_string("group_properties.label.notes"))
+        self.notes_edit.setFixedHeight(80)
+        notes_layout.addWidget(notes_label)
+        notes_layout.addWidget(self.notes_edit)
+
+        # Put it all together
         layout.addLayout(header_layout)
         layout.addWidget(separator)
         layout.addLayout(form_layout)
+        layout.addLayout(scope_type_layout)
+        layout.addLayout(notes_layout)
         layout.addStretch()
 
     def _layout_members_tab(self):
@@ -253,6 +276,8 @@ class GroupPropertiesDialog(QDialog):
         self.group_name_header.setText(cn)
         self.group_name_edit.setText(cn)
         self.description_edit.setText(group_props.get('description', [''])[0])
+        self.email_edit.setText(group_props.get('mail', [''])[0])
+        self.notes_edit.setText(group_props.get('info', [''])[0])
 
         group_type = int(group_props.get('groupType', ['0'])[0])
 
@@ -390,6 +415,8 @@ class GroupPropertiesDialog(QDialog):
         self.widget_to_attribute_map = {
             self.group_name_edit: 'cn',
             self.description_edit: 'description',
+            self.email_edit: 'mail',
+            self.notes_edit: 'info',
             self.domain_local_radio: 'groupType',
             self.global_radio: 'groupType',
             self.universal_radio: 'groupType',
@@ -795,10 +822,10 @@ class GroupPropertiesDialog(QDialog):
                 return
             
             # Debug logging
-            print(f"DEBUG: selected_objects type: {type(selected_objects)}")
-            print(f"DEBUG: selected_objects length: {len(selected_objects)}")
+            self.logger.debug(f"selected_objects type: {type(selected_objects)}")
+            self.logger.debug(f"selected_objects length: {len(selected_objects)}")
             for i, obj in enumerate(selected_objects):
-                print(f"DEBUG: Object {i}: type={type(obj)}, value={obj}")
+                self.logger.debug(f"Object {i}: type={type(obj)}, value={obj}")
                 
             # Stage each selected object for addition
             added_count = 0

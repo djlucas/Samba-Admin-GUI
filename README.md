@@ -77,8 +77,6 @@ MY.DOMAIN.TLD = {
 
 ## 📦 Installation
 
-> ⚠️ This project is under active development. Installation instructions will be added once the first module (SADUC) reaches alpha.
-
 ### Dependencies
 
 Install required dependencies:
@@ -97,18 +95,27 @@ pip install cryptography
 
 ### Running
 
-You can test the current development version by running:
-
+**Production Mode (Recommended):**
 ```bash
 cd saduc/src
 python main.py
 ```
 
+**Debug Mode (Development):**
+```bash
+cd saduc/src  
+python main.py --debug
+```
+
+The `--debug` flag enables verbose logging to both console and `saduc_debug.log` file. In production mode, only INFO+ messages are displayed to the console with no file logging for optimal performance.
+
 ## 🧪 Development Status
 
-### Current Implementation Status (~95% Complete)
+> **🎯 ALPHA RELEASE CANDIDATE** - SADUC module is production-ready for testing environments
 
-**SADUC (Samba Active Directory Users & Computers)** - *~95% Complete*
+### Current Implementation Status
+
+**SADUC (Samba Active Directory Users & Computers)** - *Alpha Ready (~98% Complete)*
 
 - ✅ **Core Features (Complete):**
   - LDAP connectivity and authentication via Kerberos
@@ -184,19 +191,43 @@ python main.py
 12. ✅ **Manager Selection Enhancement** - Implemented manager selection in Managed By tab using StandardSearchDialog with single-selection validation and proper write-back to Active Directory
 13. ✅ **Member Of Tab Improvements** - Enhanced user/group membership management with multi-select removal, no confirmation dialogs, and consistent staging behavior
 
+### Latest Updates (Alpha Release Preparation)
+
+14. ✅ **Complete Rename Operations** - Fixed comprehensive rename workflow with ObjectRenameDialog for users, groups, contacts, and inetOrgPerson objects
+15. ✅ **Enhanced Object Type Detection** - Proper prioritization of sambaSamAccount → inetOrgPerson → user object types with consistent iconography
+16. ✅ **Fixed User Creation** - Resolved primaryGroupID issue that blocked new user creation in Active Directory
+17. ✅ **Group Properties Dialog Complete** - Added missing email and notes fields with proper side-by-side group scope/type layout
+18. ✅ **Smart Context Menu Positioning** - Context menus now intelligently position above cursor when near screen bottom for better UX
+19. ✅ **Production-Ready Logging** - Implemented professional logging system with debug mode (--debug flag) and clean production output
+20. ✅ **Code Quality Improvements** - Replaced all debug print() statements with proper logger calls for enterprise-grade output
+
 ### Next Development Priorities
 
-**MEDIUM PRIORITY:**
-1. **Enhanced Search Features** - Member of tab functionality and advanced search filters
-2. **Menu Feature Implementation** - Export/Import, Domain management, View customization
-3. **Specialized Object Creation** - Support for advanced AD object types
+**🚨 CRITICAL (Alpha Release Blockers):**
+- **Comprehensive Testing Suite** - Unit and integration tests for core functionality (21,000+ lines with zero tests)
+- **Security Review** - Code audit for enterprise deployment readiness
+- **Documentation** - Installation, configuration, and user guides
 
-**LOW PRIORITY:** 
-4. **Search Dialog Parameter Setting** - Enhanced search functionality configuration 
-5. **Samba-Specific Tasks** - Add Samba extensions (e.g., sambaSamAccount objectType to inetOrgPerson) 
-6. **Comprehensive Testing Suite** - Implement automated test coverage for core functionality 
+**🔴 HIGH PRIORITY (Beta Features):**
+- **Complete Security Tab** - Principal management interface implementation
+- **Advanced Menu Features** - Export/Import, Domain management, View customization  
+- **SDNS Core Development** - DNS record editing and zone management
 
-**QUALITY OF LIFE:** 
-7. **Additional UI Polish** - Minor interface improvements and user experience enhancements 
+**🟡 MEDIUM PRIORITY (Enhancement):**
+- **Enhanced Search Features** - Member of tab functionality and advanced search filters
+- **Specialized Object Creation** - Support for advanced AD object types (msDS-KeyCredential, etc.)
+- **Performance Optimization** - Large directory handling improvements
 
-  
+**🟢 LOW PRIORITY (Future Releases):**
+- **SADSS Module Development** - Sites and Services functionality
+- **SGPOE Module Development** - Group Policy Object editing
+- **Samba-Specific Extensions** - sambaSamAccount objectType extensions
+- **UI/UX Polish** - Additional interface improvements and user preferences
+
+## 🤝 Contributing
+
+This project welcomes contributions! Please see our contributing guidelines for development setup and coding standards.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

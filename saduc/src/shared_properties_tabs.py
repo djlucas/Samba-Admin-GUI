@@ -568,13 +568,17 @@ class ManagedByTab(QWidget):
     def _connect_signals(self):
         self.manager_name_edit.textChanged.connect(self._update_managed_by_buttons)
         self.change_manager_btn.clicked.connect(self._change_manager)
+        self.manager_properties_btn.clicked.connect(self._manager_properties)
+        self.clear_manager_btn.clicked.connect(self._clear_manager)
 
     def _load_manager_data(self):
         manager_dn = self.parent_props.get('managedBy', [None])[0]
         if manager_dn:
             manager_props = get_user_properties(self.samba_conn, manager_dn)
             if manager_props:
-                self.manager_name_edit.setText(manager_props.get('displayName', [''])[0])
+                # Format as domain/path/displayName
+                display_path = self._get_domain_path_format(manager_dn, manager_props.get('displayName', [''])[0])
+                self.manager_name_edit.setText(display_path)
                 self.manager_office_label.setText(manager_props.get('physicalDeliveryOfficeName', [''])[0])
                 self.manager_street_edit.setText(manager_props.get('streetAddress', [''])[0])
                 self.manager_city_label.setText(manager_props.get('l', [''])[0])
@@ -619,15 +623,21 @@ class ManagedByTab(QWidget):
             self.logger.info(f"Extracted - DN: '{manager_dn}', Display: '{display_name}'")
             
             if manager_dn:
-                self.logger.info(f"Setting manager field to: '{display_name}'")
-                self.manager_name_edit.setText(display_name)
+                # Format as domain/path/displayName
+                formatted_display = self._get_domain_path_format(manager_dn, display_name)
+                self.logger.info(f"Setting manager field to: '{formatted_display}'")
+                self.manager_name_edit.setText(formatted_display)
                 
                 # Store the DN for potential write-back
                 self.manager_dn = manager_dn
                 
-                # Mark the parent dialog as modified
-                if hasattr(self.parent(), '_check_for_changes'):
-                    self.parent()._check_for_changes()
+                # Mark the parent dialog as modified - need to go up through tab widget to main dialog
+                main_dialog = self.parent()
+                while main_dialog and not hasattr(main_dialog, '_check_for_changes'):
+                    main_dialog = main_dialog.parent()
+                
+                if main_dialog and hasattr(main_dialog, '_check_for_changes'):
+                    main_dialog._check_for_changes()
                 
                 self.logger.info(f"Successfully selected manager: {display_name} ({manager_dn})")
             else:
@@ -653,6 +663,96 @@ class ManagedByTab(QWidget):
             self.logger.info(f"Manager change detected: {original_manager_dn} -> {current_manager_dn}")
         
         return changes
+
+    def _manager_properties(self):
+        """Open the properties dialog for the selected manager."""
+        manager_dn = getattr(self, 'manager_dn', None)
+        if not manager_dn:
+            # Try to get from the original properties if not set via selection
+            manager_dn = self.parent_props.get('managedBy', [None])[0]
+        
+        if manager_dn:
+            from user_properties import UserPropertiesDialog
+            try:
+                dialog = UserPropertiesDialog(self.samba_conn, manager_dn, parent=self)
+                dialog.exec_()
+            except Exception as e:
+                self.logger.error(f"Failed to open manager properties: {e}")
+                QMessageBox.warning(self, "Error", f"Could not open manager properties: {e}")
+        else:
+            QMessageBox.information(self, "No Manager", "No manager is currently selected.")
+
+    def _clear_manager(self):
+        """Clear the manager field."""
+        self.manager_name_edit.setText("")
+        self.manager_dn = None
+        
+        # Clear all manager-related fields
+        self.manager_office_label.setText("")
+        self.manager_street_edit.setText("")
+        self.manager_city_label.setText("")
+        self.manager_state_label.setText("")
+        self.manager_country_label.setText("")
+        self.manager_telephone_label.setText("")
+        self.manager_fax_label.setText("")
+        
+        # Mark the parent dialog as modified
+        main_dialog = self.parent()
+        while main_dialog and not hasattr(main_dialog, '_check_for_changes'):
+            main_dialog = main_dialog.parent()
+        
+        if main_dialog and hasattr(main_dialog, '_check_for_changes'):
+            main_dialog._check_for_changes()
+        
+        self.logger.info("Manager field cleared")
+
+    def _get_domain_path_format(self, manager_dn, display_name):
+        """Format manager display as 'domain/path/displayName'."""
+        try:
+            from samba_backend import get_base_dn
+            import ldap.dn
+            
+            # Get the base DN to determine domain
+            base_dn = get_base_dn(self.samba_conn)
+            if not base_dn:
+                return display_name
+            
+            # Convert base DN to domain format (DC=home,DC=lucasit,DC=com -> home.lucasit.com)
+            dn_components = ldap.dn.str2dn(base_dn.lower())
+            domain_parts = []
+            for component in dn_components:
+                for attr, value, _ in component:
+                    if attr == 'dc':
+                        domain_parts.append(value)
+            
+            domain = '.'.join(domain_parts) if domain_parts else 'domain'
+            
+            # Extract path from manager DN (remove the base DN part)
+            if manager_dn.lower().endswith(base_dn.lower()):
+                path_dn = manager_dn[:-len(base_dn)-1]  # Remove base DN and trailing comma
+            else:
+                path_dn = manager_dn
+            
+            # Convert DN path to Windows-style path (CN=Users,CN=Ryan Ralph -> Users/Ryan Ralph)
+            path_components = ldap.dn.str2dn(path_dn)
+            path_parts = []
+            
+            for component in reversed(path_components[1:]):  # Skip the user's own CN, reverse for correct order
+                for attr, value, _ in component:
+                    if attr.lower() == 'cn':
+                        path_parts.append(value)
+                    elif attr.lower() == 'ou':
+                        path_parts.append(value)
+            
+            if path_parts:
+                path = '/'.join(path_parts)
+                return f"{domain}/{path}/{display_name}"
+            else:
+                return f"{domain}/{display_name}"
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to format domain path: {e}")
+            return display_name
 
 
 class ComPlusTab(QWidget):

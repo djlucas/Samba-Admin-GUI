@@ -671,7 +671,7 @@ class PrincipalPickerDialog(ObjectPickerDialog):
                 if user_results:
                     results.extend(user_results)
             except Exception as e:
-                print(f"Error searching users: {e}")
+                logger.error(f"Error searching users: {e}")
             
             # Search groups  
             try:
@@ -679,7 +679,7 @@ class PrincipalPickerDialog(ObjectPickerDialog):
                 if group_results:
                     results.extend(group_results)
             except Exception as e:
-                print(f"Error searching groups: {e}")
+                logger.error(f"Error searching groups: {e}")
             
             self._hide_progress()
             self._populate_table(results)

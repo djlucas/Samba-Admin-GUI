@@ -10,30 +10,38 @@ import subprocess
 from subprocess import CalledProcessError
 
 # --- Global Logger Configuration ---
-def setup_logging():
+def setup_logging(debug_mode=False):
     """
     Configures the global logging settings for the application.
-    Output will go to both console and a debug file.
+    Output will go to console and optionally to a debug file.
+    
+    Args:
+        debug_mode (bool): If True, enables DEBUG level logging to file and console.
+                          If False, only INFO+ to console, no file logging.
     """
-    logFile = "saduc_debug.log"
-
     logger = logging.getLogger("saduc_app")
     logger.setLevel(logging.DEBUG)
 
     if not logger.handlers:
+        # Console handler - always present
         consoleHandler = logging.StreamHandler(sys.stdout)
-        consoleHandler.setLevel(logging.INFO)
+        consoleHandler.setLevel(logging.DEBUG if debug_mode else logging.INFO)
         consoleFormatter = logging.Formatter('%(levelname)s: %(message)s')
         consoleHandler.setFormatter(consoleFormatter)
         logger.addHandler(consoleHandler)
 
-        fileHandler = logging.FileHandler(logFile)
-        fileHandler.setLevel(logging.DEBUG)
-        fileFormatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fileHandler.setFormatter(fileFormatter)
-        logger.addHandler(fileHandler)
+        # File handler - only in debug mode
+        if debug_mode:
+            logFile = "saduc_debug.log"
+            fileHandler = logging.FileHandler(logFile)
+            fileHandler.setLevel(logging.DEBUG)
+            fileFormatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            fileHandler.setFormatter(fileFormatter)
+            logger.addHandler(fileHandler)
+            logger.info(f"Debug logging enabled. Output to console (DEBUG+) and '{logFile}' (DEBUG+).")
+        else:
+            logger.info("Production logging enabled. Output to console (INFO+) only.")
 
-    logger.info(f"Logging initialized. Output to console (INFO+) and '{logFile}' (DEBUG+).")
     return logger
 
 def get_authenticated_connection(appLogger, app):
@@ -102,7 +110,15 @@ def main():
     """
     Main function to initialize and run the SADUC application.
     """
-    appLogger = setup_logging()
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='SADUC - Samba Active Directory Users & Computers')
+    parser.add_argument('--debug', action='store_true', 
+                       help='Enable debug logging to console and file (default: INFO to console only)')
+    args = parser.parse_args()
+    
+    appLogger = setup_logging(debug_mode=args.debug)
     appLogger.info("Starting SADUC application...")
 
     app = QApplication(sys.argv)

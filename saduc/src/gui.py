@@ -266,6 +266,28 @@ class SADUCMainWindow(QMainWindow):
         self.listPane.customContextMenuRequested.connect(self.list_menu_manager.on_list_context_menu)
         self.listPane.doubleClicked.connect(partial(actions.on_list_item_double_clicked, self))
         
+        # Enable inline editing on F2 key or manual trigger
+        self.listPane.setEditTriggers(QAbstractItemView.EditKeyPressed)
+        
+        # Create a custom delegate to ensure text selection on edit
+        from PyQt5.QtWidgets import QStyledItemDelegate, QLineEdit
+        
+        class SelectAllDelegate(QStyledItemDelegate):
+            def createEditor(self, parent, option, index):
+                editor = QLineEdit(parent)
+                return editor
+            
+            def setEditorData(self, editor, index):
+                value = index.model().data(index, Qt.EditRole)
+                editor.setText(str(value) if value else "")
+                editor.selectAll()  # Select all text when editing starts
+            
+            def setModelData(self, editor, model, index):
+                model.setData(index, editor.text(), Qt.EditRole)
+        
+        # Apply the delegate to the name column only
+        self.listPane.setItemDelegateForColumn(0, SelectAllDelegate())
+        
         # Enable drag and drop for list view (drag source)
         self.listPane.setDragEnabled(True)
         self.listPane.setDragDropMode(QAbstractItemView.DragOnly)
@@ -434,7 +456,7 @@ class SADUCMainWindow(QMainWindow):
         Creates an empty ADListModel for the table view.
         """
         self.logger.debug("SADUCMainWindow: Setting up table view model.")
-        self.tableModel = ADListModel()
+        self.tableModel = ADListModel(self)
         self.listPane.setModel(self.tableModel)
         self.iconView.setModel(self.tableModel)
         self.logger.debug("SADUCMainWindow: Table view model set.")
@@ -509,7 +531,8 @@ class SADUCMainWindow(QMainWindow):
             list_data = get_all_objects_in_dn(self.samba_conn, self.currentContainerDN, attributes=attributes_to_fetch)
 
             advanced_view_enabled = self.advancedFeaturesAction.isChecked()
-            self.tableModel.setData(list_data, advanced_view=advanced_view_enabled)
+            self.tableModel.setModelData(list_data, advanced_view=advanced_view_enabled)
+            self.tableModel.set_connection_info(self.samba_conn, self.currentContainerDN, advanced_view_enabled)
             self.tableModel.sort(0, Qt.AscendingOrder)
             self.statusBar().showMessage(self.i18n.get_text("status.loaded_items", len(list_data), container_name))
         except Exception as e:
@@ -535,6 +558,12 @@ class SADUCMainWindow(QMainWindow):
         header.setSectionResizeMode(2, QHeaderView.Stretch)
         self.listPane.setColumnWidth(0, int(self.listPane.width() * 0.3))
         self.listPane.setColumnWidth(1, int(self.listPane.width() * 0.2))
+
+    def refresh_current_container(self):
+        """Refresh the current container view to reflect any changes."""
+        success = self.tableModel.refresh_current_data()
+        if not success:
+            self.logger.warning("Failed to refresh current container")
 
     def _on_table_item_clicked(self, index):
         """
@@ -689,7 +718,7 @@ class SADUCMainWindow(QMainWindow):
                 objects.append(obj)
             
             # Update the table model with search results
-            self.tableModel.setData(objects)
+            self.tableModel.setModelData(objects)
             self.logger.info(f"Search completed: found {len(objects)} objects")
             
             # Clear action panes since we're showing search results
