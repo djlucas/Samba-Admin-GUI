@@ -40,13 +40,11 @@ All future modules will follow the `s<RSAT>` naming convention.
 - **Python 3.11+**
 - **PyQt5** – Modular, scalable GUI framework
 - **python-ldap** - LDAPv3 module for Python
+- **cryptography** - Required for X.509 certificate parsing in the Published Certificates tab
 - **dnspython** - DNS toolkit for Python
 - **impacket** - Pure Python implementation of network protocols for LDAP security descriptors
 - **MIT/Heimdal krb5 utilities** – Backend integration (`kinit`, `klist`, etc.)
-
-### Optional Dependencies
-
-- **cryptography** - Required for X.509 certificate parsing in the Published Certificates tab
+- **Samba utilities** - samba-tool configured for domain (needed for funtional level and FSMO operations only)
 
 ## 🔐 Authentication Requirements
 
