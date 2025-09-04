@@ -160,18 +160,22 @@ The `--debug` flag enables verbose logging to both console and `saduc_debug.log`
   - Enhanced search dialog features (member of tab, advanced filters)
   - Specialized AD object creation (msDS-KeyCredential, msDS-ResourcePropertyList, etc.)
 
-**SDNS (Samba DNS Manager)** - *~15% Complete*
-- ✅ Basic GUI structure exists
-- ❌ DNS record management not implemented
-- ❌ Zone management incomplete
-- ❌ Replication management missing
+**SDNS (Samba DNS Manager)** - *~35% Complete*
+- ✅ **Complete Windows DNS Manager tree structure** - Proper DNS/Server/Forward Zones/Reverse Zones/Conditional Forwarders hierarchy
+- ✅ **Zone discovery and display** - Automatic discovery and categorization of Forward/Reverse DNS zones from AD
+- ✅ **DNS record parsing and display** - Full DNS record type support (A, AAAA, CNAME, SRV, TXT, MX, NS, SOA, PTR)
+- ✅ **Hierarchical DNS containers** - Smart folder structure generation from DNS record names (_sites, _tcp, etc.)
+- ✅ **Authentication integration** - Same Kerberos/LDAP authentication system as SADUC
+- ❌ DNS record editing and creation not implemented
+- ❌ Zone creation and management incomplete  
+- ❌ DNS replication management missing
 
 ### Module Status Summary
 
 | Module   | Completion | Status     | Notes                                  |
 |----------|------------|------------|----------------------------------------|
 | saduc    | ~95%       | 🚧 Active Development | Core functionality complete, advanced menu features and integrations remaining |
-| sdns     | ~15%       | 🚧 Early Stage | Basic structure only, core functionality missing |
+| sdns     | ~35%       | 🚧 Active Development | Tree structure complete, record editing functionality needed |
 | sadss    | 0%         | 🕒 Planned | Pending topology mapping logic |
 | sgpoe    | 0%         | 🕒 Planned | Requires policy template scaffolding |
 
@@ -200,6 +204,10 @@ The `--debug` flag enables verbose logging to both console and `saduc_debug.log`
 18. ✅ **Smart Context Menu Positioning** - Context menus now intelligently position above cursor when near screen bottom for better UX
 19. ✅ **Production-Ready Logging** - Implemented professional logging system with debug mode (--debug flag) and clean production output
 20. ✅ **Code Quality Improvements** - Replaced all debug print() statements with proper logger calls for enterprise-grade output
+21. ✅ **SDNS Tree Structure Overhaul** - Complete rewrite of DNS tree view to match Windows DNS Manager with proper DNS/Server/Forward Zones/Reverse Zones hierarchy
+22. ✅ **DNS Zone Discovery Enhancement** - Automatic discovery and categorization of Forward/Reverse DNS zones from Active Directory with proper metadata
+23. ✅ **DNS Record Parsing Implementation** - Full support for all major DNS record types (A, AAAA, CNAME, SRV, TXT, MX, NS, SOA, PTR) with proper data extraction
+24. ✅ **Hierarchical DNS Container System** - Smart folder structure generation from DNS record names for organized record management (_sites, _tcp, service containers)
 
 ### Next Development Priorities
 
@@ -211,7 +219,8 @@ The `--debug` flag enables verbose logging to both console and `saduc_debug.log`
 **🔴 HIGH PRIORITY (Beta Features):**
 - **Complete Security Tab** - Principal management interface implementation
 - **Advanced Menu Features** - Export/Import, Domain management, View customization  
-- **SDNS Core Development** - DNS record editing and zone management
+- **SDNS Record Management** - DNS record editing, creation, and deletion functionality
+- **SDNS Zone Management** - Zone creation, deletion, and property management
 
 **🟡 MEDIUM PRIORITY (Enhancement):**
 - **Enhanced Search Features** - Member of tab functionality and advanced search filters

@@ -63,9 +63,10 @@ class MainWindow(QWidget):
         self.load_zones()
 
     def load_zones(self):
+        """Load DNS zones in proper Windows DNS Manager tree structure."""
         self.zone_tree.clear()
         uri = self.ldap_conn.get_option(ldap.OPT_URI)
-        fqdn = uri.split("://")[-1].split(":")[0]
+        server_fqdn = uri.split("://")[-1].split(":")[0]
 
         def icon(name):
             path = os.path.join("src", "res", "icons", name)
@@ -74,38 +75,82 @@ class MainWindow(QWidget):
                 return QIcon()
             return QIcon(path)
 
+        # Root DNS node
         root = QTreeWidgetItem(["DNS"])
         root.setIcon(0, icon("dns.png"))
+        root.setData(0, Qt.UserRole, {"type": "dns_root"})
 
-        server_node = QTreeWidgetItem([fqdn])
-        server_node.setIcon(0, icon("server.png"))
+        # Server node (connected server)
+        server_node = QTreeWidgetItem([server_fqdn])
+        server_node.setIcon(0, icon("server.png"))  
+        server_node.setData(0, Qt.UserRole, {"type": "server", "fqdn": server_fqdn})
 
+        # Forward Lookup Zones container
         forward_node = QTreeWidgetItem(["Forward Lookup Zones"])
         forward_node.setIcon(0, icon("folder.png"))
-
+        forward_node.setData(0, Qt.UserRole, {"type": "forward_container"})
+        
+        # Reverse Lookup Zones container  
         reverse_node = QTreeWidgetItem(["Reverse Lookup Zones"])
         reverse_node.setIcon(0, icon("folder.png"))
+        reverse_node.setData(0, Qt.UserRole, {"type": "reverse_container"})
+        
+        # Conditional Forwarders container
+        forwarders_node = QTreeWidgetItem(["Conditional Forwarders"])
+        forwarders_node.setIcon(0, icon("folder.png"))
+        forwarders_node.setData(0, Qt.UserRole, {"type": "forwarders_container"})
 
-        for zone in self.zones:
-            zone_item = QTreeWidgetItem([zone["name"]])
-            zone_item.setData(0, Qt.UserRole, zone)
-            zone_item.setIcon(0, icon("zone.png"))
+        # Populate Forward Lookup Zones
+        self._populate_forward_zones(forward_node, icon)
+        
+        # Populate Reverse Lookup Zones  
+        self._populate_reverse_zones(reverse_node, icon)
 
-            # Build hierarchical containers for this zone
-            self.build_zone_hierarchy(zone_item, zone, icon)
-
-            if zone["name"].endswith(".arpa"):
-                reverse_node.addChild(zone_item)
-            else:
-                forward_node.addChild(zone_item)
-
+        # Build tree hierarchy
         server_node.addChild(forward_node)
         server_node.addChild(reverse_node)
+        server_node.addChild(forwarders_node)
         root.addChild(server_node)
 
         self.zone_tree.addTopLevelItem(root)
         self.zone_tree.expandAll()
         self.logger.info("Loaded DNS zones into tree view")
+
+    def _populate_forward_zones(self, forward_node, icon):
+        """Populate Forward Lookup Zones with actual DNS zones"""
+        forward_zones = [zone for zone in self.zones if zone.get("type") == "Forward"]
+        
+        for zone in forward_zones:
+            zone_item = QTreeWidgetItem([zone["name"]])
+            zone_item.setIcon(0, icon("zone.png"))
+            zone_item.setData(0, Qt.UserRole, {
+                "type": "zone",
+                "dn": zone["dn"],
+                "name": zone["name"],
+                "zone_type": "Forward"
+            })
+            forward_node.addChild(zone_item)
+            
+            # Build hierarchical structure for this zone
+            self.build_zone_hierarchy(zone_item, zone, icon)
+    
+    def _populate_reverse_zones(self, reverse_node, icon):
+        """Populate Reverse Lookup Zones with actual DNS zones"""
+        reverse_zones = [zone for zone in self.zones if zone.get("type") == "Reverse"]
+        
+        for zone in reverse_zones:
+            zone_item = QTreeWidgetItem([zone["name"]])
+            zone_item.setIcon(0, icon("zone.png"))
+            zone_item.setData(0, Qt.UserRole, {
+                "type": "zone", 
+                "dn": zone["dn"],
+                "name": zone["name"],
+                "zone_type": "Reverse"
+            })
+            reverse_node.addChild(zone_item)
+            
+            # Build hierarchical structure for this zone
+            self.build_zone_hierarchy(zone_item, zone, icon)
 
     def build_zone_hierarchy(self, zone_item, zone, icon_func):
         """Build hierarchical container structure from DNS record names"""
@@ -218,7 +263,7 @@ class MainWindow(QWidget):
                 timestamp = self.format_timestamp(raw_ts)
 
                 item = QTreeWidgetItem(["", name, record_type, data, timestamp])
-                item.setIcon(0, icon("record.png"))
+                item.setIcon(0, icon("unknown.png"))
                 item.setData(0, Qt.UserRole, {"dn": dn, "name": name, "zone_dn": zone_dn})
                 self.record_list.addTopLevelItem(item)
 
@@ -273,7 +318,7 @@ class MainWindow(QWidget):
                 timestamp = self.format_timestamp(raw_ts)
 
                 item = QTreeWidgetItem(["", name, record_type, data, timestamp])
-                item.setIcon(0, icon("record.png"))
+                item.setIcon(0, icon("unknown.png"))
                 item.setData(0, Qt.UserRole, {"dn": dn, "name": name, "zone_dn": zone_dn})
                 self.record_list.addTopLevelItem(item)
 
