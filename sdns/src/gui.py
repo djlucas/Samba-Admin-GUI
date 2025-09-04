@@ -163,6 +163,9 @@ class MainWindow(QWidget):
                 ["name", "dnsRecord", "whenCreated", "modifyTimestamp"]
             )
             
+            # Check if this is an IPv6 reverse zone
+            is_ipv6_reverse = zone["name"].endswith(".ip6.arpa")
+            
             # Build hierarchy tree from DNS names
             hierarchy = defaultdict(dict)
             records = {}
@@ -183,7 +186,16 @@ class MainWindow(QWidget):
                 }
                 
                 # Build hierarchy from DNS name parts
-                if "." in name:
+                if is_ipv6_reverse:
+                    # For IPv6 reverse zones, only create one level of folders
+                    # based on the first hex digit of the record name
+                    if len(name) > 0:
+                        first_hex = name[0]  # First hex digit becomes the folder
+                        if first_hex not in hierarchy:
+                            hierarchy[first_hex] = {}
+                        # Records are directly under this folder, no deeper nesting
+                elif "." in name:
+                    # Regular hierarchy building for non-IPv6 reverse zones
                     parts = name.split(".")
                     current = hierarchy
                     for part in reversed(parts):  # Build from right to left
@@ -194,16 +206,32 @@ class MainWindow(QWidget):
                     hierarchy[name] = {}
             
             # Create tree items from hierarchy
-            self.create_hierarchy_items(zone_item, hierarchy, records, icon_func, "")
+            self.create_hierarchy_items(zone_item, hierarchy, records, icon_func, "", is_ipv6_reverse)
                     
         except Exception as e:
             self.logger.warning(f"Could not build hierarchy for zone {zone['name']}: {e}")
 
-    def create_hierarchy_items(self, parent_item, hierarchy, records, icon_func, prefix):
+    def create_hierarchy_items(self, parent_item, hierarchy, records, icon_func, prefix, is_ipv6_reverse=False):
         """Recursively create tree items from hierarchy"""
         for name, children in hierarchy.items():
             full_name = f"{name}.{prefix}" if prefix else name
             
+            # For IPv6 reverse zones, create hex digit folders that contain records directly
+            if is_ipv6_reverse:
+                # Create folder for this hex digit
+                container_item = QTreeWidgetItem([name])
+                container_item.setData(0, Qt.UserRole, {
+                    "type": "ipv6_container",
+                    "name": name,
+                    "full_name": name,  # Just the hex digit
+                    "zone_dn": parent_item.data(0, Qt.UserRole).get("dn") if parent_item.data(0, Qt.UserRole) else None
+                })
+                container_item.setIcon(0, icon_func("folder.png"))
+                parent_item.addChild(container_item)
+                # Don't recurse further for IPv6 - records will be shown when folder is clicked
+                continue
+            
+            # Regular processing for non-IPv6 zones
             # Check if this is a leaf node (actual DNS record) or container
             is_leaf = len(children) == 0 and full_name in records
             is_service_container = name.startswith("_") and len(children) > 0
