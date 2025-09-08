@@ -155,11 +155,15 @@ The `--debug` flag enables verbose logging to both console and `saduc_debug.log`
     - Domain management (Delegate Control, Raise Domain functional level)
     - Advanced filtering
 
-**SDNS (Samba DNS Manager)** - *~35% Complete*
+**SDNS (Samba DNS Manager)** - *~45% Complete*
 - ✅ **Complete Windows DNS Manager tree structure** - Proper DNS/Server/Forward Zones/Reverse Zones/Conditional Forwarders hierarchy
 - ✅ **Zone discovery and display** - Automatic discovery and categorization of Forward/Reverse DNS zones from AD
 - ✅ **DNS record parsing and display** - Full DNS record type support (A, AAAA, CNAME, SRV, TXT, MX, NS, SOA, PTR)
 - ✅ **Hierarchical DNS containers** - Smart folder structure generation from DNS record names (_sites, _tcp, etc.)
+- ✅ **Multi-partition DNS zone support** - Handles zones spanning multiple DNS partitions with proper record aggregation
+- ✅ **IPv4 reverse lookup enhancement** - Full IP address reconstruction and display in reverse zones
+- ✅ **IPv6 reverse lookup support** - Complete IPv6 address reconstruction from nibble-based PTR records
+- ✅ **Intelligent IP address sorting** - Proper numerical sorting for IP addresses (80 before 103) in all DNS views
 - ✅ **Authentication integration** - Same Kerberos/LDAP authentication system as SADUC
 - ❌ DNS record editing and creation not implemented
 - ❌ Zone creation and management incomplete  
@@ -170,7 +174,7 @@ The `--debug` flag enables verbose logging to both console and `saduc_debug.log`
 | Module   | Completion | Status     | Notes                                  |
 |----------|------------|------------|----------------------------------------|
 | saduc    | ~98%       | 🚧 Active Development | Core functionality complete, advanced menu features and integrations remaining |
-| sdns     | ~20%       | 🚧 Active Development | Tree structure complete, record editing functionality needed |
+| sdns     | ~45%       | 🚧 Active Development | Zone display and IP address handling complete, record editing functionality needed |
 | sadss    | 0%         | 🕒 Planned | Pending topology mapping logic |
 | sgpoe    | 0%         | 🕒 Planned | Requires policy template scaffolding |
 
@@ -203,6 +207,11 @@ The `--debug` flag enables verbose logging to both console and `saduc_debug.log`
 22. ✅ **DNS Zone Discovery Enhancement** - Automatic discovery and categorization of Forward/Reverse DNS zones from Active Directory with proper metadata
 23. ✅ **DNS Record Parsing Implementation** - Full support for all major DNS record types (A, AAAA, CNAME, SRV, TXT, MX, NS, SOA, PTR) with proper data extraction
 24. ✅ **Hierarchical DNS Container System** - Smart folder structure generation from DNS record names for organized record management (_sites, _tcp, service containers)
+25. ✅ **DNS Hierarchy Bug Fixes** - Fixed critical DNS hierarchy overwriting issues where container structures were being lost during record processing
+26. ✅ **Multi-partition DNS Zone Support** - Enhanced zone loading to handle DNS zones spanning multiple Active Directory partitions with proper record aggregation
+27. ✅ **IPv4 Reverse Lookup Enhancement** - Complete IP address reconstruction for reverse DNS zones showing full addresses (192.168.1.80) instead of just octets
+28. ✅ **IPv6 Reverse Lookup Support** - Full IPv6 address reconstruction from nibble-based PTR records with proper hierarchy handling
+29. ✅ **Intelligent IP Address Sorting** - Implemented custom sorting for IP addresses ensuring proper numerical order (80 before 103) across all DNS record views
 
 ### Next Development Priorities
 
@@ -214,7 +223,7 @@ The `--debug` flag enables verbose logging to both console and `saduc_debug.log`
 **🔴 HIGH PRIORITY (Beta Features):**
 - **SADUC Complete Advanced Security Tab** - Principal management interface implementation
 - **SADUC Advanced Menu Features** - Export/Import, Domain management (undetermined)
-- **SDNS Record placement** - IPv6 PTR records and SRV records in wrong folders
+- **SDNS IPv6 Address Sorting** - Extend numerical sorting to IPv6 addresses with proper segment padding
 - **SDNS RootDNSZone removal** - For now, this is in the tree view until zone properties dialog is created
 - **SDNS Record Management** - DNS record editing, creation, and deletion functionality
 - **SDNS Zone Management** - Zone creation, deletion, and property management

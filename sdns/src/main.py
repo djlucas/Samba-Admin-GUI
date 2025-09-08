@@ -69,6 +69,7 @@ def domain_to_dn(domain):
 def get_zone_bases(domain):
     domain_dn = domain_to_dn(domain)
     return [
+        ("System", f"CN=MicrosoftDNS,CN=System,{domain_dn}"),
         ("Domain", f"CN=MicrosoftDNS,DC=DomainDnsZones,{domain_dn}"),
         ("Forest", f"CN=MicrosoftDNS,DC=ForestDnsZones,{domain_dn}")
     ]
@@ -350,15 +351,20 @@ def get_authenticated_connection(logger, app):
 
 def discover_dns_zones(conn, logger, zone_bases):
     zones = []
+    zone_dns_by_name = {}  # Track multiple DNs for the same zone name
+    
     for label, base_dn in zone_bases:
         try:
             result = conn.search_s(base_dn, ldap.SCOPE_SUBTREE, "(objectClass=dnsZone)", ["dc"])
             for dn, attrs in result:
                 name = attrs.get("dc", [b"(unnamed)"])[0].decode()
                 zone_type = "Reverse" if name.endswith(".arpa") else "Forward"
-                zones.append({
+                
+                # Track all DNs for this zone name
+                if name not in zone_dns_by_name:
+                    zone_dns_by_name[name] = []
+                zone_dns_by_name[name].append({
                     "dn": dn,
-                    "name": name,
                     "source": label,
                     "type": zone_type
                 })
@@ -367,6 +373,16 @@ def discover_dns_zones(conn, logger, zone_bases):
             logger.warning(f"No zones found under {label}")
         except ldap.LDAPError as e:
             logger.error(f"LDAP error during zone discovery in {label}: {e}")
+    
+    # Create zone objects with all DNs for each zone name
+    for name, dns_list in zone_dns_by_name.items():
+        logger.debug(f"Zone {name} has {len(dns_list)} partitions: {[d['source'] for d in dns_list]}")
+        zones.append({
+            "name": name,
+            "type": dns_list[0]["type"],  # Use type from first occurrence
+            "dns": dns_list  # List of all DNs and sources for this zone
+        })
+    
     return zones
 
 def main():
