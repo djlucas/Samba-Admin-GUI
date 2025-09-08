@@ -177,10 +177,10 @@ class ContactPropertiesDialog(QDialog):
         self.button_box.accepted.connect(self._accept_dialog)
         self.button_box.rejected.connect(self.reject)
         self.button_box.button(QDialogButtonBox.Apply).clicked.connect(self.apply_changes)
-        
+
         # Connect change signals for all editable widgets
         self._connect_change_signals()
-    
+
     def _connect_change_signals(self):
         """Connect change signals from UI widgets to change detection."""
         # Map widgets to their corresponding LDAP attributes
@@ -193,43 +193,43 @@ class ContactPropertiesDialog(QDialog):
             self.office_edit: 'physicalDeliveryOfficeName',
             self.email_edit: 'mail'
         }
-        
+
         # Connect textChanged signals
         for widget in self.widget_to_attribute_map.keys():
             if hasattr(widget, 'textChanged'):
                 widget.textChanged.connect(self._on_widget_change)
-    
+
     def _on_widget_change(self):
         """Handle widget value changes."""
         sender = self.sender()
         if sender in self.widget_to_attribute_map:
             attr_name = self.widget_to_attribute_map[sender]
             new_value = sender.text()
-            
+
             # Update the editable properties
             self.editable_contact_props[attr_name] = [new_value] if new_value else []
-            
+
             # Check for changes and enable/disable Apply button
             self._check_for_changes()
-    
+
     def _check_for_changes(self):
         """Check if there are any changes and enable/disable the Apply button accordingly."""
         has_changes = False
-        
+
         # Check if editable properties differ from original properties
         for attr_name, new_values in self.editable_contact_props.items():
             old_values = self.contact_props.get(attr_name, [])
             if old_values != new_values:
                 has_changes = True
                 break
-        
+
         # Enable/disable the Apply button based on changes
         self.button_box.button(QDialogButtonBox.Apply).setEnabled(has_changes)
 
     def apply_changes(self):
         """Apply the changes made in the dialog to Active Directory."""
         self.logger.info("Applying changes for contact to Active Directory")
-        
+
         # Build LDAP modifications
         modifications = []
         READ_ONLY_ATTRIBUTES = {
@@ -237,27 +237,27 @@ class ContactPropertiesDialog(QDialog):
             'uSNCreated', 'uSNChanged', 'systemFlags', 'instanceType', 
             'objectClass', 'objectCategory', 'distinguishedName'
         }
-        
+
         # Required attributes for contacts
         REQUIRED_ATTRIBUTES = {'cn', 'objectClass', 'objectCategory'}
-        
+
         # Validate required attributes first
         validation_errors = []
         for attr_name, new_values in self.editable_contact_props.items():
             old_values = self.contact_props.get(attr_name, [])
             if old_values == new_values:
                 continue
-                
+
             # Check for attempts to modify read-only attributes
             if attr_name in READ_ONLY_ATTRIBUTES:
                 validation_errors.append(f"'{attr_name}' is a system attribute and cannot be modified")
                 continue
-                
+
             # Check required attributes are not empty
             if attr_name in REQUIRED_ATTRIBUTES:
                 if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
                     validation_errors.append(f"'{attr_name}' is required and cannot be empty")
-        
+
         if validation_errors:
             error_msg = "The following errors must be corrected before saving:\n\n" + "\n".join(validation_errors)
             QMessageBox.warning(
@@ -269,15 +269,15 @@ class ContactPropertiesDialog(QDialog):
             self.editable_contact_props = copy.deepcopy(self.contact_props)
             self._populate_all_tabs()
             return
-        
+
         # Build modifications for valid changes
         for attr_name, new_values in self.editable_contact_props.items():
             old_values = self.contact_props.get(attr_name, [])
-            
+
             # Skip if values haven't changed or read-only
             if old_values == new_values or attr_name in READ_ONLY_ATTRIBUTES:
                 continue
-                
+
             try:
                 # Handle empty values (delete attribute)
                 if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
@@ -288,27 +288,27 @@ class ContactPropertiesDialog(QDialog):
                     for value in new_values:
                         if value.strip():
                             encoded_values.append(value.encode('utf-8'))
-                    
+
                     if encoded_values:
                         modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
                     else:
                         modifications.append((ldap.MOD_DELETE, attr_name, None))
-                        
+
             except Exception as e:
                 self.logger.error(f"Error preparing modification for {attr_name}: {e}")
                 continue
-        
+
         # Apply modifications if any exist
         if modifications:
             success, message = update_object_attributes(self.samba_conn, self.contact_dn, modifications)
-            
+
             if success:
                 # Reload data from Active Directory to get fresh state
                 self._load_contact_data()
-                
+
                 # Disable the Apply button since changes are now saved
                 self.button_box.button(QDialogButtonBox.Apply).setEnabled(False)
-                
+
                 QMessageBox.information(
                     self, 
                     self.i18n.get_string("dialog.common.success.title"),
@@ -325,7 +325,7 @@ class ContactPropertiesDialog(QDialog):
         else:
             # No dialog shown for "no changes" case - just silently complete
             pass
-    
+
     def _accept_dialog(self):
         """Handle OK button click - only apply changes if there are any."""
         # Check if there are any changes
@@ -335,14 +335,14 @@ class ContactPropertiesDialog(QDialog):
             if old_values != new_values:
                 has_changes = True
                 break
-        
+
         # Only apply changes if there are any
         if has_changes:
             self.apply_changes()
-        
+
         # Close the dialog
         self.accept()
-    
+
     def accept(self):
         """Override accept to close the dialog."""
         super().accept()

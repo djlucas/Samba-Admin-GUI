@@ -87,7 +87,7 @@ class ADTreeModel(QAbstractItemModel):
     """
     # Signal emitted when drag-drop operations complete
     dragDropCompleted = pyqtSignal(int, int, str)  # success_count, total_count, message
-    
+
     def __init__(self, samba_conn, connected_server, advanced_view=False, parent=None):
         super().__init__(parent)
         self.logger = logging.getLogger("saduc_app." + self.__class__.__name__)
@@ -202,7 +202,7 @@ class ADTreeModel(QAbstractItemModel):
             return item.data()
         elif role == Qt.DecorationRole:
             return self._get_icon_for_item(item)
-        
+
         return None
 
     def flags(self, index):
@@ -210,7 +210,7 @@ class ADTreeModel(QAbstractItemModel):
             return Qt.NoItemFlags
 
         default_flags = QAbstractItemModel.flags(self, index)
-        
+
         # Enable drop for container items
         if index.isValid():
             item = index.internalPointer()
@@ -223,7 +223,7 @@ class ADTreeModel(QAbstractItemModel):
                         container_classes = {'container', 'organizationalUnit', 'domainDNS', 'builtinDomain'}
                         if any(cls in container_classes for cls in item_classes):
                             return default_flags | Qt.ItemIsDropEnabled
-        
+
         return default_flags
 
     def headerData(self, section, orientation, role):
@@ -267,11 +267,11 @@ class ADTreeModel(QAbstractItemModel):
             return self.root_item.child_count() > 0
 
         item = parent.internalPointer()
-        
+
         # If children have already been fetched, we know the answer
         if item.children_fetched():
             return item.child_count() > 0
-        
+
         # If the has_sub_containers flag is set, use it
         if item.has_sub_containers() is not None:
             return item.has_sub_containers()
@@ -307,7 +307,7 @@ class ADTreeModel(QAbstractItemModel):
 
         parent_dn = parent_item.dn()
         object_class = parent_item.object_class()
-        
+
         # Special handling for saved queries
         if object_class == 'savedQueriesRoot':
             self.logger.debug("ADTreeModel: Fetching saved queries.")
@@ -331,15 +331,15 @@ class ADTreeModel(QAbstractItemModel):
                 child_item.set_has_sub_containers(child_data['has_sub_containers'])
                 parent_item.append_child(child_item)
             self.endInsertRows()
-        
+
         parent_item.set_children_fetched(True)
         self.logger.debug(f"ADTreeModel: Fetched and added {len(child_data_list)} children for '{parent_dn}'.")
-    
+
     def _get_saved_queries_children(self):
         """Get saved queries and folders as child data for the tree model."""
         try:
             child_data_list = []
-            
+
             # Add subdirectories as expandable folders
             folders = config_manager.list_saved_search_folders()
             for folder_name in folders:
@@ -351,7 +351,7 @@ class ADTreeModel(QAbstractItemModel):
                     'description': 'Saved queries folder'
                 }
                 child_data_list.append(folder_data)
-            
+
             # Add saved queries (JSON files) in root directory
             searches = config_manager.list_saved_searches()
             for search_meta in searches:
@@ -363,14 +363,14 @@ class ADTreeModel(QAbstractItemModel):
                     'description': search_meta.get('description', '')
                 }
                 child_data_list.append(child_data)
-            
+
             self.logger.debug(f"ADTreeModel: Found {len(folders)} folders and {len(searches)} saved queries.")
             return child_data_list
-            
+
         except Exception as e:
             self.logger.error(f"ADTreeModel: Failed to load saved queries: {e}")
             return []
-    
+
     def _get_saved_queries_folder_children(self, folder_dn):
         """Get contents of a saved queries subfolder."""
         try:
@@ -380,9 +380,9 @@ class ADTreeModel(QAbstractItemModel):
             else:
                 self.logger.error(f"Invalid saved queries folder DN: {folder_dn}")
                 return []
-            
+
             child_data_list = []
-            
+
             # Add subdirectories
             folders = config_manager.list_saved_search_folders(relative_path)
             for folder_name in folders:
@@ -394,13 +394,13 @@ class ADTreeModel(QAbstractItemModel):
                     'description': 'Saved queries folder'
                 }
                 child_data_list.append(folder_data)
-            
+
             # Add saved queries (JSON files) in this directory
             # TODO: Update list_saved_searches to support subdirectories
-            
+
             self.logger.debug(f"ADTreeModel: Found {len(folders)} subfolders in {relative_path}.")
             return child_data_list
-            
+
         except Exception as e:
             self.logger.error(f"ADTreeModel: Failed to load saved queries folder {folder_dn}: {e}")
             return []
@@ -415,60 +415,60 @@ class ADTreeModel(QAbstractItemModel):
     def canDropMimeData(self, data, action, row, column, parent):
         if not data.hasFormat('application/x-saduc-object-dn'):
             return False
-        
+
         if action != Qt.MoveAction:
             return False
-        
+
         # Get the target container
         if not parent.isValid():
             return False
-        
+
         target_item = parent.internalPointer()
         if not target_item:
             return False
-        
+
         # Only allow drops on containers (not saved queries or other non-container items)
         target_dn = target_item.dn()
         if not target_dn or 'savedQueries' in target_dn:
             return False
-        
+
         # Check if the target can contain objects (is a container or OU)
         target_classes = target_item.object_class()
         if isinstance(target_classes, list):
             container_classes = {'container', 'organizationalUnit', 'domainDNS', 'builtinDomain'}
             if not any(cls in container_classes for cls in target_classes):
                 return False
-        
+
         return True
 
     def dropMimeData(self, data, action, row, column, parent):
         if not self.canDropMimeData(data, action, row, column, parent):
             return False
-        
+
         # Get the target container
         target_item = parent.internalPointer()
         target_dn = target_item.dn()
-        
+
         # Get the source object DNs
         mime_data = data.data('application/x-saduc-object-dn').data().decode('utf-8')
         source_dns = [dn.strip() for dn in mime_data.split('\n') if dn.strip()]
-        
+
         if not source_dns:
             return False
-        
+
         # Perform the move operation for each object
         from samba_backend import move_object_samba
-        
+
         success_count = 0
         total_count = len(source_dns)
-        
+
         for source_dn in source_dns:
             try:
                 # Don't move to the same container
                 current_parent = ','.join(source_dn.split(',')[1:])
                 if target_dn == current_parent:
                     continue
-                
+
                 # Perform the move
                 success, message_key, extra = move_object_samba(self.samba_conn, source_dn, target_dn)
                 if success:
@@ -476,10 +476,10 @@ class ADTreeModel(QAbstractItemModel):
                     self.logger.info(f"Drag-drop move successful: {source_dn} -> {target_dn}")
                 else:
                     self.logger.warning(f"Drag-drop move failed: {source_dn} -> {target_dn}: {message_key}")
-                    
+
             except Exception as e:
                 self.logger.error(f"Exception during drag-drop move {source_dn} -> {target_dn}: {e}")
-        
+
         # Emit signal with results
         if total_count > 0:
             if success_count == total_count:
@@ -491,9 +491,9 @@ class ADTreeModel(QAbstractItemModel):
             else:
                 message = f"Failed to move {total_count} object{'s' if total_count != 1 else ''}"
                 self.logger.error(f"All {total_count} drag-drop moves failed")
-            
+
             # Emit signal to notify main window of results
             self.dragDropCompleted.emit(success_count, total_count, message)
-        
+
         return success_count > 0
 

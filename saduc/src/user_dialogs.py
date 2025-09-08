@@ -36,7 +36,7 @@ class NewUserPage1(QWizardPage):
         # --- Top Section ---
         headerLayout = QHBoxLayout()
         iconLabel = QLabel()
-        
+
         # Use an absolute path for the icon
         abs_icon_path = os.path.join(os.path.dirname(__file__), 'res', 'icons', os.path.basename(icon_path))
         iconLabel.setPixmap(QIcon(abs_icon_path).pixmap(32, 32))
@@ -157,7 +157,7 @@ class NewUserPage1(QWizardPage):
         try:
             # Try to get domain info from multiple sources
             domain_dn = None
-            
+
             # First try BASE_DN
             if BASE_DN:
                 domain_dn = BASE_DN
@@ -174,16 +174,16 @@ class NewUserPage1(QWizardPage):
                         self.logger.debug(f"Could not get forest info: {e}")
                 else:
                     self.logger.debug("No samba connection available")
-            
+
             if domain_dn:
                 # Extract domain from DN (e.g., "DC=home,DC=lucasit,DC=com" -> "home.lucasit.com")
                 domain_parts = [p.split('=')[1] for p in domain_dn.split(',') if p.lower().startswith('dc=')]
                 primary_domain = ".".join(domain_parts)
-                
+
                 if primary_domain:
                     self.upnDomainDropdown.addItem(f"@{primary_domain}")
                     self.logger.debug(f"Added primary domain: @{primary_domain}")
-                    
+
                     # Try to get additional UPN suffixes from forest info
                     if self.samba_conn:
                         try:
@@ -194,7 +194,7 @@ class NewUserPage1(QWizardPage):
                                 self.logger.debug(f"Added forest domain: @{forest_info['name']}")
                         except Exception as e:
                             self.logger.debug(f"Could not get additional forest info: {e}")
-                        
+
                 else:
                     # No domain parts found - this is a serious problem
                     self.logger.error(f"Could not extract domain from DN '{domain_dn}' - AD connection may be broken")
@@ -203,11 +203,11 @@ class NewUserPage1(QWizardPage):
                 # No domain info available - this is a serious problem
                 self.logger.error("No domain information available - AD connection may be broken")
                 self._add_error_indicator()
-                
+
         except Exception as e:
             self.logger.error(f"Failed to populate UPN domains - AD connection may be broken: {e}")
             self._add_error_indicator()
-    
+
     def _add_error_indicator(self):
         """Add error indicator when domain information cannot be retrieved."""
         self.upnDomainDropdown.addItem("@ERROR - Cannot retrieve domain info")
@@ -216,11 +216,11 @@ class NewUserPage1(QWizardPage):
     def _format_dn_for_display(self, dn, base_dn):
         if not dn:
             return ""
-        
+
         if not base_dn:
             # If base_dn is None, just return the container DN as-is
             return dn
-            
+
         domain_parts = [p.split('=')[1] for p in base_dn.split(',') if p.lower().startswith('dc=')]
         domain = ".".join(domain_parts)
 
@@ -229,14 +229,14 @@ class NewUserPage1(QWizardPage):
             base_dn_struct = ldap.dn.str2dn(base_dn)
 
             relative_dn_struct = [rdn for rdn in dn_struct if rdn not in base_dn_struct]
-            
+
             path_parts = []
             for rdn_part in reversed(relative_dn_struct):
                 path_parts.append(rdn_part[0][1])
 
             if not path_parts:
                 return f"Create in: {domain}"
-            
+
             return f"Create in: {domain}/{'/'.join(path_parts)}"
         except Exception:
             return f"Create in: {dn}"
@@ -562,10 +562,10 @@ class CopyUserWizard(QWizard):
     def __init__(self, parent=None, initial_data=None, source_username=None, source_display_name=None, container_dn=None):
         super().__init__(parent)
         self.i18n = I18nManager()
-        
+
         # Use display name for the UI, fallback to username if not provided
         display_name_for_ui = source_display_name or source_username
-        
+
         # Set window title with display name
         title = self.i18n.get_string("dialog.copy_user.title")
         if display_name_for_ui:
@@ -630,7 +630,7 @@ class ObjectRenameDialog(QDialog):
     """
     A general dialog for renaming AD objects with configurable fields based on object type.
     """
-    
+
     # Object type configurations
     OBJECT_CONFIGS = {
         'user': {
@@ -678,7 +678,7 @@ class ObjectRenameDialog(QDialog):
             'auto_update_display': True
         }
     }
-    
+
     def __init__(self, parent=None, object_dn=None, current_object_data=None, object_type="user", samba_conn=None):
         super().__init__(parent)
         self.i18n = I18nManager()
@@ -686,36 +686,36 @@ class ObjectRenameDialog(QDialog):
         self.current_object_data = current_object_data or {}
         self.object_type = object_type.lower()
         self.samba_conn = samba_conn
-        
+
         # Get configuration for this object type
         self.config = self.OBJECT_CONFIGS.get(self.object_type, {
             'title': f'Rename {object_type.title()}',
             'fields': [{'name': 'cn', 'label': 'Name:', 'widget': 'line_edit'}],
             'auto_update_display': False
         })
-        
+
         self.setWindowTitle(self.config['title'])
         self.setModal(True)
         self.setMinimumWidth(400)
-        
+
         # Store widgets by field name for easy access
         self.field_widgets = {}
-        
+
         self._create_widgets()
         self._create_layout()
         self._populate_current_data()
         self._connect_signals()
-        
+
     def _create_widgets(self):
         """Create widgets based on object type configuration."""
         # Always create button box
         self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        
+
         # Create widgets for each field
         for field_config in self.config['fields']:
             field_name = field_config['name']
             widget_type = field_config['widget']
-            
+
             if widget_type == 'line_edit':
                 self.field_widgets[field_name] = QLineEdit()
             elif widget_type == 'upn_combo':
@@ -732,20 +732,20 @@ class ObjectRenameDialog(QDialog):
             elif widget_type == 'separator':
                 self.field_widgets[field_name] = QFrame()
                 self.field_widgets[field_name].setFrameStyle(QFrame.HLine | QFrame.Sunken)
-        
+
     def _create_layout(self):
         """Create the dialog layout based on configuration."""
         layout = QVBoxLayout()
         layout.setSpacing(10)
-        
+
         form_layout = QFormLayout()
         form_layout.setSpacing(8)
-        
+
         for field_config in self.config['fields']:
             field_name = field_config['name']
             widget_type = field_config['widget']
             label = field_config.get('label', '')
-            
+
             if widget_type == 'separator':
                 form_layout.addRow(self.field_widgets[field_name], QLabel())
             elif widget_type == 'line_edit':
@@ -760,11 +760,11 @@ class ObjectRenameDialog(QDialog):
                 netbios_layout.addWidget(self.field_widgets[field_name + '_label'])
                 netbios_layout.addWidget(self.field_widgets[field_name])
                 form_layout.addRow(label, netbios_layout)
-        
+
         layout.addLayout(form_layout)
         layout.addWidget(self.button_box)
         self.setLayout(layout)
-        
+
     def _populate_upn_combo(self):
         """Populate the UPN suffix dropdown."""
         if 'userPrincipalName_combo' in self.field_widgets:
@@ -781,7 +781,7 @@ class ObjectRenameDialog(QDialog):
                     combo.addItem("@domain.com")  # Fallback
             except Exception:
                 combo.addItem("@domain.com")  # Fallback
-                
+
     def _set_netbios_domain(self):
         """Set the NetBIOS domain name."""
         if 'sAMAccountName_label' in self.field_widgets:
@@ -796,28 +796,28 @@ class ObjectRenameDialog(QDialog):
             except Exception:
                 pass  # Keep default
             # Keep the default "DOMAIN\\" if we couldn't get the real name
-            
+
     def _populate_current_data(self):
         """Pre-populate the form with current object data."""
         if not self.current_object_data:
             return
-            
+
         for field_config in self.config['fields']:
             field_name = field_config['name']
             widget_type = field_config['widget']
-            
+
             if field_name in self.current_object_data:
                 field_data = self.current_object_data[field_name]
-                
+
                 # Handle both list and string data
                 if isinstance(field_data, list):
                     value = field_data[0] if field_data else ''
                 else:
                     value = field_data if field_data else ''
-                
+
                 # Ensure value is a string
                 value = str(value) if value is not None else ''
-                
+
                 if widget_type == 'line_edit':
                     if field_name in self.field_widgets:
                         self.field_widgets[field_name].setText(value)
@@ -837,28 +837,28 @@ class ObjectRenameDialog(QDialog):
                 elif widget_type == 'netbios_edit':
                     if field_name in self.field_widgets:
                         self.field_widgets[field_name].setText(value)
-            
+
     def _connect_signals(self):
         """Connect widget signals."""
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
-        
+
         # Auto-update display name for user/contact objects
         if self.config.get('auto_update_display', False):
             if 'givenName' in self.field_widgets:
                 self.field_widgets['givenName'].textChanged.connect(self._update_display_name)
             if 'sn' in self.field_widgets:
                 self.field_widgets['sn'].textChanged.connect(self._update_display_name)
-        
+
     def _update_display_name(self):
         """Auto-update display name based on first and last name."""
         if 'displayName' not in self.field_widgets:
             return
-            
+
         first = self.field_widgets.get('givenName', QLineEdit()).text().strip()
         last = self.field_widgets.get('sn', QLineEdit()).text().strip()
         current_display = self.field_widgets['displayName'].text().strip()
-        
+
         # Only auto-update if:
         # 1. Display name is empty, OR
         # 2. Display name exactly matches "first last" pattern (auto-generated)
@@ -869,15 +869,15 @@ class ObjectRenameDialog(QDialog):
         elif not first and not last and not current_display:
             # Clear display name if both first and last are empty and display is empty
             self.field_widgets['displayName'].setText("")
-                
+
     def get_rename_data(self):
         """Get the new object data from the form."""
         data = {}
-        
+
         for field_config in self.config['fields']:
             field_name = field_config['name']
             widget_type = field_config['widget']
-            
+
             if widget_type == 'line_edit':
                 if field_name in self.field_widgets:
                     data[field_name] = self.field_widgets[field_name].text().strip()
@@ -889,7 +889,7 @@ class ObjectRenameDialog(QDialog):
             elif widget_type == 'netbios_edit':
                 if field_name in self.field_widgets:
                     data[field_name] = self.field_widgets[field_name].text().strip()
-        
+
         return data
 
 # Keep the old UserRenameDialog as an alias for backwards compatibility
@@ -909,7 +909,7 @@ def DeleteObjectDialog(parent, object_name, object_type):
     """Generic delete dialog for any object type."""
     i18n = I18nManager()
     title = "Confirm Deletion"
-    
+
     # Use object type-specific message if available, otherwise generic
     object_type_names = {
         'user': 'user',
@@ -919,10 +919,10 @@ def DeleteObjectDialog(parent, object_name, object_type):
         'printer': 'printer',
         'organizationalUnit': 'organizational unit'
     }
-    
+
     type_name = object_type_names.get(object_type, 'object')
     message = f"Are you sure you want to delete the {type_name} '{object_name}'? This action cannot be undone."
-    
+
     return QMessageBox.question(parent, title, message, QMessageBox.Yes | QMessageBox.No)
 
 def DisableUserDialog(parent, username):
@@ -950,9 +950,9 @@ class UsernamePasswordDialog(QDialog):
 
         # Get the domain and format it as a Kerberos realm (uppercase)
         self.realm = self._get_kerberos_realm()
-        
+
         formLayout = QFormLayout()
-        
+
         self.usernameInput = QLineEdit()
         self.passwordInput = QLineEdit()
         self.passwordInput.setEchoMode(QLineEdit.Password)
@@ -960,7 +960,7 @@ class UsernamePasswordDialog(QDialog):
         # Use an QHBoxLayout to combine the username input and the realm label
         usernameLayout = QHBoxLayout()
         usernameLayout.addWidget(self.usernameInput, 1)
-        
+
         realmLabel = QLabel(self.realm)
         realmLabel.setStyleSheet("font-weight: bold;")
         usernameLayout.addWidget(realmLabel)
@@ -975,9 +975,9 @@ class UsernamePasswordDialog(QDialog):
         mainLayout = QVBoxLayout()
         mainLayout.addLayout(formLayout)
         mainLayout.addWidget(self.buttonBox)
-        
+
         self.setLayout(mainLayout)
-        
+
         # Center the dialog on screen or parent
         self._center_dialog()
 
@@ -985,7 +985,7 @@ class UsernamePasswordDialog(QDialog):
         """Center the dialog on the screen or parent widget."""
         # Make sure the dialog has been sized properly first
         self.adjustSize()
-        
+
         if self.parent():
             # Center on parent widget
             parent_rect = self.parent().geometry()
@@ -1008,33 +1008,33 @@ class UsernamePasswordDialog(QDialog):
             # Read the realm from krb5.conf
             with open('/etc/krb5.conf', 'r') as f:
                 content = f.read()
-            
+
             # Look for default_realm in [libdefaults] section
             lines = content.split('\n')
             in_libdefaults = False
-            
+
             for line in lines:
                 line = line.strip()
-                
+
                 if line.startswith('[libdefaults]'):
                     in_libdefaults = True
                     continue
                 elif line.startswith('[') and in_libdefaults:
                     # Moved to different section
                     break
-                
+
                 if in_libdefaults and line.startswith('default_realm'):
                     # Extract realm value
                     if '=' in line:
                         realm = line.split('=')[1].strip()
                         return f"@{realm}"
-            
+
         except Exception as e:
             pass
-        
+
         # Fallback if krb5.conf can't be read
         return "@DOMAIN.COM"
-    
+
     def get_credentials(self):
         username = self.usernameInput.text()
         return username, self.passwordInput.text()
@@ -1092,7 +1092,7 @@ class NewGroupDialog(QDialog):
             scope = 'local'
         elif self.universal_radio.isChecked():
             scope = 'universal'
-        
+
         group_type = 'security'
         if self.distribution_radio.isChecked():
             group_type = 'distribution'
@@ -1112,7 +1112,7 @@ class NewOUDialog(QDialog):
         super().__init__(parent)
         self.i18n = I18nManager()
         self.container_dn = container_dn or BASE_DN
-        
+
         self.setWindowTitle(self.i18n.get_string("dialog.new_ou.title"))
         self.setMinimumSize(400, 300)
 
@@ -1121,20 +1121,20 @@ class NewOUDialog(QDialog):
 
         # Header section with icon and "Create in" info
         header_layout = QHBoxLayout()
-        
+
         # OU icon
         icon_label = QLabel()
         abs_icon_path = os.path.join(os.path.dirname(__file__), 'res', 'icons', 'folder_ou.png')
         icon_label.setPixmap(QIcon(abs_icon_path).pixmap(32, 32))
-        
+
         header_layout.addWidget(icon_label)
         header_layout.addStretch()
-        
+
         # "Create in" label
         create_in_label = QLabel(f"Create in: {self._format_dn_for_display(self.container_dn)}")
         create_in_label.setAlignment(Qt.AlignRight)
         header_layout.addWidget(create_in_label)
-        
+
         main_layout.addLayout(header_layout)
 
         # Separator
@@ -1148,7 +1148,7 @@ class NewOUDialog(QDialog):
         self.ou_name_edit = QLineEdit()
         self.ou_name_edit.textChanged.connect(self._validate_input)
         form_layout.addRow(self.i18n.get_string("dialog.new_ou.label.name"), self.ou_name_edit)
-        
+
         main_layout.addLayout(form_layout)
 
         # Protection checkbox
@@ -1197,49 +1197,49 @@ class NewOUDialog(QDialog):
 
 class DeleteOUDialog(QDialog):
     """Dialog for confirming OU deletion."""
-    
+
     def __init__(self, ou_name, has_children=False, parent=None):
         super().__init__(parent)
         self.ou_name = ou_name
         self.has_children = has_children
         self.i18n = I18nManager()
-        
+
         self.setWindowTitle("Confirm Delete OU")
         self.setModal(True)
         self.setFixedSize(400, 200 if has_children else 150)
-        
+
         layout = QVBoxLayout(self)
-        
+
         # Warning message
         warning_label = QLabel(f"Are you sure you want to delete the OU '{ou_name}'?")
         warning_label.setWordWrap(True)
         layout.addWidget(warning_label)
-        
+
         # Additional warning
         warning2_label = QLabel("This action cannot be undone.")
         warning2_label.setStyleSheet("color: red; font-weight: bold;")
         layout.addWidget(warning2_label)
-        
+
         # Recursive deletion checkbox (only shown if OU has children)
         self.recursive_checkbox = None
         if has_children:
             layout.addSpacing(10)
-            
+
             info_label = QLabel("This OU contains child objects.")
             info_label.setStyleSheet("color: #666; font-style: italic;")
             layout.addWidget(info_label)
-            
+
             self.recursive_checkbox = QCheckBox("Delete all child objects (recursive delete)")
             self.recursive_checkbox.setStyleSheet("font-weight: bold; color: #d32f2f;")
             layout.addWidget(self.recursive_checkbox)
-            
+
             warning3_label = QLabel("⚠ WARNING: This will permanently delete ALL contents including nested OUs, users, computers, and other objects!")
             warning3_label.setWordWrap(True)
             warning3_label.setStyleSheet("color: #d32f2f; font-size: 10px; background-color: #ffebee; padding: 5px; border: 1px solid #ffcdd2;")
             layout.addWidget(warning3_label)
-        
+
         layout.addStretch()
-        
+
         # Buttons
         button_box = QDialogButtonBox(
             QDialogButtonBox.Yes | QDialogButtonBox.No,
@@ -1247,14 +1247,14 @@ class DeleteOUDialog(QDialog):
         )
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
-        
+
         # Make "No" the default
         button_box.button(QDialogButtonBox.No).setDefault(True)
         button_box.button(QDialogButtonBox.Yes).setText("Delete")
         button_box.button(QDialogButtonBox.No).setText("Cancel")
-        
+
         layout.addWidget(button_box)
-    
+
     def is_recursive_delete(self):
         """Return True if recursive delete was selected."""
         return self.recursive_checkbox is not None and self.recursive_checkbox.isChecked()
@@ -1284,7 +1284,7 @@ class NewContactDialog(QDialog):
         """Create all widgets for the dialog"""
         # Header section
         self.header_layout = QHBoxLayout()
-        
+
         # Contact icon
         self.icon_label = QLabel()
         abs_icon_path = os.path.join(os.path.dirname(__file__), 'res', 'icons', 'contact.png')
@@ -1294,107 +1294,107 @@ class NewContactDialog(QDialog):
             # If icon doesn't exist, create a placeholder
             self.icon_label.setText("📧")
             self.icon_label.setStyleSheet("font-size: 24px;")
-        
+
         # Create contact label
         self.intro_label = QLabel(self.i18n.get_string("dialog.new_contact.intro_text"))
         self.intro_label.setStyleSheet("font-weight: bold; font-size: 14pt;")
-        
+
         # "Create in" label
         self.create_in_label = QLabel(self._format_dn_for_display(self.container_dn))
-        
+
         self.header_layout.addWidget(self.icon_label)
         self.header_layout.addWidget(self.intro_label)
         self.header_layout.addStretch()
         self.header_layout.addWidget(self.create_in_label)
-        
+
         # Separator
         self.header_separator = QFrame()
         self.header_separator.setFrameShape(QFrame.HLine)
-        
+
         # Form fields
         self.form_layout = QFormLayout()
         self.form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        
+
         self.first_name_edit = QLineEdit()
         self.first_name_edit.textChanged.connect(self._update_display_name)
         self.first_name_edit.textChanged.connect(self._validate_input)
-        
+
         self.initials_edit = QLineEdit()
         self.initials_edit.setMaxLength(6)
         self.initials_edit.setMaximumWidth(80)
         self.initials_edit.textChanged.connect(self._update_display_name)
-        
+
         self.last_name_edit = QLineEdit()
         self.last_name_edit.textChanged.connect(self._update_display_name)
         self.last_name_edit.textChanged.connect(self._validate_input)
-        
+
         self.display_name_edit = QLineEdit()
-        
+
         # Create layout for first name and initials
         name_layout = QHBoxLayout()
         name_layout.addWidget(self.first_name_edit)
         name_layout.addWidget(QLabel(self.i18n.get_string("dialog.new_contact.label.initials")))
         name_layout.addWidget(self.initials_edit)
-        
+
         self.form_layout.addRow(self.i18n.get_string("dialog.new_contact.label.first_name"), name_layout)
         self.form_layout.addRow(self.i18n.get_string("dialog.new_contact.label.last_name"), self.last_name_edit)
         self.form_layout.addRow(self.i18n.get_string("dialog.new_contact.label.display_name"), self.display_name_edit)
-        
+
         # Button box
         self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        
+
     def _create_layout(self):
         """Create the main dialog layout"""
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(10)
-        
+
         main_layout.addLayout(self.header_layout)
         main_layout.addWidget(self.header_separator)
         main_layout.addLayout(self.form_layout)
         main_layout.addStretch()
         main_layout.addWidget(self.button_box)
-        
+
     def _connect_signals(self):
         """Connect signals to slots"""
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
-        
+
         # Initial validation
         self._validate_input()
-        
+
     def _format_dn_for_display(self, dn):
         """Format DN for display in the 'Create in' label."""
         if not dn:
             return self.i18n.get_string("dialog.new_contact.create_in_unknown")
-            
+
         try:
             # Extract domain from DN
             domain_parts = [p.split('=')[1] for p in dn.split(',') if p.lower().startswith('dc=')]
             domain = ".".join(domain_parts)
-            
+
             # Parse the DN to get container path
             dn_struct = ldap.dn.str2dn(dn)
             path_parts = []
-            
+
             for rdn_part in reversed(dn_struct):
                 if rdn_part[0][0].lower() != 'dc':  # Skip domain components
                     path_parts.append(rdn_part[0][1])
-            
+
             if not path_parts:
                 return self.i18n.get_text("dialog.new_contact.create_in_domain", domain)
             else:
                 return self.i18n.get_text("dialog.new_contact.create_in_path", domain, '/'.join(path_parts))
-                
+
         except Exception as e:
             self.logger.debug(f"Error formatting DN for display: {e}")
             return self.i18n.get_text("dialog.new_contact.create_in_fallback", dn)
-    
+
     def _update_display_name(self):
         """Auto-update display name based on first name, initials, and last name."""
         first = self.first_name_edit.text().strip()
         initials = self.initials_edit.text().strip()
         last = self.last_name_edit.text().strip()
-        
+
         display_parts = []
         if first:
             display_parts.append(first)
@@ -1402,18 +1402,18 @@ class NewContactDialog(QDialog):
             display_parts.append(initials)
         if last:
             display_parts.append(last)
-            
+
         self.display_name_edit.setText(" ".join(display_parts))
-    
+
     def _validate_input(self):
         """Validate input and enable/disable OK button."""
         # At least first name or last name must be provided
         first_name_valid = bool(self.first_name_edit.text().strip())
         last_name_valid = bool(self.last_name_edit.text().strip())
-        
+
         is_valid = first_name_valid or last_name_valid
         self.button_box.button(QDialogButtonBox.Ok).setEnabled(is_valid)
-    
+
     def get_contact_data(self):
         """Return the contact data entered by the user."""
         return {

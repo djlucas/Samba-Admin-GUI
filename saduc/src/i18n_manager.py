@@ -20,7 +20,7 @@ class I18nManager:
         """
         file_path = os.path.join(os.path.dirname(__file__), self.base_path, f"{self.lang_code}.txt")
         self.logger.info(f"Attempting to load language file from: {file_path}")
-        
+
         if not os.path.exists(file_path):
             self.logger.error(f"Language file not found: {file_path}")
             return
@@ -30,7 +30,7 @@ class I18nManager:
                 line = line.strip()
                 if not line or line.startswith('#'):
                     continue
-                
+
                 try:
                     key, value = line.split('=', 1)
                     self._strings[key.strip()] = value.strip()

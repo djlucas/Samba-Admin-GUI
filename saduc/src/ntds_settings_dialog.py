@@ -125,7 +125,7 @@ class NtdsSettingsDialog(QDialog):
             return
 
         self.description_edit.setText(ntds_props.get('description', [''])[0])
-        
+
         policies = get_query_policies(self.samba_conn)
         self.query_policy_combo.addItems(policies)
         current_policy_dn = ntds_props.get('queryPolicyObject', [None])[0]

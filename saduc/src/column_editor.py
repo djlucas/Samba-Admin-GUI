@@ -127,7 +127,7 @@ class ColumnEditorDialog(QDialog):
             self.displayed_list.addItem(item)
 
         available_keys = [key for key in self.all_column_keys if key not in displayed_keys]
-        
+
         # Sort available columns alphabetically by their translated text
         sorted_available = sorted(available_keys, key=lambda k: self.i18n.get_string(k))
 
@@ -183,7 +183,7 @@ class ColumnEditorDialog(QDialog):
             current_row = self.displayed_list.row(selected_displayed[0])
             self.move_up_btn.setEnabled(current_row > 0)
             self.move_down_btn.setEnabled(current_row < self.displayed_list.count() - 1)
-        
+
         current_keys = self.get_displayed_column_keys()
         self.restore_defaults_btn.setEnabled(current_keys != self.default_column_keys)
 

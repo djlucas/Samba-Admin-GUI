@@ -52,12 +52,12 @@ class GroupPropertiesDialog(QDialog):
         self.group_props = {}
         self.schema_info = {}
         self.editable_group_props = {}
-        
+
         # Track pending member changes
         self.pending_member_additions = set()  # Member DNs to add
         self.pending_member_removals = set()   # Member DNs to remove
         self.original_members = set()          # Original member DNs
-        
+
         # Set base DN for path display
         self.base_dn = BASE_DN
 
@@ -91,7 +91,7 @@ class GroupPropertiesDialog(QDialog):
     def _create_widgets(self):
         self.tab_widget = RotatingTabWidget(logger=self.logger)
         self.tab_widget.setTabStyle(STYLE_DEFAULT)
-        
+
         # Tabs
         self.general_tab = QWidget()
         self.members_tab = QWidget()
@@ -157,20 +157,20 @@ class GroupPropertiesDialog(QDialog):
 
         # Group scope and type side by side
         scope_type_layout = QHBoxLayout()
-        
+
         # Group scope (left side)
         scope_layout = QVBoxLayout()
         scope_layout.addWidget(self.domain_local_radio)
         scope_layout.addWidget(self.global_radio)
         scope_layout.addWidget(self.universal_radio)
         self.group_scope_box.setLayout(scope_layout)
-        
+
         # Group type (right side)
         type_layout = QVBoxLayout()
         type_layout.addWidget(self.security_radio)
         type_layout.addWidget(self.distribution_radio)
         self.group_type_box.setLayout(type_layout)
-        
+
         # Add both group boxes side by side
         scope_type_layout.addWidget(self.group_scope_box)
         scope_type_layout.addWidget(self.group_type_box)
@@ -193,7 +193,7 @@ class GroupPropertiesDialog(QDialog):
 
     def _layout_members_tab(self):
         members_layout = QVBoxLayout(self.members_tab)
-        
+
         # Add table
         members_layout.addWidget(self.members_table)
         self.members_table.setColumnCount(2)
@@ -206,7 +206,7 @@ class GroupPropertiesDialog(QDialog):
         header_members = self.members_table.horizontalHeader()
         header_members.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header_members.setSectionResizeMode(1, QHeaderView.Stretch)
-        
+
         # Add buttons
         button_layout = QHBoxLayout()
         button_layout.addWidget(self.add_member_btn)
@@ -218,7 +218,7 @@ class GroupPropertiesDialog(QDialog):
         base_dn = get_base_dn(self.samba_conn)
         if not base_dn:
             return dn_string
-            
+
         domain_parts = [p.split('=')[1] for p in base_dn.split(',') if p.lower().startswith('dc=')]
         domain = ".".join(domain_parts)
 
@@ -317,7 +317,7 @@ class GroupPropertiesDialog(QDialog):
         # 3. Combine member lists and remove duplicates
         all_member_dns = list(set(member_dns + primary_member_dns))
         self.logger.info(f"Total unique members to fetch: {len(all_member_dns)}")
-        
+
         # Initialize original members set for change tracking
         self.original_members = set(all_member_dns)
         # Clear pending changes
@@ -346,11 +346,11 @@ class GroupPropertiesDialog(QDialog):
             if not isinstance(entry, dict):
                 self.logger.warning(f"Skipping non-dict entry for member: {member_dn}")
                 continue
-            
+
             # Skip members that are staged for removal
             if member_dn in self.pending_member_removals:
                 continue
-                
+
             try:
                 name = (entry.get('displayName') or entry.get('cn', [b'']))[0].decode('utf-8')
                 obj_classes = [oc.decode('utf-8') for oc in entry.get('objectClass', [])]
@@ -399,14 +399,14 @@ class GroupPropertiesDialog(QDialog):
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
         self.button_box.button(QDialogButtonBox.Apply).clicked.connect(self.apply_changes)
-        
+
         # Initially disable Apply button until changes are made
         self.apply_button = self.button_box.button(QDialogButtonBox.Apply)
         self.apply_button.setEnabled(False)
-        
+
         # Connect change signals
         self._connect_change_signals()
-        
+
         # Members tab signals
         self.add_member_btn.clicked.connect(self._add_member)
         self.remove_member_btn.clicked.connect(self._remove_member)
@@ -437,10 +437,10 @@ class GroupPropertiesDialog(QDialog):
         sender = self.sender()
         if sender in self.widget_to_attribute_map:
             attr_name = self.widget_to_attribute_map[sender]
-            
+
             if attr_name == 'groupType':
                 current_type = int(self.editable_group_props.get('groupType', ['0'])[0])
-                
+
                 # Handle scope
                 if self.domain_local_radio.isChecked():
                     new_scope = GROUP_TYPE_DOMAIN_LOCAL
@@ -456,7 +456,7 @@ class GroupPropertiesDialog(QDialog):
                     new_type = GROUP_TYPE_SECURITY
                 else:
                     new_type = 0
-                
+
                 new_value = str(new_type | new_scope)
 
             else: # For cn and description
@@ -474,40 +474,40 @@ class GroupPropertiesDialog(QDialog):
     def _check_for_changes(self):
         """Check if there are any pending changes and update Apply button state."""
         has_changes = False
-        
+
         # Simple comparison of original vs current values
         for attr_name, original_values in self.group_props.items():
             current_values = self.editable_group_props.get(attr_name, [])
             if current_values != original_values:
                 has_changes = True
                 break
-        
+
         # Check for pending member changes
         if not has_changes:
             if self.pending_member_additions or self.pending_member_removals:
                 has_changes = True
-        
+
         # Enable/disable Apply button based on changes
         self.apply_button.setEnabled(has_changes)
-    
+
     def _connect_change_signals(self):
         """Connect all input widgets to check for changes."""
         # Get all widgets that might exist and connect their change signals
         text_widget_names = [
             'group_name_edit', 'description_edit', 'email_edit', 'notes_edit'
         ]
-        
+
         for widget_name in text_widget_names:
             if hasattr(self, widget_name):
                 widget = getattr(self, widget_name)
                 if hasattr(widget, 'textChanged'):
                     widget.textChanged.connect(self._check_for_changes)
-        
+
         # Connect checkbox changes  
         checkbox_widget_names = [
             'security_group_radio', 'distribution_group_radio'
         ]
-        
+
         for widget_name in checkbox_widget_names:
             if hasattr(self, widget_name):
                 widget = getattr(self, widget_name)
@@ -517,10 +517,10 @@ class GroupPropertiesDialog(QDialog):
     def apply_changes(self):
         """Apply the changes made in the dialog to Active Directory."""
         self.logger.info("Applying changes for group to Active Directory")
-        
+
         # Build list of LDAP modifications
         modifications = []
-        
+
         # Define read-only attributes
         READ_ONLY_ATTRIBUTES = {
             'objectGUID', 'objectSid', 'sAMAccountType',
@@ -529,27 +529,27 @@ class GroupPropertiesDialog(QDialog):
             'systemFlags', 'instanceType', 'objectClass', 'objectCategory',
             'distinguishedName', 'canonicalName', 'parentGUID'
         }
-        
+
         # Required attributes that cannot be empty
         REQUIRED_ATTRIBUTES = {'groupType', 'cn', 'objectCategory', 'objectClass', 'sAMAccountName'}
-        
+
         # Validate required attributes first
         validation_errors = []
         for attr_name, new_values in self.editable_group_props.items():
             old_values = self.group_props.get(attr_name, [])
             if old_values == new_values:
                 continue
-                
+
             # Check for attempts to modify read-only attributes
             if attr_name in READ_ONLY_ATTRIBUTES:
                 validation_errors.append(f"'{attr_name}' is a system attribute and cannot be modified")
                 continue
-                
+
             # Check required attributes are not empty
             if attr_name in REQUIRED_ATTRIBUTES:
                 if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
                     validation_errors.append(f"'{attr_name}' is required and cannot be empty")
-        
+
         if validation_errors:
             error_msg = "The following errors must be corrected before saving:\n\n" + "\n".join(validation_errors)
             QMessageBox.warning(
@@ -561,15 +561,15 @@ class GroupPropertiesDialog(QDialog):
             self.editable_group_props = copy.deepcopy(self.group_props)
             self._populate_tabs()
             return
-        
+
         # Build modifications for valid changes
         for attr_name, new_values in self.editable_group_props.items():
             old_values = self.group_props.get(attr_name, [])
-            
+
             # Skip if values haven't changed or read-only
             if old_values == new_values or attr_name in READ_ONLY_ATTRIBUTES:
                 continue
-            
+
             try:
                 # Handle empty values (delete attribute)
                 if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
@@ -580,39 +580,39 @@ class GroupPropertiesDialog(QDialog):
                     for value in new_values:
                         if value.strip():
                             encoded_values.append(value.encode('utf-8'))
-                    
+
                     if encoded_values:
                         modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
                     else:
                         modifications.append((ldap.MOD_DELETE, attr_name, None))
-                        
+
             except Exception as e:
                 self.logger.error(f"Error preparing modification for {attr_name}: {e}")
                 continue
-        
+
         # Collect changes from tabs
         self._collect_tab_changes(modifications)
-        
+
         # Required attributes that cannot be empty
         REQUIRED_ATTRIBUTES = {'groupType', 'cn', 'objectCategory', 'objectClass', 'sAMAccountName'}
-        
+
         # Validate required attributes first
         validation_errors = []
         for attr_name, new_values in self.editable_group_props.items():
             old_values = self.group_props.get(attr_name, [])
             if old_values == new_values:
                 continue
-                
+
             # Check for attempts to modify read-only attributes
             if attr_name in READ_ONLY_ATTRIBUTES:
                 validation_errors.append(f"'{attr_name}' is a system attribute and cannot be modified")
                 continue
-                
+
             # Check required attributes are not empty
             if attr_name in REQUIRED_ATTRIBUTES:
                 if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
                     validation_errors.append(f"'{attr_name}' is required and cannot be empty")
-        
+
         if validation_errors:
             error_msg = "The following errors must be corrected before saving:\n\n" + "\n".join(validation_errors)
             QMessageBox.warning(
@@ -624,15 +624,15 @@ class GroupPropertiesDialog(QDialog):
             self.editable_group_props = copy.deepcopy(self.group_props)
             self._populate_tabs()
             return
-        
+
         # Build modifications for valid changes
         for attr_name, new_values in self.editable_group_props.items():
             old_values = self.group_props.get(attr_name, [])
-            
+
             # Skip if values haven't changed or read-only
             if old_values == new_values or attr_name in READ_ONLY_ATTRIBUTES:
                 continue
-            
+
             try:
                 # Handle empty values (delete attribute)
                 if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
@@ -643,30 +643,30 @@ class GroupPropertiesDialog(QDialog):
                     for value in new_values:
                         if value.strip():
                             encoded_values.append(value.encode('utf-8'))
-                    
+
                     if encoded_values:
                         modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
                     else:
                         modifications.append((ldap.MOD_DELETE, attr_name, None))
-                        
+
             except Exception as e:
                 self.logger.error(f"Error preparing modification for {attr_name}: {e}")
                 continue
-        
+
         # Apply modifications if any exist
         if modifications:
             success, message = update_object_attributes(self.samba_conn, self.group_dn, modifications)
-            
+
             if success:
                 # Update local properties with changes
                 self.group_props.update(self.editable_group_props)
-                
+
                 QMessageBox.information(
                     self, 
                     self.i18n.get_string("dialog.common.success.title"),
                     self.i18n.get_text("group_properties.apply.success", str(len(modifications)))
                 )
-                
+
                 self.logger.info(f"Successfully applied {len(modifications)} changes to group {self.group_dn}")
                 # Apply member changes if successful
                 self._apply_member_changes()
@@ -685,27 +685,27 @@ class GroupPropertiesDialog(QDialog):
             # Disable Apply button if no changes were made
             if not member_changes_applied:
                 self.apply_button.setEnabled(False)
-    
+
     def accept(self):
         """Override accept to apply changes before closing."""
         # Apply changes first
         self.apply_changes()
-        
+
         # Close the dialog
         super().accept()
-    
+
     def _apply_member_changes(self):
         """Apply all pending member changes to the directory. Returns True if changes were applied."""
         from samba_backend import add_user_to_group_samba, remove_user_from_group_samba
-        
+
         changes_applied = False
         errors = []
-        
+
         # Debug logging
         self.logger.info(f"Applying member changes: {len(self.pending_member_additions)} additions, {len(self.pending_member_removals)} removals")
         self.logger.info(f"Pending additions: {list(self.pending_member_additions)}")
         self.logger.info(f"Pending removals: {list(self.pending_member_removals)}")
-        
+
         # Apply member additions
         for member_dn in self.pending_member_additions:
             try:
@@ -720,7 +720,7 @@ class GroupPropertiesDialog(QDialog):
             except Exception as e:
                 errors.append(f"Failed to add member {member_dn}: {e}")
                 self.logger.error(f"Failed to add member {member_dn} to group {self.group_dn}: {e}")
-        
+
         # Apply member removals
         for member_dn in self.pending_member_removals:
             if not member_dn:  # Skip None values
@@ -739,14 +739,14 @@ class GroupPropertiesDialog(QDialog):
             except Exception as e:
                 errors.append(f"Failed to remove member {member_dn}: {e}")
                 self.logger.error(f"Failed to remove member {member_dn} from group {self.group_dn}: {e}")
-        
+
         # Show errors if any occurred
         if errors:
             error_msg = "Some member changes failed:\n\n" + "\n".join(errors)
             QMessageBox.warning(self, 
                 self.i18n.get_string("dialog.common.error.title"),
                 error_msg)
-        
+
         # Clear pending changes and reload if any changes were applied
         if changes_applied:
             self.pending_member_additions.clear()
@@ -755,31 +755,31 @@ class GroupPropertiesDialog(QDialog):
             self.group_props, self.schema_info = get_all_group_attributes_with_schema_info(self.samba_conn, self.group_dn)
             self.editable_group_props = copy.deepcopy(self.group_props)
             self._populate_all_tabs()
-        
+
         return changes_applied
-    
+
     def _collect_tab_changes(self, modifications):
         """Collect changes from individual tabs and add to modifications list."""
         import ldap
-        
+
         # Check each tab in the tab widget for changes
         for i in range(self.tab_widget.count()):
             tab = self.tab_widget.widget(i)
-            
+
             # Check if this tab has a get_changes method
             if hasattr(tab, 'get_changes'):
                 try:
                     tab_changes = tab.get_changes()
                     self.logger.info(f"Tab {i} ({type(tab).__name__}) returned changes: {tab_changes}")
-                    
+
                     # Process each change from the tab
                     for attr_name, new_values in tab_changes.items():
                         old_values = self.group_props.get(attr_name, [])
-                        
+
                         # Skip if values haven't changed
                         if old_values == new_values:
                             continue
-                        
+
                         try:
                             # Handle empty values (delete attribute)
                             if not new_values:
@@ -791,74 +791,74 @@ class GroupPropertiesDialog(QDialog):
                                 for value in new_values:
                                     if value:
                                         encoded_values.append(value.encode('utf-8'))
-                                
+
                                 if encoded_values:
                                     modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
                                     self.logger.info(f"Will replace {attr_name} with {new_values}")
                                 else:
                                     modifications.append((ldap.MOD_DELETE, attr_name, None))
                                     self.logger.info(f"Will delete attribute {attr_name}")
-                                    
+
                         except Exception as e:
                             self.logger.error(f"Error preparing modification for {attr_name} from tab: {e}")
-                            
+
                 except Exception as e:
                     self.logger.error(f"Error getting changes from tab {i}: {e}")
-    
+
     def _on_member_selection_changed(self):
         """Enable/disable Remove button based on selection."""
         selected_items = self.members_table.selectedItems()
         self.remove_member_btn.setEnabled(len(selected_items) > 0)
-    
+
     def _add_member(self):
         """Add new members to the group (staged until Apply is clicked)."""
         from search_dialogs import StandardSearchDialog
-        
+
         dialog = StandardSearchDialog(self.samba_conn, ['user', 'group', 'computer'], parent=self)
-        
+
         if dialog.exec_() == QDialog.Accepted:
             selected_objects = dialog.get_selected_objects()
             if not selected_objects:
                 return
-            
+
             # Debug logging
             self.logger.debug(f"selected_objects type: {type(selected_objects)}")
             self.logger.debug(f"selected_objects length: {len(selected_objects)}")
             for i, obj in enumerate(selected_objects):
                 self.logger.debug(f"Object {i}: type={type(obj)}, value={obj}")
-                
+
             # Stage each selected object for addition
             added_count = 0
             for obj in selected_objects:
                 obj_dn = obj['dn']
                 obj_display = obj['display_text']
-                
+
                 # Check if already a member or already staged for addition
                 current_members = self._get_current_display_members()
                 if obj_dn in current_members:
                     QMessageBox.information(self, self.i18n.get_string("dialog.common.info.title"), 
                                           f"'{obj_display}' is already a member of this group.")
                     continue
-                
+
                 # Stage the addition
                 self.pending_member_additions.add(obj_dn)
                 self.pending_member_removals.discard(obj_dn)  # Remove from removals if it was there
-                
+
                 # Add to table with visual indicator
                 self._add_member_to_table(obj_dn, obj_display)
                 added_count += 1
-                
+
             # Members added silently - no popup needed
             if added_count > 0:
                 self._check_for_changes()  # Update Apply button state
-    
+
     def _get_current_display_members(self):
         """Get the current set of members (original + additions - removals)."""
         current_members = self.original_members.copy()
         current_members.update(self.pending_member_additions)
         current_members.difference_update(self.pending_member_removals)
         return current_members
-                
+
     def _add_member_to_table(self, member_dn, display_text=None):
         """Add a member to the members table."""
         if not display_text:
@@ -867,14 +867,14 @@ class GroupPropertiesDialog(QDialog):
                 import ldap
                 attrs = ['cn', 'sAMAccountName', 'displayName', 'objectClass']
                 res = self.samba_conn.search_s(member_dn, ldap.SCOPE_BASE, '(objectClass=*)', attrs)
-                
+
                 if res and res[0][1]:
                     attrs_dict = res[0][1]
                     cn = attrs_dict.get('cn', [b''])[0].decode('utf-8')
                     sam_account = attrs_dict.get('sAMAccountName', [b''])[0].decode('utf-8')
                     display_name = attrs_dict.get('displayName', [b''])[0].decode('utf-8')
                     object_classes = [cls.decode('utf-8') for cls in attrs_dict.get('objectClass', [])]
-                    
+
                     # Determine object type
                     if 'user' in object_classes:
                         obj_type = 'User'
@@ -886,7 +886,7 @@ class GroupPropertiesDialog(QDialog):
                         obj_type = 'Contact'
                     else:
                         obj_type = 'Object'
-                        
+
                     # Create display text
                     display_text = display_name or cn or sam_account
                     if sam_account and sam_account != display_text:
@@ -895,47 +895,47 @@ class GroupPropertiesDialog(QDialog):
             except:
                 # Fallback to DN
                 display_text = member_dn.split(',')[0].split('=')[1] if '=' in member_dn else member_dn
-        
+
         # Check if already in table
         for row in range(self.members_table.rowCount()):
             existing_item = self.members_table.item(row, 0)
             if existing_item and existing_item.data(Qt.UserRole) == member_dn:
                 return  # Already in table
-        
+
         # Add to table
         row = self.members_table.rowCount()
         self.members_table.insertRow(row)
-        
+
         name_item = QTableWidgetItem(display_text)
         name_item.setData(Qt.UserRole, member_dn)
         self.members_table.setItem(row, 0, name_item)
-        
+
         # Create path display using the same method as existing members
         display_path = self._get_display_path_from_dn(member_dn)
         self.members_table.setItem(row, 1, QTableWidgetItem(display_path))
-    
+
     def _remove_member(self):
         """Remove selected members from the group (staged until Apply is clicked)."""
         selected_items = self.members_table.selectedItems()
         if not selected_items:
             return
-        
+
         # Get all unique selected rows
         selected_rows = list(set(item.row() for item in selected_items))
         selected_rows.sort(reverse=True)  # Process in reverse order to avoid index shifting
-        
+
         for row in selected_rows:
             member_item = self.members_table.item(row, 0)
             if not member_item:
                 continue
-            
+
             member_dn = member_item.data(Qt.UserRole)
             if not member_dn:  # Fix for NoneType error
                 continue
-                
+
             # Debug logging
             self.logger.info(f"Staging removal of member: {member_dn}")
-            
+
             # Stage the removal
             if member_dn in self.pending_member_additions:
                 # If it was a pending addition, just remove it from additions
@@ -945,9 +945,9 @@ class GroupPropertiesDialog(QDialog):
                 # If it's an original member, stage for removal and hide from UI
                 self.pending_member_removals.add(member_dn)
                 self.logger.info(f"Added to pending removals and hidden from UI: {member_dn}")
-            
+
             # Remove from table immediately to hide it from UI
             self.members_table.removeRow(row)
-        
+
         self._check_for_changes()  # Update Apply button state
         self._on_member_selection_changed()

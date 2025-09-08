@@ -14,7 +14,7 @@ def setup_logging(debug_mode=False):
     """
     Configures the global logging settings for the application.
     Output will go to console and optionally to a debug file.
-    
+
     Args:
         debug_mode (bool): If True, enables DEBUG level logging to file and console.
                           If False, only INFO+ to console, no file logging.
@@ -56,16 +56,16 @@ def get_authenticated_connection(appLogger, app):
             samba_conn, connected_server = get_ldap_conn()
         except NoKerberosTicketError:
             appLogger.warning(f"No Kerberos ticket found. Presenting manual authentication dialog.")
-            
+
             auth_dialog = UsernamePasswordDialog()
             if auth_dialog.exec_() == auth_dialog.Accepted:
                 username, password = auth_dialog.get_credentials()
-                
+
                 if not username or not password:
                     QMessageBox.critical(None, "Authentication Failed", "Username and password cannot be empty.")
                     # Loop will continue to re-prompt
                     continue
-                
+
                 # Construct the Kerberos principal from the username and domain
                 # Note: BASE_DN might be None at startup, so handle that
                 if BASE_DN:
@@ -77,7 +77,7 @@ def get_authenticated_connection(appLogger, app):
                     import os
                     realm = os.environ.get('USERDNSDOMAIN', '').upper()
                     principal = f"{username}@{realm}" if realm else username
-                
+
                 try:
                     appLogger.info(f"Attempting kinit for principal: {principal}")
                     subprocess.run(
@@ -89,13 +89,13 @@ def get_authenticated_connection(appLogger, app):
                     appLogger.info("kinit successful. A ticket has been obtained.")
                     # On successful kinit, the loop will run again and this time
                     # get_ldap_conn() should succeed, breaking the loop.
-                    
+
                 except CalledProcessError as e:
                     error_output = e.stderr.decode('utf-8').strip()
                     appLogger.error(f"kinit failed. Error: {error_output}")
                     QMessageBox.critical(None, "Authentication Failed", f"kinit failed. Please check your username and password.\n\nDetails: {error_output}")
                     # Loop will continue to re-prompt
-                    
+
                 except Exception as e:
                     appLogger.error(f"An unexpected error occurred during kinit: {e}")
                     QMessageBox.critical(None, "Application Error", "An unexpected error occurred during authentication. Check the debug log for details.")
@@ -103,7 +103,7 @@ def get_authenticated_connection(appLogger, app):
             else:
                 QMessageBox.information(None, "Authentication Canceled", "Authentication was canceled. Exiting application.")
                 sys.exit(0)
-    
+
     return samba_conn, connected_server
 
 def main():
@@ -111,18 +111,18 @@ def main():
     Main function to initialize and run the SADUC application.
     """
     import argparse
-    
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='SADUC - Samba Active Directory Users & Computers')
     parser.add_argument('--debug', action='store_true', 
                        help='Enable debug logging to console and file (default: INFO to console only)')
     args = parser.parse_args()
-    
+
     appLogger = setup_logging(debug_mode=args.debug)
     appLogger.info("Starting SADUC application...")
 
     app = QApplication(sys.argv)
-    
+
     # Set application icon (for taskbar/system tray)
     from icon_utils import _load_icon
     appLogger.info("Loading application icon...")
@@ -132,7 +132,7 @@ def main():
         appLogger.info("Application icon set successfully")
     else:
         appLogger.warning("Failed to load application icon")
-    
+
     try:
         samba_conn, connected_server = get_authenticated_connection(appLogger, app)
     except Exception as e:
@@ -144,9 +144,9 @@ def main():
         # This case should ideally not be reached with the new function
         QMessageBox.critical(None, "Application Error", "Failed to establish a connection to Samba. Exiting.")
         sys.exit(1)
-        
+
     window = SADUCMainWindow(samba_conn, connected_server)
-    
+
     # Ensure the window icon is properly set (title bar uses directory icon)
     from icon_utils import get_saduc_icon
     appLogger.info("Setting window icon...")
@@ -156,7 +156,7 @@ def main():
         appLogger.info("Window icon set successfully")
     else:
         appLogger.warning("Failed to set window icon")
-    
+
     window.show()
 
     appLogger.info("Application event loop started.")

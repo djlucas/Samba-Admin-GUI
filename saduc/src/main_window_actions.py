@@ -50,7 +50,7 @@ def on_copy_user_action_triggered(main_window):
 
     source_username = source_user_props.get('sAMAccountName', [''])[0]
     source_display_name = source_user_props.get('displayName', [source_username])[0] or source_username
-    
+
     uac = int(source_user_props.get('userAccountControl', ['0'])[0])
     initial_data = {
         'user_must_change_password': False,
@@ -83,7 +83,7 @@ def on_delete_user_action_triggered(main_window):
         return
 
     object_name = main_window.tableModel.data(main_window.listPane.selectionModel().currentIndex(), Qt.DisplayRole)
-    
+
     # Determine object type from the current table model or selected object
     object_type = 'user'  # Default
     if hasattr(main_window.tableModel, 'get_object_type_at_index'):
@@ -102,7 +102,7 @@ def on_delete_user_action_triggered(main_window):
                     object_type = 'contact'
                 elif 'group' in obj_classes:
                     object_type = 'group'
-    
+
     main_window.logger.info(f"Delete action triggered for {object_type}: {object_name}.")
     if DeleteObjectDialog(main_window, object_name, object_type) == QMessageBox.Yes:
         main_window.logger.info(f"User confirmed deletion of {object_type}: {object_name}")
@@ -120,7 +120,7 @@ def on_disable_user_action_triggered(main_window):
     if not main_window.current_selected_dn:
         main_window.logger.warning("No user selected for disabling.")
         return
-        
+
     username = main_window.tableModel.data(main_window.listPane.selectionModel().currentIndex(), Qt.DisplayRole)
     main_window.logger.info(f"Disable User action triggered for user: {username}.")
     if DisableUserDialog(main_window, username) == QMessageBox.Yes:
@@ -139,7 +139,7 @@ def on_enable_user_action_triggered(main_window):
     if not main_window.current_selected_dn:
         main_window.logger.warning("No user selected for enabling.")
         return
-        
+
     username = main_window.tableModel.data(main_window.listPane.selectionModel().currentIndex(), Qt.DisplayRole)
     main_window.logger.info(f"Enable User action triggered for user: {username}.")
     if EnableUserDialog(main_window, username) == QMessageBox.Yes:
@@ -218,15 +218,15 @@ def on_add_to_group_action_triggered(main_window):
     """Add the currently selected object(s) to one or more groups."""
     if not main_window.current_selected_dn:
         return
-        
+
     from find_dialog import FindObjectsDialog
     from samba_backend import get_base_dn, add_user_to_group_samba
-    
+
     # Use the universal search dialog to find groups
     search_base = get_base_dn(main_window.samba_conn)
     dialog = FindObjectsDialog(main_window.samba_conn, search_base, main_window)
     dialog.setWindowTitle("Find Groups")
-    
+
     # Set the dialog to search for groups by default
     group_index = -1
     for i in range(dialog.find_combo.count()):
@@ -235,35 +235,35 @@ def on_add_to_group_action_triggered(main_window):
             break
     if group_index >= 0:
         dialog.find_combo.setCurrentIndex(group_index)
-    
+
     if dialog.exec_() == QDialog.Accepted:
         selected_object = dialog.get_selected_object()
         if not selected_object:
             QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.info.title"), "Please select a group.")
             return
-        
+
         group_dn = selected_object.get('dn', '')
         group_name = selected_object.get('name', selected_object.get('cn', [''])[0] if isinstance(selected_object.get('cn'), list) else selected_object.get('cn', ''))
-        
+
         if not group_dn:
             QMessageBox.warning(main_window, main_window.i18n.get_string("dialog.common.error.title"), "Could not retrieve the group DN.")
             return
-        
+
         try:
             # Add the selected object to the group
             add_user_to_group_samba(main_window.samba_conn, main_window.current_selected_dn, group_dn)
-            
+
             QMessageBox.information(
                 main_window, 
                 main_window.i18n.get_string("dialog.common.success.title"), 
                 f"Successfully added the selected object to group '{group_name}'."
             )
-            
+
             main_window.logger.info(f"Successfully added object {main_window.current_selected_dn} to group {group_dn}")
-            
+
             # Refresh the current view
             main_window.refresh_current_container()
-            
+
         except Exception as e:
             QMessageBox.critical(
                 main_window, 
@@ -276,27 +276,27 @@ def on_remove_from_group_action_triggered(main_window):
     """Remove the currently selected object from a group."""
     if not main_window.current_selected_dn:
         return
-        
+
     from find_dialog import FindObjectsDialog
     from samba_backend import get_base_dn, remove_user_from_group_samba, get_user_properties
-    
+
     # First, get the user's current group memberships
     try:
         user_props = get_user_properties(main_window.samba_conn, main_window.current_selected_dn)
         if not user_props:
             QMessageBox.warning(main_window, main_window.i18n.get_string("dialog.common.error.title"), "Could not retrieve object properties.")
             return
-        
+
         member_of_dns = user_props.get('memberOf', [])
         if not member_of_dns:
             QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.info.title"), "This object is not a member of any groups.")
             return
-        
+
         # Use the universal search dialog to find groups, but restrict to groups the user is already in
         search_base = get_base_dn(main_window.samba_conn)
         dialog = FindObjectsDialog(main_window.samba_conn, search_base, main_window)
         dialog.setWindowTitle("Find Groups to Remove From")
-        
+
         # Set the dialog to search for groups by default
         group_index = -1
         for i in range(dialog.find_combo.count()):
@@ -305,25 +305,25 @@ def on_remove_from_group_action_triggered(main_window):
                 break
         if group_index >= 0:
             dialog.find_combo.setCurrentIndex(group_index)
-        
+
         if dialog.exec_() == QDialog.Accepted:
             selected_object = dialog.get_selected_object()
             if not selected_object:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.info.title"), "Please select a group.")
                 return
-            
+
             group_dn = selected_object.get('dn', '')
             group_name = selected_object.get('name', selected_object.get('cn', [''])[0] if isinstance(selected_object.get('cn'), list) else selected_object.get('cn', ''))
-            
+
             if not group_dn:
                 QMessageBox.warning(main_window, main_window.i18n.get_string("dialog.common.error.title"), "Could not retrieve the group DN.")
                 return
-            
+
             # Check if the object is actually a member of this group
             if group_dn not in member_of_dns:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.info.title"), f"This object is not a member of group '{group_name}'.")
                 return
-            
+
             # Confirm removal
             reply = QMessageBox.question(
                 main_window, 
@@ -331,23 +331,23 @@ def on_remove_from_group_action_triggered(main_window):
                 f"Are you sure you want to remove this object from group '{group_name}'?",
                 QMessageBox.Yes | QMessageBox.No
             )
-            
+
             if reply == QMessageBox.Yes:
                 try:
                     # Remove the object from the group
                     remove_user_from_group_samba(main_window.samba_conn, main_window.current_selected_dn, group_dn)
-                    
+
                     QMessageBox.information(
                         main_window, 
                         main_window.i18n.get_string("dialog.common.success.title"), 
                         f"Successfully removed the selected object from group '{group_name}'."
                     )
-                    
+
                     main_window.logger.info(f"Successfully removed object {main_window.current_selected_dn} from group {group_dn}")
-                    
+
                     # Refresh the current view
                     main_window.refresh_current_container()
-                    
+
                 except Exception as e:
                     QMessageBox.critical(
                         main_window, 
@@ -355,7 +355,7 @@ def on_remove_from_group_action_triggered(main_window):
                         f"Failed to remove object from group '{group_name}': {str(e)}"
                     )
                     main_window.logger.error(f"Failed to remove object {main_window.current_selected_dn} from group {group_dn}: {e}")
-                    
+
     except Exception as e:
         QMessageBox.critical(
             main_window, 
@@ -382,15 +382,15 @@ def on_move_action_triggered(main_window):
     """Move the currently selected object to a different container."""
     if not main_window.current_selected_dn:
         return
-        
+
     from find_dialog import FindObjectsDialog
     from samba_backend import get_base_dn
-    
+
     # Use the universal search dialog to find containers (OUs, CNs)
     search_base = get_base_dn(main_window.samba_conn)
     dialog = FindObjectsDialog(main_window.samba_conn, search_base, main_window)
     dialog.setWindowTitle("Select Destination Container")
-    
+
     # Set the dialog to search for containers by default
     container_index = -1
     for i in range(dialog.find_combo.count()):
@@ -399,26 +399,26 @@ def on_move_action_triggered(main_window):
             break
     if container_index >= 0:
         dialog.find_combo.setCurrentIndex(container_index)
-    
+
     if dialog.exec_() == QDialog.Accepted:
         selected_object = dialog.get_selected_object()
         if not selected_object:
             QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.info.title"), "Please select a destination container.")
             return
-        
+
         new_parent_dn = selected_object.get('dn', '')
         container_name = selected_object.get('name', selected_object.get('cn', [''])[0] if isinstance(selected_object.get('cn'), list) else selected_object.get('cn', ''))
-        
+
         if not new_parent_dn:
             QMessageBox.warning(main_window, main_window.i18n.get_string("dialog.common.error.title"), "Could not retrieve the destination container DN.")
             return
-        
+
         # Don't allow moving to the same container
         current_parent = ','.join(main_window.current_selected_dn.split(',')[1:])
         if new_parent_dn == current_parent:
             QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.info.title"), "The object is already in the selected container.")
             return
-        
+
         # Confirm the move
         reply = QMessageBox.question(
             main_window, 
@@ -426,24 +426,24 @@ def on_move_action_triggered(main_window):
             f"Are you sure you want to move this object to '{container_name}'?",
             QMessageBox.Yes | QMessageBox.No
         )
-        
+
         if reply == QMessageBox.Yes:
             try:
                 # Perform the move
                 success, message_key, extra = move_object_samba(main_window.samba_conn, main_window.current_selected_dn, new_parent_dn)
                 message = main_window.i18n.get_text(message_key, *extra) if extra else main_window.i18n.get_string(message_key)
-                
+
                 if success:
                     QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
                     main_window.logger.info(f"Successfully moved object {main_window.current_selected_dn}")
-                    
+
                     # Refresh both the source and destination containers
                     main_window.refresh_current_container()
-                    
+
                 else:
                     QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
                     main_window.logger.error(f"Failed to move object {main_window.current_selected_dn}: {message}")
-                    
+
             except Exception as e:
                 QMessageBox.critical(
                     main_window, 
@@ -455,20 +455,20 @@ def on_move_action_triggered(main_window):
 def on_rename_action_triggered(main_window):
     """Triggers inline rename for the selected object in the list view."""
     main_window.logger.info("Rename action triggered - starting inline edit.")
-    
+
     if not main_window.current_selected_dn:
         QMessageBox.warning(main_window, main_window.i18n.get_string("dialog.common.error.title"), "No object selected.")
         return
-    
+
     # Get the selected index
     selected_index = main_window.listPane.selectionModel().currentIndex()
     if not selected_index.isValid():
         QMessageBox.warning(main_window, main_window.i18n.get_string("dialog.common.error.title"), "No object selected.")
         return
-    
+
     # Make sure we're editing the name column (column 0)
     name_index = main_window.tableModel.index(selected_index.row(), 0)
-    
+
     # Start inline editing on the name column
     main_window.listPane.edit(name_index)
     return
@@ -483,20 +483,20 @@ def on_delete_saved_queries_folder_action_triggered(main_window):
     if not current_index.isValid():
         main_window.logger.warning("No folder selected for deletion.")
         return
-    
+
     tree_item = current_index.internalPointer()
     current_dn = tree_item.dn() if tree_item else None
     folder_name = tree_item.data() if tree_item else "Unknown"
-    
+
     if not current_dn or not current_dn.startswith('local://saved-queries/'):
         QMessageBox.warning(main_window, 
             main_window.i18n.get_string("dialog.common.error.title"),
             "Only saved queries folders can be deleted with this action."
         )
         return
-    
+
     main_window.logger.info(f"Delete folder action triggered for: {folder_name}")
-    
+
     # Create confirmation dialog
     reply = QMessageBox.question(
         main_window,
@@ -509,27 +509,27 @@ def on_delete_saved_queries_folder_action_triggered(main_window):
         QMessageBox.Yes | QMessageBox.No,
         QMessageBox.No
     )
-    
+
     if reply == QMessageBox.Yes:
         try:
             import shutil
             from pathlib import Path
             from sagui_config import config_manager
-            
+
             # Extract relative path from DN
             if current_dn.startswith('local://saved-queries/'):
                 relative_path = current_dn.replace('local://saved-queries/', '')
                 folder_path = config_manager.searches_dir / relative_path
-                
+
                 if folder_path.exists() and folder_path.is_dir():
                     # Delete the folder and all its contents
                     shutil.rmtree(folder_path)
                     main_window.logger.info(f"Successfully deleted folder: {folder_path}")
-                    
+
                     # Refresh the tree view
                     main_window.treeModel.beginResetModel()
                     main_window.treeModel.endResetModel()
-                    
+
                     QMessageBox.information(main_window, 
                         main_window.i18n.get_string("dialog.common.success.title"),
                         f"Folder '{folder_name}' has been deleted successfully."
@@ -544,7 +544,7 @@ def on_delete_saved_queries_folder_action_triggered(main_window):
                     main_window.i18n.get_string("dialog.common.error.title"),
                     "Invalid folder path."
                 )
-                
+
         except Exception as e:
             main_window.logger.error(f"Error deleting folder '{folder_name}': {e}")
             QMessageBox.critical(main_window,
@@ -558,10 +558,10 @@ def on_reset_account_action_triggered(main_window):
     if not main_window.current_selected_dn:
         main_window.logger.warning("No computer selected for account reset.")
         return
-    
+
     computer_name = main_window.tableModel.data(main_window.listPane.selectionModel().currentIndex(), Qt.DisplayRole)
     main_window.logger.info(f"Reset Account action triggered for computer: {computer_name}.")
-    
+
     # Create confirmation dialog
     reply = QMessageBox.question(
         main_window,
@@ -575,7 +575,7 @@ def on_reset_account_action_triggered(main_window):
         QMessageBox.Yes | QMessageBox.No,
         QMessageBox.No
     )
-    
+
     if reply == QMessageBox.Yes:
         main_window.logger.info(f"User confirmed reset of computer account: {computer_name}")
         success, message_key, extra = reset_computer_account_samba(main_window.samba_conn, main_window.current_selected_dn)
@@ -619,7 +619,7 @@ def on_operations_masters_action_triggered(main_window):
 def on_new_folder_action_triggered(main_window):
     """Create a new folder for organizing saved queries."""
     from PyQt5.QtWidgets import QInputDialog
-    
+
     # Check if we're in a saved queries context by examining the current tree selection
     current_index = main_window.treePane.currentIndex()
     if not current_index.isValid():
@@ -628,28 +628,28 @@ def on_new_folder_action_triggered(main_window):
             "New folders can only be created under Saved Queries."
         )
         return
-    
+
     tree_item = current_index.internalPointer()
     current_dn = tree_item.dn() if tree_item else None
-    
+
     if not current_dn or not current_dn.startswith('local://saved-queries'):
         QMessageBox.warning(main_window, 
             main_window.i18n.get_string("dialog.common.error.title"),
             "New folders can only be created under Saved Queries."
         )
         return
-    
+
     folder_name, ok = QInputDialog.getText(
         main_window,
         "New Folder",
         "Folder name:",
         text="New Folder"
     )
-    
+
     if ok and folder_name.strip():
         try:
             from sagui_config import config_manager
-            
+
             # Determine the target directory based on current location
             if current_dn == 'local://saved-queries':
                 # Creating in root of saved queries
@@ -658,14 +658,14 @@ def on_new_folder_action_triggered(main_window):
                 # Creating in a subfolder - extract path from DN
                 folder_path = current_dn.replace('local://saved-queries/', '')
                 target_dir = config_manager.searches_dir / folder_path / folder_name.strip()
-            
+
             # Create the directory
             target_dir.mkdir(parents=True, exist_ok=False)
             main_window.logger.info(f"Created saved queries folder: {target_dir}")
-            
+
             # Refresh the tree view to show the new folder
             main_window._on_tree_item_clicked(main_window.treePane.currentIndex())
-            
+
         except FileExistsError:
             QMessageBox.warning(main_window,
                 main_window.i18n.get_string("dialog.common.error.title"),
@@ -872,35 +872,35 @@ def on_delete_container_action_triggered(main_window):
     if not main_window.currentContainerDN:
         main_window.logger.warning("No container/OU selected for deletion.")
         return
-    
+
     # Get container/OU information
     try:
         import ldap
         from samba_backend import get_ldap_conn
-        
+
         # Get connection (we can't use main_window.samba_conn if it's not available)
         samba_conn = main_window.samba_conn
-        
+
         # Check what type of object this is
         res = samba_conn.search_s(main_window.currentContainerDN, ldap.SCOPE_BASE, '(objectClass=*)', ['objectClass', 'ou', 'cn', 'name'])
         if not res:
             QMessageBox.critical(main_window, "Error", "Could not find the selected object.")
             return
-            
+
         obj_attrs = res[0][1]
         object_classes = [cls.decode('utf-8') for cls in obj_attrs.get('objectClass', [])]
-        
+
         # Get object name
         obj_name = "Unknown"
         for attr in ['ou', 'cn', 'name']:
             if attr in obj_attrs:
                 obj_name = obj_attrs[attr][0].decode('utf-8')
                 break
-        
+
         if 'organizationalUnit' in object_classes:
             # Handle OU deletion with enhanced checking
             main_window.logger.info(f"Delete OU action triggered for: {obj_name}")
-            
+
             # First check if OU has children to determine dialog type
             has_children = False
             try:
@@ -909,21 +909,21 @@ def on_delete_container_action_triggered(main_window):
                 has_children = len(child_res) > 0
             except Exception as e:
                 main_window.logger.warning(f"Could not check for child objects: {e}")
-            
+
             # Show confirmation dialog with appropriate options
             delete_dialog = DeleteOUDialog(obj_name, has_children, main_window)
             if delete_dialog.exec_() != QDialog.Accepted:
                 main_window.logger.info("OU deletion cancelled by user.")
                 return
-            
+
             # Get recursive delete preference from dialog
             recursive_delete = delete_dialog.is_recursive_delete()
             main_window.logger.info(f"OU deletion confirmed - Recursive: {recursive_delete}")
-            
+
             # Attempt to delete the OU
             success, message_key, args = delete_ou_samba(samba_conn, main_window.currentContainerDN, recursive_delete)
             message = main_window.i18n.get_text(message_key, *args)
-            
+
             if success:
                 QMessageBox.information(main_window, main_window.i18n.get_string("dialog.common.success.title"), message)
                 # Refresh the tree view to reflect the deletion
@@ -964,12 +964,12 @@ def on_delete_container_action_triggered(main_window):
                 else:
                     QMessageBox.critical(main_window, main_window.i18n.get_string("dialog.common.error.title"), message)
                 main_window.logger.warning(f"Failed to delete OU: {message}")
-        
+
         else:
             # Handle other container types (not yet implemented)
             QMessageBox.information(main_window, "Not Implemented", 
                                   f"Delete operation for '{obj_name}' (type: {', '.join(object_classes)}) is not yet implemented.")
-    
+
     except Exception as e:
         main_window.logger.error(f"Error during delete operation: {e}")
         QMessageBox.critical(main_window, "Error", f"An error occurred during the delete operation:\n{str(e)}")
@@ -989,10 +989,10 @@ def on_container_properties_action_triggered(main_window):
 def on_change_dc_action_triggered(main_window):
     main_window.logger.info("Change Domain Controller action triggered.")
     from dc_selection_dialog import DCSelectionDialog
-    
+
     # Get current server info
     current_server = getattr(main_window, 'connected_server', 'Unknown')
-    
+
     # Show DC selection dialog
     dialog = DCSelectionDialog(main_window.samba_conn, current_server, main_window)
     if dialog.exec_() == QDialog.Accepted:
@@ -1087,7 +1087,7 @@ def on_new_printer_action_triggered(main_window):
 def on_new_generic_object_action_triggered(main_window, object_class, display_name, naming_attribute='cn', is_complex=False, required_attributes=None):
     """Generic action handler for schema-extended object types."""
     main_window.logger.info(f"New {display_name} action triggered.")
-    
+
     # Choose dialog type based on complexity
     if is_complex and required_attributes:
         main_window.logger.info(f"Opening GenericObjectWizard for complex object.")
@@ -1108,7 +1108,7 @@ def on_new_generic_object_action_triggered(main_window, object_class, display_na
             display_name=display_name,
             naming_attribute=naming_attribute
         )
-    
+
     if dialog.exec_() == QDialog.Accepted:
         main_window.logger.info(f"New {display_name} dialog/wizard was accepted.")
         object_data = dialog.get_object_data()

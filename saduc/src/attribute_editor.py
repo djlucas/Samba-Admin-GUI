@@ -44,7 +44,7 @@ class AttributeEditDialog(QDialog):
             title_key = "attribute_edit_dialog.title.octet"
         elif 'Time' in syntax:
             title_key = "attribute_edit_dialog.title.utc_time"
-        
+
         title = self.i18n.get_string(title_key)
         if is_multi_valued:
             prefix = self.i18n.get_string("attribute_edit_dialog.title.multi_valued_prefix")
@@ -82,7 +82,7 @@ class AttributeEditDialog(QDialog):
             if current_value != self.i18n.get_string("attribute_editor.not_set"):
                 self.editor.setText(current_value)
             value_layout.addWidget(self.editor)
-        
+
         layout.addLayout(value_layout)
 
         self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -289,7 +289,7 @@ class AttributeEditorTab(QWidget):
         self.attributes_table = QTableWidget()
         self.attributes_table.setColumnCount(3)
         self.attributes_table.setHorizontalHeaderLabels([self.i18n.get_string("table.header.name"), self.i18n.get_string("table.header.value"), self.i18n.get_string("table.header.syntax")])
-        
+
         header = self.attributes_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Interactive)
         header.setSectionResizeMode(1, QHeaderView.Interactive)
@@ -409,7 +409,7 @@ class AttributeEditorTab(QWidget):
         try:
             root_dse = self.samba_conn.search_s("", ldap.SCOPE_BASE, "(objectClass=*)", ["schemaNamingContext"])
             schema_dn = root_dse[0][1]["schemaNamingContext"][0].decode('utf-8')
-            
+
             initial_classes = [oc.decode('utf-8') for oc in self.all_attributes.get('objectClass', [])]
             classes_to_process = list(initial_classes)
             processed_classes = set()
@@ -425,7 +425,7 @@ class AttributeEditorTab(QWidget):
                 try:
                     attributes_to_fetch = ["mustContain", "mayContain", "systemMustContain", "systemMayContain", "subClassOf"]
                     class_schema_result = self.samba_conn.search_s(schema_dn, ldap.SCOPE_ONELEVEL, f"(&(objectClass=classSchema)(lDAPDisplayName={oc}))", attributes_to_fetch)
-                    
+
                     if class_schema_result:
                         class_attrs = class_schema_result[0][1]
                         must_contain_attrs.update([attr.decode('utf-8') for attr in class_attrs.get('mustContain', [])])
@@ -436,7 +436,7 @@ class AttributeEditorTab(QWidget):
                         classes_to_process.extend(parent_classes)
                 except ldap.NO_SUCH_OBJECT:
                     self.logger.warning(f"Could not find schema for objectClass '{oc}'.")
-            
+
             class_schema_attrs = must_contain_attrs | may_contain_attrs
             all_attrs_on_object = set(self.all_attributes.keys())
             total_attrs_to_populate = class_schema_attrs | all_attrs_on_object
@@ -460,7 +460,7 @@ class AttributeEditorTab(QWidget):
                     syntax_oid = attr_schema.get('attributeSyntax', [b''])[0].decode('utf-8')
                     system_flags_raw = attr_schema.get('systemFlags', [b'0'])
                     system_flags = int(system_flags_raw[0].decode('utf-8')) if system_flags_raw else 0
-                    
+
                     schema_attributes[attr_name] = {
                         "attributeSyntax": self.i18n.get_string(SYNTAX_MAP.get(syntax_oid, syntax_oid)),
                         "is_single_valued": attr_schema.get('isSingleValued', [b'FALSE'])[0].decode('utf-8').upper() == 'TRUE',
@@ -519,7 +519,7 @@ class AttributeEditorTab(QWidget):
                 except Exception as e:
                     self.logger.warning(f"Could not format attribute '{attr}': {e}")
                     display_value = str(values)
-            
+
             self.attributes_table.setItem(row_pos, 1, QTableWidgetItem(display_value))
 
             syntax = schema_info.get('attributeSyntax', '')
@@ -564,7 +564,7 @@ class AttributeEditorTab(QWidget):
                 category_match = True
             elif is_backlink and show_backlinks:
                 category_match = True
-            
+
             # Special case for system-only: only show if it doesn't fit a more specific category
             if is_system_only and show_system_only and not category_match:
                 category_match = True

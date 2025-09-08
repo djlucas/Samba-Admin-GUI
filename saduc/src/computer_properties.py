@@ -142,7 +142,7 @@ class ComputerPropertiesDialog(QDialog):
                 widget.stateChanged.connect(self._on_attribute_change)
             elif isinstance(widget, QRadioButton):
                 widget.toggled.connect(self._on_attribute_change)
-        
+
         self.button_box.accepted.connect(self._accept_dialog)
         self.button_box.rejected.connect(self.reject)
         self.button_box.button(QDialogButtonBox.Apply).clicked.connect(self.apply_changes)
@@ -154,7 +154,7 @@ class ComputerPropertiesDialog(QDialog):
         sender = self.sender()
         if sender in self.widget_to_attribute_map:
             attr_name = self.widget_to_attribute_map[sender]
-            
+
             new_value = ''
             if isinstance(sender, (QLineEdit)):
                 new_value = sender.text()
@@ -180,21 +180,21 @@ class ComputerPropertiesDialog(QDialog):
             else:
                 self.logger.debug(f"Attribute '{attr_name}' set to '{new_value}'")
                 self.editable_computer_props[attr_name] = [new_value]
-            
+
             # Check for changes and enable/disable Apply button
             self._check_for_changes()
 
     def _check_for_changes(self):
         """Check if there are any changes and enable/disable the Apply button accordingly."""
         has_changes = False
-        
+
         # Check if editable properties differ from original properties
         for attr_name, new_values in self.editable_computer_props.items():
             old_values = self.computer_props.get(attr_name, [])
             if old_values != new_values:
                 has_changes = True
                 break
-        
+
         # Enable/disable the Apply button based on changes
         self.button_box.button(QDialogButtonBox.Apply).setEnabled(has_changes)
 
@@ -415,10 +415,10 @@ class ComputerPropertiesDialog(QDialog):
     def apply_changes(self):
         """Apply the changes made in the dialog to Active Directory."""
         self.logger.info("Applying changes for computer to Active Directory")
-        
+
         # Build list of LDAP modifications
         modifications = []
-        
+
         # Define read-only attributes
         READ_ONLY_ATTRIBUTES = {
             'objectGUID', 'objectSid', 'sAMAccountType',
@@ -427,27 +427,27 @@ class ComputerPropertiesDialog(QDialog):
             'systemFlags', 'instanceType', 'objectClass', 'objectCategory',
             'distinguishedName', 'canonicalName', 'parentGUID'
         }
-        
+
         # Required attributes that cannot be empty
         REQUIRED_ATTRIBUTES = {'cn', 'objectCategory', 'objectClass', 'sAMAccountName'}
-        
+
         # Validate required attributes first
         validation_errors = []
         for attr_name, new_values in self.editable_computer_props.items():
             old_values = self.computer_props.get(attr_name, [])
             if old_values == new_values:
                 continue
-                
+
             # Check for attempts to modify read-only attributes
             if attr_name in READ_ONLY_ATTRIBUTES:
                 validation_errors.append(f"'{attr_name}' is a system attribute and cannot be modified")
                 continue
-                
+
             # Check required attributes are not empty
             if attr_name in REQUIRED_ATTRIBUTES:
                 if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
                     validation_errors.append(f"'{attr_name}' is required and cannot be empty")
-        
+
         if validation_errors:
             error_msg = "The following errors must be corrected before saving:\n\n" + "\n".join(validation_errors)
             QMessageBox.warning(
@@ -459,15 +459,15 @@ class ComputerPropertiesDialog(QDialog):
             self.editable_computer_props = copy.deepcopy(self.computer_props)
             self._populate_tabs()
             return
-        
+
         # Build modifications for valid changes
         for attr_name, new_values in self.editable_computer_props.items():
             old_values = self.computer_props.get(attr_name, [])
-            
+
             # Skip if values haven't changed or read-only
             if old_values == new_values or attr_name in READ_ONLY_ATTRIBUTES:
                 continue
-            
+
             try:
                 # Handle empty values (delete attribute)
                 if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
@@ -478,33 +478,33 @@ class ComputerPropertiesDialog(QDialog):
                     for value in new_values:
                         if value.strip():
                             encoded_values.append(value.encode('utf-8'))
-                    
+
                     if encoded_values:
                         modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
                     else:
                         modifications.append((ldap.MOD_DELETE, attr_name, None))
-                        
+
             except Exception as e:
                 self.logger.error(f"Error preparing modification for {attr_name}: {e}")
                 continue
-        
+
         # Apply modifications if any exist
         if modifications:
             success, message = update_object_attributes(self.samba_conn, self.computer_dn, modifications)
-            
+
             if success:
                 # Reload data from Active Directory to get fresh state
                 self._load_computer_data()
-                
+
                 # Disable the Apply button since changes are now saved
                 self.button_box.button(QDialogButtonBox.Apply).setEnabled(False)
-                
+
                 QMessageBox.information(
                     self, 
                     self.i18n.get_string("dialog.common.success.title"),
                     self.i18n.get_text("computer_properties.apply.success", str(len(modifications)))
                 )
-                
+
                 self.logger.info(f"Successfully applied {len(modifications)} changes to computer {self.computer_dn}")
             else:
                 QMessageBox.critical(
@@ -516,7 +516,7 @@ class ComputerPropertiesDialog(QDialog):
         else:
             # No dialog shown for "no changes" case - just silently complete
             pass
-    
+
     def _accept_dialog(self):
         """Handle OK button click - only apply changes if there are any."""
         # Check if there are any changes
@@ -526,22 +526,22 @@ class ComputerPropertiesDialog(QDialog):
             if old_values != new_values:
                 has_changes = True
                 break
-        
+
         # Only apply changes if there are any
         if has_changes:
             self.apply_changes()
-        
+
         # Close the dialog
         self.accept()
-    
+
     def accept(self):
         """Override accept to close the dialog."""
         super().accept()
-    
+
     def _browse_location(self):
         """Open location browsing dialog."""
         from search_dialogs import ContainerBrowserDialog
-        
+
         dialog = ContainerBrowserDialog(self.samba_conn, self)
         if dialog.exec_() == QDialog.Accepted:
             selected_container = dialog.get_selected_object()
@@ -549,11 +549,11 @@ class ComputerPropertiesDialog(QDialog):
                 # Update the location field with the container DN
                 location_dn = selected_container['dn']
                 display_name = selected_container['display_name']
-                
+
                 self.location_edit.setText(location_dn)
-                
+
                 # Update the local properties
                 if 'location' in self.widget_to_attribute_map.values():
                     self.editable_computer_props['location'] = [location_dn]
-                
+
                 self.logger.info(f"Selected location: {display_name} ({location_dn})")

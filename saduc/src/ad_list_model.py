@@ -183,45 +183,45 @@ class ADListModel(QAbstractTableModel):
             return self.icon_cache.get(obj_type, self.icon_cache.get("Unknown"))
 
         return QVariant()
-    
+
     def flags(self, index):
         """Return flags for the given index to enable/disable editing."""
         if not index.isValid():
             return Qt.NoItemFlags
-        
+
         # Only allow editing of the name column (first column)
         if index.column() == 0:
             return Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsEditable
         else:
             return Qt.ItemIsEnabled | Qt.ItemIsSelectable
-    
+
     def setData(self, index, value, role=Qt.EditRole):
         """Handle inline editing of items."""
         if not index.isValid() or role != Qt.EditRole:
             return False
-        
+
         # Only allow editing the name column
         if index.column() != 0:
             return False
-        
+
         item = self._data[index.row()]
         new_name = value.strip()
-        
+
         # Don't change if the name is the same
         current_name = item.get('displayName', item.get('cn', ''))
         if isinstance(current_name, list):
             current_name = current_name[0] if current_name else ''
-        
+
         if new_name == current_name or not new_name:
             return False
-        
+
         # Perform the rename operation
         if self._samba_conn and item.get('distinguishedName'):
             try:
                 # Determine object type for proper rename handling
                 object_type = self._get_object_type(item).lower()
                 object_classes = item.get('objectClass', [])
-                
+
                 if 'user' in object_classes and 'computer' not in object_classes:
                     object_type = 'user'
                 elif 'group' in object_classes:
@@ -230,20 +230,20 @@ class ADListModel(QAbstractTableModel):
                     object_type = 'contact'
                 elif 'inetorgperson' in object_classes:
                     object_type = 'inetOrgPerson'
-                
+
                 # Check if this object type should get the ObjectRenameDialog
                 should_open_rename_dialog = object_type.lower() in ['user', 'inetorgperson', 'group', 'contact']
-                
+
                 if should_open_rename_dialog:
                     # First update the display name in the list
                     if object_type.lower() in ['user', 'inetorgperson', 'contact']:
                         item['displayName'] = [new_name] if isinstance(item.get('displayName'), list) else new_name
                     elif object_type.lower() == 'group':
                         item['cn'] = [new_name] if isinstance(item.get('cn'), list) else new_name
-                    
+
                     # Emit dataChanged signal to update the list display
                     self.dataChanged.emit(index, index, [Qt.DisplayRole])
-                    
+
                     # We need to fetch additional attributes that may not be in the cached data
                     # The list view doesn't fetch givenName/sn by default
                     try:
@@ -251,11 +251,11 @@ class ADListModel(QAbstractTableModel):
                         # Get all attributes we might need for the rename dialog
                         needed_attrs = ['cn', 'displayName', 'givenName', 'sn', 'sAMAccountName', 
                                       'userPrincipalName', 'objectClass', 'distinguishedName']
-                        
+
                         self.logger.info(f"Fetching comprehensive data for rename dialog: {item['distinguishedName']}")
                         fresh_res = self._samba_conn.search_s(item['distinguishedName'], ldap.SCOPE_BASE, 
                                                             '(objectClass=*)', needed_attrs)
-                        
+
                         if fresh_res and fresh_res[0][1]:
                             fresh_data = fresh_res[0][1]
                             # Convert bytes to strings and handle lists properly
@@ -265,10 +265,10 @@ class ADListModel(QAbstractTableModel):
                                     dialog_object_data[key] = [v.decode('utf-8') if isinstance(v, bytes) else str(v) for v in values]
                                 else:
                                     dialog_object_data[key] = [values.decode('utf-8') if isinstance(values, bytes) else str(values)]
-                            
+
                             # Ensure we have the DN
                             dialog_object_data['distinguishedName'] = [item['distinguishedName']]
-                            
+
                         else:
                             self.logger.warning("No fresh data returned, using cached data")
                             # Fallback: use cached data but ensure list format
@@ -278,7 +278,7 @@ class ADListModel(QAbstractTableModel):
                                     dialog_object_data[key] = value
                                 else:
                                     dialog_object_data[key] = [str(value)] if value is not None else ['']
-                    
+
                     except Exception as e:
                         self.logger.error(f"Error fetching fresh data: {e}, using cached data")
                         # Fallback: use cached data but ensure list format
@@ -288,10 +288,10 @@ class ADListModel(QAbstractTableModel):
                                 dialog_object_data[key] = value
                             else:
                                 dialog_object_data[key] = [str(value)] if value is not None else ['']
-                    
+
                     # Log the data we're passing to debug
                     self.logger.info(f"Dialog data - cn: {dialog_object_data.get('cn')}, displayName: {dialog_object_data.get('displayName')}, givenName: {dialog_object_data.get('givenName')}, sn: {dialog_object_data.get('sn')}")
-                    
+
                     # Now open ObjectRenameDialog for comprehensive rename
                     from user_dialogs import ObjectRenameDialog
                     dialog = ObjectRenameDialog(
@@ -301,21 +301,21 @@ class ADListModel(QAbstractTableModel):
                         object_type=object_type,
                         samba_conn=self._samba_conn
                     )
-                    
+
                     # Update the displayName/cn field with the new name after dialog is populated
                     if hasattr(dialog, 'field_widgets'):
                         if object_type.lower() in ['user', 'inetorgperson', 'contact'] and 'displayName' in dialog.field_widgets:
                             dialog.field_widgets['displayName'].setText(new_name)
                         elif object_type.lower() == 'group' and 'cn' in dialog.field_widgets:
                             dialog.field_widgets['cn'].setText(new_name)
-                    
+
                     if dialog.exec_() == dialog.Accepted:
                         self.logger.info(f"ObjectRenameDialog accepted for {object_type}")
-                        
+
                         # Get the rename data from the dialog
                         rename_data = dialog.get_rename_data()
                         self.logger.info(f"Rename data from dialog: {rename_data}")
-                        
+
                         if rename_data:
                             # Apply the comprehensive rename using the backend function
                             from samba_backend import rename_object_with_attributes_samba
@@ -325,13 +325,13 @@ class ADListModel(QAbstractTableModel):
                                 rename_data, 
                                 object_type
                             )
-                            
+
                             if success:
                                 # Update our local data with the new values
                                 for key, value in rename_data.items():
                                     if key in item:
                                         item[key] = [value] if isinstance(item[key], list) else value
-                                
+
                                 # If the cn was changed, the DN has changed too - we need to update it
                                 dn_changed = False
                                 if 'cn' in rename_data and extra and len(extra) > 0:
@@ -339,7 +339,7 @@ class ADListModel(QAbstractTableModel):
                                     item['distinguishedName'] = new_dn
                                     dn_changed = True
                                     self.logger.info(f"Updated local DN to: {new_dn}")
-                                
+
                                 if dn_changed:
                                     # When DN changes, we need to refresh the entire container
                                     self.logger.info("DN changed - triggering container refresh")
@@ -370,7 +370,7 @@ class ADListModel(QAbstractTableModel):
                         rename_data = {'displayName': new_name}
                     else:
                         rename_data = {'cn': new_name}
-                    
+
                     # Import the comprehensive rename function
                     from samba_backend import rename_object_with_attributes_samba
                     success, message_key, extra = rename_object_with_attributes_samba(
@@ -379,14 +379,14 @@ class ADListModel(QAbstractTableModel):
                         rename_data, 
                         object_type
                     )
-                    
+
                     if success:
                         # Update the local data to reflect the change
                         if 'displayName' in rename_data:
                             item['displayName'] = [new_name] if isinstance(item.get('displayName'), list) else new_name
                         if 'cn' in rename_data:
                             item['cn'] = [new_name] if isinstance(item.get('cn'), list) else new_name
-                        
+
                         # Emit dataChanged signal
                         self.dataChanged.emit(index, index, [Qt.DisplayRole])
                         self.logger.info(f"Successfully renamed {object_type} to '{new_name}'")
@@ -394,11 +394,11 @@ class ADListModel(QAbstractTableModel):
                     else:
                         self.logger.error(f"Failed to rename {object_type}: {message_key}")
                         return False
-                    
+
             except Exception as e:
                 self.logger.error(f"Error during inline rename: {e}")
                 return False
-        
+
         return False
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
@@ -453,24 +453,24 @@ class ADListModel(QAbstractTableModel):
         if not self._samba_conn or not self._current_dn:
             self.logger.warning("Cannot refresh: no connection or DN set")
             return False
-        
+
         try:
             from samba_backend import get_all_objects_in_dn
-            
+
             # Get the list of LDAP attribute names from the table model's header map
             attributes_to_fetch = [
                 self.header_map[key]
                 for key in self.get_header_keys()
                 if key in self.header_map
             ]
-            
+
             list_data = get_all_objects_in_dn(self._samba_conn, self._current_dn, attributes=attributes_to_fetch)
             self.setModelData(list_data, advanced_view=self._advanced_view)
             self.sort(0, Qt.AscendingOrder)
-            
+
             self.logger.debug(f"Refreshed data for DN: {self._current_dn}, loaded {len(list_data)} objects")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to refresh data for DN '{self._current_dn}': {e}")
             return False
@@ -490,13 +490,13 @@ class ADListModel(QAbstractTableModel):
     def mimeData(self, indexes):
         from PyQt5.QtCore import QMimeData
         mime_data = QMimeData()
-        
+
         # Get unique rows (in case multiple columns are selected)
         rows = set()
         for index in indexes:
             if index.isValid():
                 rows.add(index.row())
-        
+
         # Get DNs of dragged objects
         dns = []
         for row in rows:
@@ -505,11 +505,11 @@ class ADListModel(QAbstractTableModel):
                 dn = obj_data.get('distinguishedName')
                 if dn:
                     dns.append(dn)
-        
+
         # Store DNs as MIME data
         if dns:
             mime_data.setData('application/x-saduc-object-dn', '\n'.join(dns).encode('utf-8'))
             # Also set text data for debugging
             mime_data.setText('\n'.join(dns))
-        
+
         return mime_data

@@ -113,7 +113,7 @@ class SADUCMainWindow(QMainWindow):
 
         self.setWindowTitle(self.i18n.get_string("main.window_title"))
         self.setGeometry(100, 100, 1200, 800)
-        
+
         # Set window icon
         from icon_utils import set_window_icon
         set_window_icon(self, use_search_icon=False)
@@ -165,11 +165,11 @@ class SADUCMainWindow(QMainWindow):
         self.logger.debug("SADUCMainWindow: 'Action' menu created.")
 
         viewMenu = menuBar.addMenu(self.i18n.get_string("menu.view"))
-        
+
         addRemoveColumnsAction = QAction(self.i18n.get_string("view_menu.add_remove_columns"), self)
         addRemoveColumnsAction.triggered.connect(partial(actions.on_view_add_remove_columns_action_triggered, self))
         viewMenu.addAction(addRemoveColumnsAction)
-        
+
         viewMenu.addSeparator()
 
         viewModeGroup = QActionGroup(self)
@@ -200,7 +200,7 @@ class SADUCMainWindow(QMainWindow):
         self.objectsAsContainersAction.setStatusTip(self.i18n.get_string("menu.view.objects_as_containers.status_tip"))
         self.objectsAsContainersAction.triggered.connect(partial(actions.on_view_objects_as_containers_toggled, self))
         viewMenu.addAction(self.objectsAsContainersAction)
-        
+
         self.advancedFeaturesAction = QAction(self.i18n.get_string("menu.view.advanced"), self, checkable=True)
         self.advancedFeaturesAction.setStatusTip(self.i18n.get_string("menu.view.advanced.status_tip"))
         self.advancedFeaturesAction.triggered.connect(partial(actions.on_advanced_features_toggled, self))
@@ -247,7 +247,7 @@ class SADUCMainWindow(QMainWindow):
         self.treePane.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.treePane.setContextMenuPolicy(Qt.CustomContextMenu)
         self.treePane.customContextMenuRequested.connect(self.tree_menu_manager.on_tree_context_menu)
-        
+
         # Enable drag and drop for tree view (drop target)
         self.treePane.setAcceptDrops(True)
         self.treePane.setDropIndicatorShown(True)
@@ -265,29 +265,29 @@ class SADUCMainWindow(QMainWindow):
         self.listPane.setContextMenuPolicy(Qt.CustomContextMenu)
         self.listPane.customContextMenuRequested.connect(self.list_menu_manager.on_list_context_menu)
         self.listPane.doubleClicked.connect(partial(actions.on_list_item_double_clicked, self))
-        
+
         # Enable inline editing on F2 key or manual trigger
         self.listPane.setEditTriggers(QAbstractItemView.EditKeyPressed)
-        
+
         # Create a custom delegate to ensure text selection on edit
         from PyQt5.QtWidgets import QStyledItemDelegate, QLineEdit
-        
+
         class SelectAllDelegate(QStyledItemDelegate):
             def createEditor(self, parent, option, index):
                 editor = QLineEdit(parent)
                 return editor
-            
+
             def setEditorData(self, editor, index):
                 value = index.model().data(index, Qt.EditRole)
                 editor.setText(str(value) if value else "")
                 editor.selectAll()  # Select all text when editing starts
-            
+
             def setModelData(self, editor, model, index):
                 model.setData(index, editor.text(), Qt.EditRole)
-        
+
         # Apply the delegate to the name column only
         self.listPane.setItemDelegateForColumn(0, SelectAllDelegate())
-        
+
         # Enable drag and drop for list view (drag source)
         self.listPane.setDragEnabled(True)
         self.listPane.setDragDropMode(QAbstractItemView.DragOnly)
@@ -301,7 +301,7 @@ class SADUCMainWindow(QMainWindow):
         self.iconView.setContextMenuPolicy(Qt.CustomContextMenu)
         self.iconView.customContextMenuRequested.connect(self.list_menu_manager.on_list_context_menu)
         self.iconView.doubleClicked.connect(partial(actions.on_list_item_double_clicked, self))
-        
+
         # Enable drag and drop for icon view (drag source)
         self.iconView.setDragEnabled(True)
         self.iconView.setDragDropMode(QAbstractItemView.DragOnly)
@@ -487,7 +487,7 @@ class SADUCMainWindow(QMainWindow):
 
         tree_item = index.internalPointer()
         obj_classes = tree_item.object_class() if isinstance(tree_item.object_class(), list) else [tree_item.object_class()]
-        
+
         # Update the Action menu based on the selected container
         self._update_action_menu(tree_item)
 
@@ -505,7 +505,7 @@ class SADUCMainWindow(QMainWindow):
             self._clear_layout(self.itemActionLayout)
             self.statusBar().showMessage("Select a saved query to execute it.")
             return
-        
+
         if 'savedQuery' in obj_classes:
             self.logger.info(f"Saved query item clicked: {tree_item.data()}")
             self._execute_saved_query_from_tree(tree_item)
@@ -602,10 +602,10 @@ class SADUCMainWindow(QMainWindow):
             action_map = {
                 "action_pane.menu.delete_group": None
             }
-        
+
         if action_map:
             self.itemActionLayout.addLayout(self._create_action_section(name, action_map))
-    
+
     def _open_saved_searches_dialog(self):
         """Open the saved searches dialog."""
         try:
@@ -615,78 +615,78 @@ class SADUCMainWindow(QMainWindow):
         except Exception as e:
             self.logger.error(f"Failed to open saved searches dialog: {e}")
             QMessageBox.critical(self, "Error", f"Failed to open saved searches dialog: {e}")
-    
+
     def _execute_saved_search(self, search_data):
         """Execute a saved search from the saved searches dialog."""
         try:
             from find_dialog import FindObjectsDialog
-            
+
             # Create a find dialog and populate it with the search data
             find_dialog = FindObjectsDialog(self.samba_conn, self.currentContainerDN or "", self)
-            
+
             # TODO: Set the search parameters in the find dialog
             # This would require extending FindObjectsDialog to accept search data
             find_dialog.show()
-            
+
             self.logger.info(f"Executing saved search: {search_data.get('name', 'Unknown')}")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to execute saved search: {e}")
             QMessageBox.critical(self, "Error", f"Failed to execute saved search: {e}")
-    
+
     def _execute_saved_query_from_tree(self, tree_item):
         """Execute a saved query directly from tree selection."""
         try:
             # Extract search name from the DN
             search_name = tree_item.data()
-            
+
             # Load the search data
             search_data = config_manager.load_search(search_name)
             if not search_data:
                 QMessageBox.warning(self, "Error", f"Could not load saved search '{search_name}'.")
                 return
-            
+
             # Execute the search and display results in the main list
             self._execute_search_in_main_list(search_data)
-            
+
             # Update status bar
             self.statusBar().showMessage(f"Executed saved query: {search_name}")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to execute saved query from tree: {e}")
             QMessageBox.critical(self, "Error", f"Failed to execute saved query: {e}")
-    
+
     def _execute_search_in_main_list(self, search_data):
         """Execute a search and display results in the main object list."""
         try:
             from samba_backend import get_paged_results
             import ldap
-            
+
             # Extract search parameters
             ldap_filter = search_data.get('filter', '(objectClass=*)')
             search_base = search_data.get('searchBase', 'auto')
             attributes = search_data.get('attributes', ['cn', 'displayName', 'description', 'distinguishedName', 'objectClass'])
-            
+
             # Ensure objectClass is always included for proper type detection
             if 'objectClass' not in attributes:
                 attributes.append('objectClass')
-            
+
             # Use current domain base if search_base is 'auto'
             if search_base == 'auto':
                 from samba_backend import get_base_dn
                 search_base = get_base_dn(self.samba_conn)
-            
+
             self.logger.info(f"Executing search: filter='{ldap_filter}', base='{search_base}'")
-            
+
             # Perform the search
             results = get_paged_results(self.samba_conn, search_base, ldap.SCOPE_SUBTREE, ldap_filter, attributes)
-            
+
             # Process results for display
             objects = []
             for dn, attrs in results:
                 if dn is None:
                     continue
-                    
+
                 obj = {'dn': dn}
                 for attr, values in attrs.items():
                     if isinstance(values, list) and values:
@@ -703,28 +703,28 @@ class SADUCMainWindow(QMainWindow):
                         obj[attr] = decoded_values[0] if len(decoded_values) == 1 else decoded_values
                     elif values:
                         obj[attr] = values
-                
+
                 # Add proper name field that ADListModel expects
                 obj['name'] = obj.get('cn', obj.get('displayName', obj.get('sAMAccountName', 'Unknown')))
-                
+
                 # Ensure objectClass is a list for ADListModel._get_object_type()
                 object_classes = obj.get('objectClass', [])
                 if isinstance(object_classes, str):
                     obj['objectClass'] = [object_classes]
                 elif not isinstance(object_classes, list):
                     obj['objectClass'] = []
-                
-                
+
+
                 objects.append(obj)
-            
+
             # Update the table model with search results
             self.tableModel.setModelData(objects)
             self.logger.info(f"Search completed: found {len(objects)} objects")
-            
+
             # Clear action panes since we're showing search results
             self._clear_layout(self.listActionLayout)
             self._clear_layout(self.itemActionLayout)
-            
+
         except Exception as e:
             self.logger.error(f"Failed to execute search in main list: {e}")
             QMessageBox.critical(self, "Error", f"Search failed: {e}")
@@ -733,7 +733,7 @@ class SADUCMainWindow(QMainWindow):
         """Update the Action menu to match the current container context."""
         # Clear current Action menu
         self.actionMenu.clear()
-        
+
         if not tree_item:
             # Get currently selected tree item
             current_index = self.treePane.currentIndex()
@@ -742,14 +742,14 @@ class SADUCMainWindow(QMainWindow):
             tree_item = current_index.internalPointer()
             if not tree_item:
                 return
-        
+
         current_dn = tree_item.dn()
         obj_classes = tree_item.object_class() if isinstance(tree_item.object_class(), list) else [tree_item.object_class()]
-        
+
         # Import actions here to avoid circular imports
         import main_window_actions as actions
         from functools import partial
-        
+
         # Build the same menu as the context menu for this container type
         if 'saducRoot' in obj_classes:
             self._populate_saduc_root_action_menu(current_dn)
@@ -763,117 +763,117 @@ class SADUCMainWindow(QMainWindow):
             self._populate_ou_action_menu(current_dn)
         elif 'container' in obj_classes or 'builtinDomain' in obj_classes:
             self._populate_container_action_menu(current_dn)
-    
+
     def _populate_saduc_root_action_menu(self, dn):
         """Populate Action menu for SADUC root."""
         import main_window_actions as actions
         from functools import partial
-        
+
         self.actionMenu.addAction(self.i18n.get_string("context_menu.change_domain"), partial(actions.on_change_domain_action_triggered, self))
         self.actionMenu.addAction(self.i18n.get_string("action_pane.menu.change_dc"), partial(actions.on_change_dc_action_triggered, self))
         self.actionMenu.addSeparator()
         self.actionMenu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self))
         self.actionMenu.addAction(self.i18n.get_string("context_menu.export_list"), partial(actions.on_export_list_action_triggered, self))
-    
+
     def _populate_saved_queries_action_menu(self, dn):
         """Populate Action menu for saved queries root."""
         import main_window_actions as actions
         from functools import partial
-        
+
         self.actionMenu.addAction(self.i18n.get_string("context_menu.import_query"), partial(actions.on_import_query_definition_action_triggered, self))
         self.actionMenu.addSeparator()
-        
+
         new_menu = self.actionMenu.addMenu(self.i18n.get_string("context_menu.new"))
         new_menu.addAction(self.i18n.get_string("context_menu.new_query"), partial(actions.on_new_query_action_triggered, self))
         new_menu.addAction(self.i18n.get_string("context_menu.new_folder"), partial(actions.on_new_folder_action_triggered, self))
-        
+
         self.actionMenu.addSeparator()
         self.actionMenu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self))
-    
+
     def _populate_saved_queries_folder_action_menu(self, dn):
         """Populate Action menu for saved queries folder."""
         import main_window_actions as actions
         from functools import partial
-        
+
         self.actionMenu.addAction(self.i18n.get_string("context_menu.import_query"), partial(actions.on_import_query_definition_action_triggered, self))
         self.actionMenu.addSeparator()
-        
+
         new_menu = self.actionMenu.addMenu(self.i18n.get_string("context_menu.new"))
         new_menu.addAction(self.i18n.get_string("context_menu.new_query"), partial(actions.on_new_query_action_triggered, self))
         new_menu.addAction(self.i18n.get_string("context_menu.new_folder"), partial(actions.on_new_folder_action_triggered, self))
-        
+
         self.actionMenu.addSeparator()
         self.actionMenu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self))
-    
+
     def _populate_domain_action_menu(self, dn):
         """Populate Action menu for domain container."""
         import main_window_actions as actions
         from functools import partial
         from PyQt5.QtWidgets import QAction
-        
+
         self.actionMenu.addAction(self.i18n.get_string("context_menu.delegate_control"), partial(actions.on_delegate_control_action_triggered, self))
-        
+
         find_action = QAction(self.i18n.get_string("action_pane.menu.find_user"), self)
         find_action.triggered.connect(lambda: actions.on_find_user_action_triggered(self, dn))
         self.actionMenu.addAction(find_action)
-        
+
         self.actionMenu.addAction(self.i18n.get_string("context_menu.change_domain"), partial(actions.on_change_domain_action_triggered, self))
         self.actionMenu.addAction(self.i18n.get_string("action_pane.menu.change_dc"), partial(actions.on_change_dc_action_triggered, self))
         self.actionMenu.addAction(self.i18n.get_string("context_menu.raise_domain_level"), partial(actions.on_raise_domain_functional_level_action_triggered, self))
         self.actionMenu.addAction(self.i18n.get_string("context_menu.operations_masters"), partial(actions.on_operations_masters_action_triggered, self))
         self.actionMenu.addSeparator()
-        
+
         new_menu = self.actionMenu.addMenu(self.i18n.get_string("context_menu.new"))
         self._populate_new_action_menu(new_menu)
-        
+
         self.actionMenu.addSeparator()
         self.actionMenu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self))
-    
+
     def _populate_ou_action_menu(self, dn):
         """Populate Action menu for OU container."""
         import main_window_actions as actions
         from functools import partial
         from PyQt5.QtWidgets import QAction
-        
+
         self.actionMenu.addAction(self.i18n.get_string("context_menu.delegate_control"), partial(actions.on_delegate_control_action_triggered, self))
         self.actionMenu.addAction(self.i18n.get_string("context_menu.move"), partial(actions.on_move_action_triggered, self))
-        
+
         find_action = QAction(self.i18n.get_string("action_pane.menu.find_user"), self)
         find_action.triggered.connect(lambda: actions.on_find_user_action_triggered(self, dn))
         self.actionMenu.addAction(find_action)
-        
+
         self.actionMenu.addSeparator()
         new_menu = self.actionMenu.addMenu(self.i18n.get_string("context_menu.new"))
         self._populate_new_action_menu(new_menu)
-        
+
         self.actionMenu.addSeparator()
         self.actionMenu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self))
-    
+
     def _populate_container_action_menu(self, dn):
         """Populate Action menu for regular container."""
         import main_window_actions as actions
         from functools import partial
         from PyQt5.QtWidgets import QAction
-        
+
         self.actionMenu.addAction(self.i18n.get_string("context_menu.delegate_control"), partial(actions.on_delegate_control_action_triggered, self))
-        
+
         find_action = QAction(self.i18n.get_string("action_pane.menu.find_user"), self)
         find_action.triggered.connect(lambda: actions.on_find_user_action_triggered(self, dn))
         self.actionMenu.addAction(find_action)
-        
+
         self.actionMenu.addSeparator()
         new_menu = self.actionMenu.addMenu(self.i18n.get_string("context_menu.new"))
         self._populate_new_action_menu(new_menu, is_container=True)
-        
+
         self.actionMenu.addSeparator()
         self.actionMenu.addAction(self.i18n.get_string("context_menu.refresh"), partial(actions.on_refresh_action_triggered, self))
-    
+
     def _populate_new_action_menu(self, new_menu, is_container=False):
         """Populate the New submenu in Action menu."""
         import main_window_actions as actions
         from functools import partial
         from samba_backend import get_schema_structural_classes
-        
+
         # Add standard object types
         new_menu.addAction(self.i18n.get_string("action_pane.menu.new_computer"), partial(actions.on_new_computer_action_triggered, self))
         new_menu.addAction(self.i18n.get_string("context_menu.new_contact"), partial(actions.on_new_contact_action_triggered, self))
@@ -884,7 +884,7 @@ class SADUCMainWindow(QMainWindow):
         new_menu.addAction(self.i18n.get_string("action_pane.menu.new_printer"), partial(actions.on_new_printer_action_triggered, self))
         new_menu.addAction(self.i18n.get_string("context_menu.new_shared_folder"), partial(actions.on_new_shared_folder_action_triggered, self))
         new_menu.addAction(self.i18n.get_string("action_pane.menu.new_user"), partial(actions.on_new_user_action_triggered, self))
-        
+
         # Add dynamic schema-extended objects
         try:
             if hasattr(self, 'samba_conn') and self.samba_conn:
@@ -909,7 +909,7 @@ class SADUCMainWindow(QMainWindow):
     def _on_drag_drop_completed(self, success_count, total_count, message):
         """Handle drag and drop completion signal from tree model."""
         from PyQt5.QtWidgets import QMessageBox
-        
+
         if success_count == total_count and success_count > 0:
             # All successful
             QMessageBox.information(self, self.i18n.get_string("dialog.common.success.title"), message)
@@ -919,41 +919,41 @@ class SADUCMainWindow(QMainWindow):
         else:
             # All failed
             QMessageBox.critical(self, self.i18n.get_string("dialog.common.error.title"), message)
-        
+
         # Refresh the current container to reflect changes
         self.refresh_current_container()
-    
+
     def reconnect_to_dc(self, new_dc):
         """Reconnect to a different domain controller."""
         from samba_backend import get_ldap_conn_with_server
-        
+
         self.logger.info(f"Attempting to reconnect to domain controller: {new_dc}")
-        
+
         try:
             # Close existing connection
             if self.samba_conn:
                 self.samba_conn.unbind()
-            
+
             # Establish new connection to specified DC
             new_samba_conn, actual_server = get_ldap_conn_with_server(new_dc)
-            
+
             if new_samba_conn:
                 self.samba_conn = new_samba_conn
                 self.connected_server = actual_server
-                
+
                 # Update window title to reflect new connection
                 self.setWindowTitle(self.i18n.get_string("main.window_title") + f" - {actual_server}")
-                
+
                 # Refresh all data with new connection
                 self._setup_tree_view_model()
                 self.treePane.expandAll() if self.should_auto_expand else None
-                
+
                 self.logger.info(f"Successfully reconnected to: {actual_server}")
                 return True
             else:
                 self.logger.error(f"Failed to establish connection to: {new_dc}")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"Error reconnecting to DC {new_dc}: {str(e)}")
             return False

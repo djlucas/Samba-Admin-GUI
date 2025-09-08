@@ -147,7 +147,7 @@ class ContainerPropertiesDialog(QDialog):
             self._add_ou_general_fields()
             self.tab_widget.addTab(ManagedByTab(self.samba_conn, props), self.i18n.get_string("container_properties.tab.managed_by"))
             self.tab_widget.addTab(ComPlusTab(), self.i18n.get_string("container_properties.tab.com_plus"))
-            
+
             # Populate OU-specific fields
             self.street_edit.setText(props.get('street', [''])[0])
             self.city_edit.setText(props.get('l', [''])[0])
@@ -190,7 +190,7 @@ class ContainerPropertiesDialog(QDialog):
         sender = self.sender()
         if sender in self.widget_to_attribute_map:
             attr_name = self.widget_to_attribute_map[sender]
-            
+
             new_value = ''
             if isinstance(sender, (QLineEdit)):
                 new_value = sender.text()
@@ -206,29 +206,29 @@ class ContainerPropertiesDialog(QDialog):
             else:
                 self.logger.debug(f"Attribute '{attr_name}' set to '{new_value}'")
                 self.editable_container_props[attr_name] = [new_value]
-            
+
             # Check for changes and enable/disable Apply button
             self._check_for_changes()
-    
+
     def _check_for_changes(self):
         """Check if there are any changes and enable/disable the Apply button accordingly."""
         has_changes = False
-        
+
         # Check if editable properties differ from original properties
         for attr_name, new_values in self.editable_container_props.items():
             old_values = self.container_props.get(attr_name, [])
             if old_values != new_values:
                 has_changes = True
                 break
-        
+
         # Enable/disable the Apply button based on changes
         self.button_box.button(QDialogButtonBox.Apply).setEnabled(has_changes)
-    
+
 
     def apply_changes(self):
         """Apply the changes made in the dialog to Active Directory."""
         self.logger.info("Applying changes for container to Active Directory")
-        
+
         # Build LDAP modifications
         modifications = []
         READ_ONLY_ATTRIBUTES = {
@@ -236,27 +236,27 @@ class ContainerPropertiesDialog(QDialog):
             'uSNCreated', 'uSNChanged', 'systemFlags', 'instanceType', 
             'objectClass', 'objectCategory', 'distinguishedName'
         }
-        
+
         # Required attributes for containers/OUs - basic set
         REQUIRED_ATTRIBUTES = {'cn', 'objectClass', 'objectCategory'}
-        
+
         # Validate required attributes first
         validation_errors = []
         for attr_name, new_values in self.editable_container_props.items():
             old_values = self.container_props.get(attr_name, [])
             if old_values == new_values:
                 continue
-                
+
             # Check for attempts to modify read-only attributes
             if attr_name in READ_ONLY_ATTRIBUTES:
                 validation_errors.append(f"'{attr_name}' is a system attribute and cannot be modified")
                 continue
-                
+
             # Check required attributes are not empty
             if attr_name in REQUIRED_ATTRIBUTES:
                 if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
                     validation_errors.append(f"'{attr_name}' is required and cannot be empty")
-        
+
         if validation_errors:
             error_msg = "The following errors must be corrected before saving:\n\n" + "\n".join(validation_errors)
             QMessageBox.warning(
@@ -265,15 +265,15 @@ class ContainerPropertiesDialog(QDialog):
                 error_msg
             )
             return
-        
+
         # Build modifications for valid changes
         for attr_name, new_values in self.editable_container_props.items():
             old_values = self.container_props.get(attr_name, [])
-            
+
             # Skip if values haven't changed or read-only
             if old_values == new_values or attr_name in READ_ONLY_ATTRIBUTES:
                 continue
-            
+
             try:
                 # Handle empty values (delete attribute)
                 if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
@@ -284,21 +284,21 @@ class ContainerPropertiesDialog(QDialog):
                     for value in new_values:
                         if value.strip():
                             encoded_values.append(value.encode('utf-8'))
-                    
+
                     if encoded_values:
                         modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
                     else:
                         modifications.append((ldap.MOD_DELETE, attr_name, None))
-                        
+
             except Exception as e:
                 self.logger.error(f"Error preparing modification for {attr_name}: {e}")
                 continue
-        
+
         # Check for ObjectTab protection changes
         protection_changes_made = False
         protection_success_messages = []
         protection_error_messages = []
-        
+
         if hasattr(self, 'object_tab') and self.object_tab:
             prot_success, prot_message = self.object_tab.apply_protection_changes()
             if prot_message:  # prot_message is None if no change was needed
@@ -307,23 +307,23 @@ class ContainerPropertiesDialog(QDialog):
                     protection_success_messages.append(prot_message)
                 else:
                     protection_error_messages.append(prot_message)
-        
+
         # Apply LDAP attribute modifications if any exist
         ldap_success = True
         if modifications:
             ldap_success, message = update_object_attributes(self.samba_conn, self.container_dn, modifications)
-            
+
             if ldap_success:
                 # Reload data from Active Directory to get fresh state
                 self._load_container_data()
-                
+
                 # Disable the Apply button since changes are now saved
                 self.button_box.button(QDialogButtonBox.Apply).setEnabled(False)
-                
+
                 self.logger.info(f"Successfully applied {len(modifications)} LDAP changes to container {self.container_dn}")
             else:
                 self.logger.error(f"Failed to apply LDAP changes to container {self.container_dn}: {message}")
-        
+
         # Show results to user
         if protection_error_messages or not ldap_success:
             # Show errors
@@ -332,7 +332,7 @@ class ContainerPropertiesDialog(QDialog):
                 error_parts.append(f"LDAP changes failed: {message}")
             if protection_error_messages:
                 error_parts.append("Protection changes: " + "; ".join(protection_error_messages))
-                
+
             QMessageBox.critical(
                 self, 
                 self.i18n.get_string("dialog.common.error.title"),
@@ -345,7 +345,7 @@ class ContainerPropertiesDialog(QDialog):
                 success_parts.append(f"Applied {len(modifications)} attribute changes")
             if protection_success_messages:
                 success_parts.append("; ".join(protection_success_messages))
-                
+
             QMessageBox.information(
                 self, 
                 self.i18n.get_string("dialog.common.success.title"),
@@ -355,7 +355,7 @@ class ContainerPropertiesDialog(QDialog):
         else:
             # No dialog shown for "no changes" case - just silently complete
             pass
-    
+
     def _accept_dialog(self):
         """Handle OK button click - only apply changes if there are any."""
         # Check if there are any changes
@@ -365,14 +365,14 @@ class ContainerPropertiesDialog(QDialog):
             if old_values != new_values:
                 has_changes = True
                 break
-        
+
         # Only apply changes if there are any
         if has_changes:
             self.apply_changes()
-        
+
         # Close the dialog
         self.accept()
-    
+
     def accept(self):
         """Override accept to close the dialog."""
         super().accept()

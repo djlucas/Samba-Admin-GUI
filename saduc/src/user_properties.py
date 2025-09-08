@@ -90,7 +90,7 @@ class UserPropertiesDialog(QDialog):
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
         self.button_box.button(QDialogButtonBox.Apply).clicked.connect(self.apply_changes)
-        
+
         # Initially disable Apply button until changes are made
         self.apply_button = self.button_box.button(QDialogButtonBox.Apply)
         self.apply_button.setEnabled(False)
@@ -185,7 +185,7 @@ class UserPropertiesDialog(QDialog):
         layout.addWidget(contact_group)
         layout.addStretch()
 
-    
+
 
     def _create_account_tab(self):
         """Create the Account tab"""
@@ -211,7 +211,7 @@ class UserPropertiesDialog(QDialog):
         logon_layout.addLayout(upn_layout)
         logon_layout.addSpacing(10)
         logon_layout.addWidget(QLabel(self.i18n.get_string("user_properties.label.user_logon_name_pre2000")))
-        
+
         pre2k_layout = QHBoxLayout()
         netbios_name = get_netbios_name(self.samba_conn)
         netbios_label = QLineEdit(f"{netbios_name}\\")
@@ -341,7 +341,7 @@ class UserPropertiesDialog(QDialog):
         layout.addWidget(home_group)
         layout.addStretch()
 
-    
+
 
     def _create_com_plus_tab(self):
         """Create the COM+ tab"""
@@ -370,7 +370,7 @@ class UserPropertiesDialog(QDialog):
         base_dn = get_base_dn(self.samba_conn)
         if not base_dn:
             return dn_string
-            
+
         domain_parts = [p.split('=')[1] for p in base_dn.split(',') if p.lower().startswith('dc=')]
         domain = ".".join(domain_parts)
 
@@ -435,7 +435,7 @@ class UserPropertiesDialog(QDialog):
         base_dn = get_base_dn(self.samba_conn)
         if not base_dn:
             return dn_string
-            
+
         domain_parts = [p.split('=')[1] for p in base_dn.split(',') if p.lower().startswith('dc=')]
         primary_domain = ".".join(domain_parts)
         all_suffixes = [primary_domain]
@@ -460,11 +460,11 @@ class UserPropertiesDialog(QDialog):
 
         uac = int(self.user_props.get('userAccountControl', ['0'])[0])
         self.account_disabled_check.setChecked(bool(uac & UAC_ACCOUNT_DISABLED))
-        
+
         # "User must change password at next logon" is determined by pwdLastSet=0, not UAC flag
         pwd_last_set = self.user_props.get('pwdLastSet', ['1'])[0]
         must_change_password = (pwd_last_set == '0')
-        
+
         self.user_must_change_password_check.setChecked(must_change_password)
         self.password_never_expires_check.setChecked(bool(uac & UAC_DONT_EXPIRE_PASSWORD))
         self.reversible_encryption_check.setChecked(bool(uac & UAC_ENCRYPTED_TEXT_PASSWORD_ALLOWED))
@@ -562,7 +562,7 @@ class UserPropertiesDialog(QDialog):
         sender = self.sender()
         if sender in self.widget_to_attribute_map:
             attr_name = self.widget_to_attribute_map[sender]
-            
+
             new_value = ''
             if isinstance(sender, (QLineEdit)):
                 new_value = sender.text()
@@ -588,7 +588,7 @@ class UserPropertiesDialog(QDialog):
     def _select_manager(self):
         """Open manager selection dialog."""
         from search_dialogs import UserPickerDialog
-        
+
         dialog = UserPickerDialog(self.samba_conn, self)
         if dialog.exec_() == QDialog.Accepted:
             selected_user = dialog.get_selected_object()
@@ -596,18 +596,18 @@ class UserPropertiesDialog(QDialog):
                 # Update the manager field
                 manager_dn = selected_user['dn']
                 display_name = selected_user['display_name']
-                
+
                 self.manager_edit.setText(display_name)
-                
+
                 # Update the local properties
                 self.editable_user_props['manager'] = [manager_dn]
-                
+
                 self.logger.info(f"Selected manager: {display_name} ({manager_dn})")
 
     def _validate_changes(self):
         """Validate all changes before applying to Active Directory."""
         errors = []
-        
+
         # Define read-only attributes that should never be modified
         READ_ONLY_ATTRIBUTES = {
             'objectGUID', 'objectSid', 'sAMAccountType',
@@ -618,27 +618,27 @@ class UserPropertiesDialog(QDialog):
             'primaryGroupID', 'primaryGroupToken', 'nextRid', 'revision',
             'distinguishedName', 'canonicalName', 'parentGUID', 'masteredBy'
         }
-        
+
         # Required attributes that cannot be empty
         REQUIRED_ATTRIBUTES = {'cn', 'objectCategory', 'objectClass', 'sAMAccountName'}
-        
+
         for attr_name, new_values in self.editable_user_props.items():
             # Skip unchanged attributes
             old_values = self.user_props.get(attr_name, [])
             if old_values == new_values:
                 continue
-            
+
             # Check for attempts to modify read-only attributes
             if attr_name in READ_ONLY_ATTRIBUTES:
                 errors.append(self.i18n.get_text("user_properties.validation.readonly_attribute", attr_name))
                 continue
-            
+
             # Check required attributes are not empty
             if attr_name in REQUIRED_ATTRIBUTES:
                 if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
                     errors.append(self.i18n.get_text("user_properties.validation.required_attribute", attr_name))
                     continue
-            
+
             # Email validation with improved requirements
             if attr_name == 'mail' and new_values and new_values[0]:
                 email = new_values[0].strip()
@@ -656,26 +656,26 @@ class UserPropertiesDialog(QDialog):
                             errors.append(self.i18n.get_text("user_properties.validation.email_after_at", email))
                 elif email:  # Non-empty but no @
                     errors.append(self.i18n.get_text("user_properties.validation.email_invalid", email))
-            
+
             # sAMAccountName validation
             if attr_name == 'sAMAccountName' and new_values and new_values[0]:
                 sam_name = new_values[0].strip()
                 if not sam_name.replace('_', '').replace('-', '').isalnum():
                     errors.append(self.i18n.get_text("user_properties.validation.sam_invalid", sam_name))
-        
+
         return errors
-    
+
     def _build_modifications(self):
         """Build LDAP modification list from validated changes."""
         modifications = []
-        
+
         for attr_name, new_values in self.editable_user_props.items():
             old_values = self.user_props.get(attr_name, [])
-            
+
             # Skip if values haven't changed
             if old_values == new_values:
                 continue
-            
+
             try:
                 # Handle empty values (delete attribute)
                 if not new_values or (len(new_values) == 1 and not new_values[0].strip()):
@@ -686,18 +686,18 @@ class UserPropertiesDialog(QDialog):
                     for value in new_values:
                         if value.strip():  # Only add non-empty values
                             encoded_values.append(value.encode('utf-8'))
-                    
+
                     if encoded_values:
                         modifications.append((ldap.MOD_REPLACE, attr_name, encoded_values))
                     else:
                         modifications.append((ldap.MOD_DELETE, attr_name, None))
-                        
+
             except Exception as e:
                 self.logger.error(f"Error preparing modification for {attr_name}: {e}")
                 continue
-        
+
         return modifications
-    
+
     def _reset_invalid_changes(self):
         """Reset editable properties back to original values."""
         self.editable_user_props = copy.deepcopy(self.user_props)
@@ -707,7 +707,7 @@ class UserPropertiesDialog(QDialog):
     def apply_changes(self):
         """Apply the changes made in the dialog to Active Directory."""
         self.logger.info("Applying changes for user to Active Directory")
-        
+
         # First, validate all changes
         validation_errors = self._validate_changes()
         if validation_errors:
@@ -720,24 +720,24 @@ class UserPropertiesDialog(QDialog):
             # Reset invalid changes back to original values
             self._reset_invalid_changes()
             return
-        
+
         # Build list of LDAP modifications for valid changes
         modifications = self._build_modifications()
-        
+
         # Apply modifications if any exist
         if modifications:
             success, message = update_object_attributes(self.samba_conn, self.user_dn, modifications)
-            
+
             if success:
                 # Update local properties with changes
                 self.user_props.update(self.editable_user_props)
-                
+
                 QMessageBox.information(
                     self, 
                     self.i18n.get_string("dialog.common.success.title"),
                     self.i18n.get_text("user_properties.apply.success", str(len(modifications)))
                 )
-                
+
                 self.logger.info(f"Successfully applied {len(modifications)} changes to user {self.user_dn}")
                 # Apply Member Of tab changes if successful
                 self._apply_member_of_changes()
@@ -758,11 +758,11 @@ class UserPropertiesDialog(QDialog):
             # Disable Apply button if no changes were made
             if not member_of_changes_applied:
                 self.apply_button.setEnabled(False)
-    
+
     def _apply_member_of_changes(self):
         """Apply Member Of tab changes if any exist. Returns True if changes were applied."""
         changes_applied = False
-        
+
         # Find the Member Of tab and apply its changes
         for i in range(self.tab_widget.count()):
             widget = self.tab_widget.widget(i)
@@ -771,7 +771,7 @@ class UserPropertiesDialog(QDialog):
                 if widget.pending_additions or widget.pending_removals:
                     errors = widget.apply_changes()
                     changes_applied = True
-                    
+
                     if errors:
                         # Show errors if any occurred
                         error_msg = "Some group membership changes failed:\n\n" + "\n".join(errors)
@@ -784,9 +784,9 @@ class UserPropertiesDialog(QDialog):
                         self._refresh_user_properties()
                         # Disable Apply button since changes have been applied
                         self.apply_button.setEnabled(False)
-        
+
         return changes_applied
-    
+
     def _refresh_user_properties(self):
         """Refresh all user properties from the directory and update all tabs."""
         # Reload user data from directory
@@ -794,13 +794,13 @@ class UserPropertiesDialog(QDialog):
         if not self.user_props:
             self.logger.error(f"Could not refresh properties for user: {self.user_dn}")
             return
-        
+
         # Update editable props with fresh data
         self.editable_user_props = copy.deepcopy(self.user_props)
-        
+
         # Repopulate all tabs with fresh data
         self._populate_all_tabs()
-        
+
         # Find Member Of tabs and refresh them with fresh data
         for i in range(self.tab_widget.count()):
             widget = self.tab_widget.widget(i)
@@ -808,16 +808,16 @@ class UserPropertiesDialog(QDialog):
                 # Update the parent_props reference to fresh data and reload
                 widget.parent_props = self.user_props
                 widget._load_membership_data()
-    
+
     def _check_for_changes(self):
         """Check if there are any pending changes and update Apply button state."""
         has_changes = False
-        
+
         # Check for property modifications
         modifications = self._build_modifications()
         if modifications:
             has_changes = True
-        
+
         # Check for Member Of tab changes
         if not has_changes:
             for i in range(self.tab_widget.count()):
@@ -826,10 +826,10 @@ class UserPropertiesDialog(QDialog):
                     if widget.pending_additions or widget.pending_removals:
                         has_changes = True
                         break
-        
+
         # Enable/disable Apply button based on changes
         self.apply_button.setEnabled(has_changes)
-    
+
     def _connect_change_signals(self):
         """Connect all input widgets to check for changes."""
         # Define potential widget names and connect them if they exist
@@ -841,13 +841,13 @@ class UserPropertiesDialog(QDialog):
             'profile_path_edit', 'logon_script_edit', 'local_path_edit',
             'connect_path_edit'
         ]
-        
+
         for widget_name in text_widget_names:
             if hasattr(self, widget_name):
                 widget = getattr(self, widget_name)
                 if hasattr(widget, 'textChanged'):
                     widget.textChanged.connect(self._check_for_changes)
-        
+
         # Connect checkbox changes  
         checkbox_widget_names = [
             'user_must_change_password_check', 'user_cannot_change_password_check',
@@ -856,16 +856,16 @@ class UserPropertiesDialog(QDialog):
             'smartcard_required_check', 'account_trusted_for_delegation_check',
             'account_sensitive_check', 'use_des_encryption_check'
         ]
-        
+
         for widget_name in checkbox_widget_names:
             if hasattr(self, widget_name):
                 widget = getattr(self, widget_name)
                 if hasattr(widget, 'toggled'):
                     widget.toggled.connect(self._check_for_changes)
-        
+
         # Connect combo box changes
         combo_widget_names = ['domain_combo', 'drive_combo', 'partition_combo']
-        
+
         for widget_name in combo_widget_names:
             if hasattr(self, widget_name):
                 widget = getattr(self, widget_name)
@@ -873,12 +873,12 @@ class UserPropertiesDialog(QDialog):
                     widget.currentTextChanged.connect(self._check_for_changes)
                 elif hasattr(widget, 'currentIndexChanged'):
                     widget.currentIndexChanged.connect(self._check_for_changes)
-    
+
     def accept(self):
         """Override accept to apply changes before closing."""
         # Apply changes first
         self.apply_changes()
-        
+
         # Close the dialog
         super().accept()
 
@@ -908,7 +908,7 @@ class PublishedCertificatesTab(QWidget):
         ])
         self.certs_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.certs_table.verticalHeader().hide()
-        
+
         self.add_from_file_btn = QPushButton(self.i18n.get_string("published_certificates.button.add_from_file"))
         self.remove_btn = QPushButton(self.i18n.get_string("published_certificates.button.remove"))
         self.copy_to_btn = QPushButton(self.i18n.get_string("published_certificates.button.copy_to"))
@@ -917,7 +917,7 @@ class PublishedCertificatesTab(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(self.info_label)
         layout.addWidget(self.certs_table)
-        
+
         button_layout = QHBoxLayout()
         button_layout.addWidget(self.add_from_file_btn)
         button_layout.addWidget(self.remove_btn)
@@ -933,7 +933,7 @@ class PublishedCertificatesTab(QWidget):
             self.logger.warning("cryptography module not available - certificates cannot be parsed")
             self.info_label.setText("cryptography module required to display certificates")
             return
-            
+
         certs = get_user_certificates(self.samba_conn, self.user_dn)
         self.certs_table.setRowCount(0)
         for cert_data in certs:

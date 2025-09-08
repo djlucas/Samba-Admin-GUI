@@ -21,7 +21,7 @@ def get_search_icon():
 def _load_icon(filename, description):
     """Load an icon with fallback handling."""
     icon_path = os.path.join(os.path.dirname(__file__), 'res', 'icons', filename)
-    
+
     if os.path.exists(icon_path):
         try:
             icon = QIcon(icon_path)
@@ -34,7 +34,7 @@ def _load_icon(filename, description):
             logger.warning(f"Failed to load {description} from {icon_path}: {e}")
     else:
         logger.warning(f"{description} not found at {icon_path}")
-    
+
     # Return empty icon as fallback
     logger.debug(f"Using fallback (empty) icon for {description}")
     return QIcon()
@@ -46,11 +46,11 @@ def set_window_icon(window, use_search_icon=False):
             icon = get_search_icon()
         else:
             icon = get_saduc_icon()
-        
+
         if not icon.isNull():
             window.setWindowIcon(icon)
             return True
     except Exception as e:
         logger.error(f"Failed to set window icon: {e}")
-    
+
     return False

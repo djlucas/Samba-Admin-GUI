@@ -41,7 +41,7 @@ from acl_utils import check_protection_from_deletion
 
 class ObjectTab(QWidget):
     """A reusable Object tab for properties dialogs."""
-    
+
     def __init__(self, samba_conn, object_dn, parent_props, parent=None):
         super().__init__(parent)
         self.samba_conn = samba_conn
@@ -65,7 +65,7 @@ class ObjectTab(QWidget):
         self.protect_deletion_checkbox = QCheckBox(
             self.i18n.get_string("object_tab.checkbox.protect_from_deletion")
         )
-        
+
         # Connect the checkbox to track changes (not apply immediately)
         self.protect_deletion_checkbox.stateChanged.connect(self._on_protection_checkbox_changed)
 
@@ -97,7 +97,7 @@ class ObjectTab(QWidget):
         base_dn = get_base_dn(self.samba_conn)
         if not base_dn:
             return dn
-            
+
         domain_parts = [p.split('=')[1] for p in base_dn.split(',') if p.lower().startswith('dc=')]
         domain = ".".join(domain_parts)
         try:
@@ -174,7 +174,7 @@ class ObjectTab(QWidget):
             try:
                 import ldap
                 res = self.samba_conn.search_s(self.object_dn, ldap.SCOPE_BASE, '(objectClass=*)', ['nTSecurityDescriptor'])
-                
+
                 if res and 'nTSecurityDescriptor' in res[0][1]:
                     sd_data = res[0][1]['nTSecurityDescriptor'][0]
                     is_protected = check_protection_from_deletion(sd_data)
@@ -199,15 +199,15 @@ class ObjectTab(QWidget):
         protect = (state == 2)  # Qt.Checked = 2
         self.logger.debug(f"Protection checkbox changed for {self.object_dn}: {'enabled' if protect else 'disabled'}")
         # The change will be applied when the parent dialog applies all changes
-    
+
     def apply_protection_changes(self):
         """Apply protection changes if the checkbox state differs from current AD state.
-        
+
         Returns:
             tuple: (success: bool, message: str) - Success status and user-friendly message
         """
         from acl_utils import set_protection_from_deletion, check_protection_from_deletion
-        
+
         try:
             # Get current protection state from AD
             current_protected = False
@@ -218,15 +218,15 @@ class ObjectTab(QWidget):
                     current_protected = check_protection_from_deletion(sd_data)
             except Exception as e:
                 self.logger.warning(f"Could not check current protection state: {e}")
-                
+
             # Get desired state from checkbox
             desired_protected = self.protect_deletion_checkbox.isChecked()
-            
+
             # Apply change if needed
             if current_protected != desired_protected:
                 self.logger.info(f"Applying protection change for {self.object_dn}: {current_protected} -> {desired_protected}")
                 success = set_protection_from_deletion(self.samba_conn, self.object_dn, desired_protected)
-                
+
                 if success:
                     action = "enabled" if desired_protected else "disabled"
                     message = f"Protection from accidental deletion has been {action}."
@@ -239,7 +239,7 @@ class ObjectTab(QWidget):
                 # No change needed
                 self.logger.debug(f"No protection change needed for {self.object_dn}")
                 return True, None  # None means no change was made
-                
+
         except Exception as e:
             self.logger.error(f"Exception applying protection changes for {self.object_dn}: {e}")
             return False, f"Error changing protection: {str(e)}"
@@ -325,10 +325,10 @@ class SecurityTab(QWidget):
 
     def _on_principal_selected(self):
         selected_items = self.principals_list.selectedItems()
-        
+
         # Enable/disable Remove button based on selection
         self.remove_button.setEnabled(len(selected_items) > 0)
-        
+
         if not selected_items:
             self.permissions_group.setTitle(self.i18n.get_string("security_tab.groupbox.permissions").format(""))
             self.permissions_table.setRowCount(0)
@@ -386,10 +386,10 @@ class SecurityTab(QWidget):
     def _add_principal(self):
         """Add a new principal (user/group) to the security descriptor."""
         from search_dialogs import PrincipalPickerDialog
-        
+
         # Use the principal picker dialog to select users/groups
         dialog = PrincipalPickerDialog(self.samba_conn, self)
-        
+
         if dialog.exec_() == QDialog.Accepted:
             selected_object = dialog.get_selected_object()
             if not selected_object:
@@ -397,26 +397,26 @@ class SecurityTab(QWidget):
                     self.i18n.get_string("security_tab.add_principal.title"), 
                     self.i18n.get_string("security_tab.add_principal.select_prompt"))
                 return
-            
+
             principal_dn = selected_object.get('dn', '')
             principal_name = selected_object.get('name', selected_object.get('cn', [''])[0] if isinstance(selected_object.get('cn'), list) else selected_object.get('cn', ''))
-            
+
             if not principal_dn:
                 QMessageBox.warning(self, 
                     self.i18n.get_string("security_tab.add_principal.title"), 
                     self.i18n.get_string("security_tab.add_principal.no_info"))
                 return
-            
+
             # Add the principal to the ACL with Full Control permissions
             from acl_utils import add_principal_to_acl
-            
+
             success = add_principal_to_acl(
                 self.samba_conn, 
                 self.parent_props.object_dn, 
                 principal_dn, 
                 permissions_mask=0x001F01FF  # Full Control
             )
-            
+
             if success:
                 QMessageBox.information(
                     self, 
@@ -440,10 +440,10 @@ class SecurityTab(QWidget):
                 self.i18n.get_string("security_tab.remove_principal.title"), 
                 self.i18n.get_string("security_tab.remove_principal.select_prompt"))
             return
-        
+
         selected_item = selected_items[0]
         principal_name = selected_item.text()
-        
+
         reply = QMessageBox.question(
             self, 
             self.i18n.get_string("security_tab.remove_principal.title"), 
@@ -451,7 +451,7 @@ class SecurityTab(QWidget):
             self.i18n.get_string("security_tab.remove_principal.warning"),
             QMessageBox.Yes | QMessageBox.No
         )
-        
+
         if reply == QMessageBox.Yes:
             # Get the principal's SID from the selected item's data
             principal_sid = selected_item.data(Qt.UserRole)
@@ -460,16 +460,16 @@ class SecurityTab(QWidget):
                     self.i18n.get_string("security_tab.remove_principal.title"), 
                     self.i18n.get_string("security_tab.remove_principal.no_info"))
                 return
-            
+
             # Remove the principal from the ACL
             from acl_utils import remove_principal_from_acl_by_sid
-            
+
             success = remove_principal_from_acl_by_sid(
                 self.samba_conn, 
                 self.parent_props.object_dn, 
                 principal_sid
             )
-            
+
             if success:
                 QMessageBox.information(
                     self, 
@@ -596,72 +596,72 @@ class ManagedByTab(QWidget):
     def _change_manager(self):
         """Open manager selection dialog."""
         from search_dialogs import StandardSearchDialog
-        
+
         self.logger.info("Opening manager selection dialog")
         dialog = StandardSearchDialog(self.samba_conn, ['user'], parent=self)
         while dialog.exec_() == QDialog.Accepted:
             selected_objects = dialog.get_selected_objects()
             self.logger.info(f"Dialog returned {len(selected_objects) if selected_objects else 0} objects")
-            
+
             if not selected_objects:
                 self.logger.info("No objects selected, breaking")
                 break
-            
+
             if len(selected_objects) > 1:
                 self.logger.info(f"Too many selections: {len(selected_objects)}")
                 QMessageBox.warning(dialog, "Too Many Selections", 
                                   "Please select only one manager. Multiple selections are not allowed.")
                 # Don't close dialog, continue the loop to let user try again
                 continue
-            
+
             # Exactly one selection - process it
             selected_user = selected_objects[0]
             self.logger.info(f"Selected user object: {selected_user}")
             manager_dn = selected_user.get('dn', '')
             display_name = selected_user.get('display_text', selected_user.get('cn', ''))
-            
+
             self.logger.info(f"Extracted - DN: '{manager_dn}', Display: '{display_name}'")
-            
+
             if manager_dn:
                 # Format as domain/path/displayName
                 formatted_display = self._get_domain_path_format(manager_dn, display_name)
                 self.logger.info(f"Setting manager field to: '{formatted_display}'")
                 self.manager_name_edit.setText(formatted_display)
-                
+
                 # Store the DN for potential write-back
                 self.manager_dn = manager_dn
-                
+
                 # Mark the parent dialog as modified - need to go up through tab widget to main dialog
                 main_dialog = self.parent()
                 while main_dialog and not hasattr(main_dialog, '_check_for_changes'):
                     main_dialog = main_dialog.parent()
-                
+
                 if main_dialog and hasattr(main_dialog, '_check_for_changes'):
                     main_dialog._check_for_changes()
-                
+
                 self.logger.info(f"Successfully selected manager: {display_name} ({manager_dn})")
             else:
                 self.logger.warning("No manager DN found in selected object")
-            
+
             # Successfully processed, break out of loop
             break
 
     def get_changes(self):
         """Return any changes made to the manager field."""
         changes = {}
-        
+
         # Check if manager was changed
         original_manager_dn = self.parent_props.get('managedBy', [None])[0]
         current_manager_dn = getattr(self, 'manager_dn', None)
-        
+
         if current_manager_dn != original_manager_dn:
             if current_manager_dn:
                 changes['managedBy'] = [current_manager_dn]
             else:
                 changes['managedBy'] = []  # Clear the manager
-            
+
             self.logger.info(f"Manager change detected: {original_manager_dn} -> {current_manager_dn}")
-        
+
         return changes
 
     def _manager_properties(self):
@@ -670,7 +670,7 @@ class ManagedByTab(QWidget):
         if not manager_dn:
             # Try to get from the original properties if not set via selection
             manager_dn = self.parent_props.get('managedBy', [None])[0]
-        
+
         if manager_dn:
             from user_properties import UserPropertiesDialog
             try:
@@ -686,7 +686,7 @@ class ManagedByTab(QWidget):
         """Clear the manager field."""
         self.manager_name_edit.setText("")
         self.manager_dn = None
-        
+
         # Clear all manager-related fields
         self.manager_office_label.setText("")
         self.manager_street_edit.setText("")
@@ -695,15 +695,15 @@ class ManagedByTab(QWidget):
         self.manager_country_label.setText("")
         self.manager_telephone_label.setText("")
         self.manager_fax_label.setText("")
-        
+
         # Mark the parent dialog as modified
         main_dialog = self.parent()
         while main_dialog and not hasattr(main_dialog, '_check_for_changes'):
             main_dialog = main_dialog.parent()
-        
+
         if main_dialog and hasattr(main_dialog, '_check_for_changes'):
             main_dialog._check_for_changes()
-        
+
         self.logger.info("Manager field cleared")
 
     def _get_domain_path_format(self, manager_dn, display_name):
@@ -711,12 +711,12 @@ class ManagedByTab(QWidget):
         try:
             from samba_backend import get_base_dn
             import ldap.dn
-            
+
             # Get the base DN to determine domain
             base_dn = get_base_dn(self.samba_conn)
             if not base_dn:
                 return display_name
-            
+
             # Convert base DN to domain format (DC=home,DC=lucasit,DC=com -> home.lucasit.com)
             dn_components = ldap.dn.str2dn(base_dn.lower())
             domain_parts = []
@@ -724,32 +724,32 @@ class ManagedByTab(QWidget):
                 for attr, value, _ in component:
                     if attr == 'dc':
                         domain_parts.append(value)
-            
+
             domain = '.'.join(domain_parts) if domain_parts else 'domain'
-            
+
             # Extract path from manager DN (remove the base DN part)
             if manager_dn.lower().endswith(base_dn.lower()):
                 path_dn = manager_dn[:-len(base_dn)-1]  # Remove base DN and trailing comma
             else:
                 path_dn = manager_dn
-            
+
             # Convert DN path to Windows-style path (CN=Users,CN=Ryan Ralph -> Users/Ryan Ralph)
             path_components = ldap.dn.str2dn(path_dn)
             path_parts = []
-            
+
             for component in reversed(path_components[1:]):  # Skip the user's own CN, reverse for correct order
                 for attr, value, _ in component:
                     if attr.lower() == 'cn':
                         path_parts.append(value)
                     elif attr.lower() == 'ou':
                         path_parts.append(value)
-            
+
             if path_parts:
                 path = '/'.join(path_parts)
                 return f"{domain}/{path}/{display_name}"
             else:
                 return f"{domain}/{display_name}"
-                
+
         except Exception as e:
             self.logger.warning(f"Failed to format domain path: {e}")
             return display_name
@@ -844,7 +844,7 @@ class MemberOfTab(QWidget):
         base_dn = get_base_dn(self.samba_conn)
         if not base_dn:
             return dn_string
-            
+
         domain_parts = [p.split('=')[1] for p in base_dn.split(',') if p.lower().startswith('dc=')]
         domain = ".".join(domain_parts)
         try:
@@ -886,7 +886,7 @@ class MemberOfTab(QWidget):
                     primary_group_info = {'dn': f"CN=Domain Users,CN=Users,{fallback_base_dn}", 'cn': 'Domain Users', 'displayName': 'Domain Users'}
                 else:
                     primary_group_info = {'dn': 'CN=Domain Users,CN=Users', 'cn': 'Domain Users', 'displayName': 'Domain Users'}
-            
+
             other_groups = []
             for group_dn in member_of_dns:
                 if group_dn != primary_group_info['dn']:
@@ -894,7 +894,7 @@ class MemberOfTab(QWidget):
                     if group_props:
                         info = {'dn': group_dn, 'cn': group_props.get('cn', [group_dn])[0], 'displayName': group_props.get('displayName', [group_props.get('cn', [group_dn])[0]])[0]}
                         other_groups.append(info)
-            
+
             all_groups = [primary_group_info] + other_groups
             self.primary_group_label.setText(primary_group_info.get('displayName', primary_group_info.get('cn', self.i18n.get_string("common.unknown"))))
         else:
@@ -914,13 +914,13 @@ class MemberOfTab(QWidget):
             self.member_of_table.setItem(row, 0, name_item)
             path_item = QTableWidgetItem(self._get_display_path_from_dn(group_info['dn']))
             self.member_of_table.setItem(row, 1, path_item)
-        
+
         # Store original group memberships (excluding primary group if shown)
         if self.show_primary_group and all_groups:
             self.original_groups = {group['dn'] for group in all_groups[1:]}  # Skip primary group
         else:
             self.original_groups = {group['dn'] for group in all_groups}
-        
+
         # Reset pending changes
         self.pending_additions.clear()
         self.pending_removals.clear()
@@ -928,23 +928,23 @@ class MemberOfTab(QWidget):
     def _add_to_group(self):
         """Add this object to a selected group (staged until Apply/OK)."""
         from search_dialogs import StandardSearchDialog
-        
+
         # Use the standard search dialog to select a group
         dialog = StandardSearchDialog(self.samba_conn, ['group'], parent=self)
-        
+
         if dialog.exec_() == QDialog.Accepted:
             selected_objects = dialog.get_selected_objects()
             if not selected_objects:
                 return
-            
+
             added_count = 0
             for obj in selected_objects:
                 obj_dn = obj.get('dn', '')
                 obj_display = obj.get('display_text', obj.get('cn', ''))
-                
+
                 if not obj_dn:
                     continue
-                
+
                 # Check if already a member or pending addition
                 current_groups = self._get_current_display_groups()
                 if obj_dn in current_groups:
@@ -952,41 +952,41 @@ class MemberOfTab(QWidget):
                         self.i18n.get_string("dialog.common.info.title"), 
                         f"This object is already a member of group '{obj_display}'.")
                     continue
-                
+
                 # Stage the addition
                 self.pending_additions.add(obj_dn)
                 self.pending_removals.discard(obj_dn)  # Remove from removals if it was there
                 added_count += 1
-            
+
             # Update the display to show the pending changes
             if added_count > 0:
                 self._refresh_display()
-            
+
             # Mark parent dialog as modified
             if hasattr(self.parent_props, 'mark_modified'):
                 self.parent_props.mark_modified()
-            
+
             # Notify parent dialog of changes
             if self.change_callback:
                 self.change_callback()
-    
+
     def _get_current_display_groups(self):
         """Get the current set of groups (original + additions - removals)."""
         current_groups = self.original_groups.copy()
         current_groups.update(self.pending_additions)
         current_groups.difference_update(self.pending_removals)
         return current_groups
-    
+
     def _refresh_display(self):
         """Refresh the table display to show current groups including pending changes."""
         from samba_backend import get_group_properties
-        
+
         # Clear the table
         self.member_of_table.setRowCount(0)
-        
+
         # Get current groups (original + pending changes)
         current_groups = self._get_current_display_groups()
-        
+
         # Add primary group if showing primary group
         if self.show_primary_group:
             primary_group_id = self.parent_props.get('primaryGroupID', ['513'])[0]
@@ -995,34 +995,34 @@ class MemberOfTab(QWidget):
                 primary_group_dn = primary_group_info['dn']
                 # Add primary group to current groups
                 current_groups.add(primary_group_dn)
-        
+
         # Display all groups with visual indicators for pending changes
         for group_dn in current_groups:
             # Skip groups that are staged for removal - they should not appear in UI
             if group_dn in self.pending_removals:
                 continue
-                
+
             group_props = get_group_properties(self.samba_conn, group_dn, ['cn', 'displayName'])
             if group_props:
                 row = self.member_of_table.rowCount()
                 self.member_of_table.insertRow(row)
-                
+
                 # Group name without change indicators
                 display_name = group_props.get('displayName', [group_props.get('cn', [group_dn])[0]])[0]
-                
+
                 name_item = QTableWidgetItem(display_name)
                 name_item.setData(Qt.UserRole, group_dn)
                 self.member_of_table.setItem(row, 0, name_item)
-                
+
                 path_item = QTableWidgetItem(self._get_display_path_from_dn(group_dn))
                 self.member_of_table.setItem(row, 1, path_item)
-    
+
     def apply_changes(self):
         """Apply all pending group membership changes to the directory."""
         from samba_backend import add_user_to_group_samba, remove_user_from_group_samba
-        
+
         errors = []
-        
+
         # Apply additions
         for group_dn in self.pending_additions:
             try:
@@ -1031,7 +1031,7 @@ class MemberOfTab(QWidget):
             except Exception as e:
                 errors.append(f"Failed to add to group {group_dn}: {e}")
                 self.logger.error(f"Failed to add {self.object_dn} to group {group_dn}: {e}")
-        
+
         # Apply removals
         for group_dn in self.pending_removals:
             try:
@@ -1040,14 +1040,14 @@ class MemberOfTab(QWidget):
             except Exception as e:
                 errors.append(f"Failed to remove from group {group_dn}: {e}")
                 self.logger.error(f"Failed to remove {self.object_dn} from group {group_dn}: {e}")
-        
+
         # Clear pending changes if all succeeded
         if not errors:
             self.pending_additions.clear()
             self.pending_removals.clear()
             # Reload to get current state
             self._load_membership_data()
-        
+
         return errors
 
     def _remove_from_group(self):
@@ -1055,20 +1055,20 @@ class MemberOfTab(QWidget):
         selected_items = self.member_of_table.selectedItems()
         if not selected_items:
             return
-        
+
         # Get all unique selected rows
         selected_rows = list(set(item.row() for item in selected_items))
         selected_rows.sort(reverse=True)  # Process in reverse order to avoid index shifting
-        
+
         for row in selected_rows:
             group_item = self.member_of_table.item(row, 0)
             if not group_item:
                 continue
-            
+
             group_dn = group_item.data(Qt.UserRole)
             if not group_dn:
                 continue
-            
+
             # Check if this is the primary group (can't be removed)
             if self.show_primary_group:
                 from samba_backend import get_group_by_rid
@@ -1077,7 +1077,7 @@ class MemberOfTab(QWidget):
                 if primary_group_info and group_dn == primary_group_info['dn']:
                     QMessageBox.warning(self, self.i18n.get_string("dialog.common.error.title"), "Cannot remove an object from its primary group. Change the primary group first.")
                     continue
-            
+
             # Stage the removal
             if group_dn in self.pending_additions:
                 # If it was a pending addition, just remove it from additions
@@ -1087,14 +1087,14 @@ class MemberOfTab(QWidget):
                 # If it's an original group, mark for removal and hide from UI
                 self.pending_removals.add(group_dn)
                 self.logger.info(f"Added to pending removals and hidden from UI: {group_dn}")
-            
+
             # Remove from table immediately to hide it from UI
             self.member_of_table.removeRow(row)
-        
+
         # Mark parent dialog as modified and notify of changes
         if hasattr(self.parent_props, 'mark_modified'):
             self.parent_props.mark_modified()
-        
+
         if self.change_callback:
             self.change_callback()
 
@@ -1246,7 +1246,7 @@ class OrganizationTab(QWidget):
     def _select_manager(self):
         """Open manager selection dialog."""
         from search_dialogs import StandardSearchDialog
-        
+
         dialog = StandardSearchDialog(self.samba_conn, ['user'], parent=self)
         if dialog.exec_() == QDialog.Accepted:
             selected_objects = dialog.get_selected_objects()
@@ -1255,13 +1255,13 @@ class OrganizationTab(QWidget):
                 selected_user = selected_objects[0]
                 manager_dn = selected_user.get('dn', '')
                 display_name = selected_user.get('display_text', selected_user.get('cn', ''))
-                
+
                 if manager_dn:
                     self.manager_edit.setText(display_name)
-                    
+
                     # Store the DN for potential write-back
                     self.manager_dn = manager_dn
-                    
+
                     self.logger.info(f"Selected manager: {display_name} ({manager_dn})")
 
 
@@ -1323,27 +1323,27 @@ class EmailTab(QWidget):
         # Primary SMTP address
         self.primary_smtp_label = QLabel(self.i18n.get_string("email.label.primary_smtp"))
         self.primary_smtp_edit = QLineEdit()
-        
+
         # SMTP aliases (multi-line)
         self.smtp_aliases_label = QLabel(self.i18n.get_string("email.label.smtp_aliases"))
         self.smtp_aliases_edit = QTextEdit()
         self.smtp_aliases_edit.setMaximumHeight(100)
-        
+
         # SIP address
         self.sip_label = QLabel(self.i18n.get_string("email.label.sip"))
         self.sip_edit = QLineEdit()
-        
+
         # X.400 address
         self.x400_label = QLabel(self.i18n.get_string("email.label.x400"))
         self.x400_edit = QLineEdit()
-        
+
         # X.500 address
         self.x500_label = QLabel(self.i18n.get_string("email.label.x500"))
         self.x500_edit = QLineEdit()
 
     def _create_layout(self):
         layout = QFormLayout(self)
-        
+
         layout.addRow(self.primary_smtp_label, self.primary_smtp_edit)
         layout.addRow(self.smtp_aliases_label, self.smtp_aliases_edit)
         layout.addRow(self.sip_label, self.sip_edit)
@@ -1353,16 +1353,16 @@ class EmailTab(QWidget):
     def _load_email_data(self):
         """Load email addresses from proxyAddresses attribute."""
         proxy_addresses = self.object_props.get('proxyAddresses', [])
-        
+
         primary_smtp = ""
         smtp_aliases = []
         sip_address = ""
         x400_address = ""
         x500_address = ""
-        
+
         for proxy_addr_bytes in proxy_addresses:
             proxy_addr = proxy_addr_bytes.decode('utf-8') if isinstance(proxy_addr_bytes, bytes) else proxy_addr_bytes
-            
+
             if proxy_addr.startswith('SMTP:'):  # Primary SMTP (uppercase)
                 primary_smtp = proxy_addr[5:]  # Remove 'SMTP:' prefix
             elif proxy_addr.startswith('smtp:'):  # Alias SMTP (lowercase)
@@ -1373,14 +1373,14 @@ class EmailTab(QWidget):
                 x400_address = proxy_addr[5:]  # Remove 'X400:' or 'x400:' prefix
             elif proxy_addr.startswith('X500:') or proxy_addr.startswith('x500:'):
                 x500_address = proxy_addr[5:]  # Remove 'X500:' or 'x500:' prefix
-        
+
         # Populate the UI
         self.primary_smtp_edit.setText(primary_smtp)
         self.smtp_aliases_edit.setPlainText('\n'.join(smtp_aliases))
         self.sip_edit.setText(sip_address)
         self.x400_edit.setText(x400_address)
         self.x500_edit.setText(x500_address)
-    
+
     @staticmethod
     def should_show_for_object(object_props):
         """Check if this tab should be shown for the given object."""
@@ -1406,47 +1406,47 @@ class LAPSTab(QWidget):
         # Title label
         self.title_label = QLabel(self.i18n.get_string("laps.title"))
         self.title_label.setStyleSheet("font-weight: bold; font-size: 12pt;")
-        
+
         # Current expiration
         self.current_exp_label = QLabel(self.i18n.get_string("laps.label.current_expiration"))
         self.current_exp_edit = QLineEdit()
         self.current_exp_edit.setReadOnly(True)
-        
+
         # Set new expiration
         self.set_exp_label = QLabel(self.i18n.get_string("laps.label.set_expiration"))
         self.set_exp_edit = QDateTimeEdit()
         self.set_exp_edit.setDateTime(QDateTime.currentDateTime())
         self.set_exp_edit.setCalendarPopup(True)
-        
+
         self.expire_now_btn = QPushButton(self.i18n.get_string("laps.button.expire_now"))
-        
+
         # Admin account name
         self.admin_account_label = QLabel(self.i18n.get_string("laps.label.admin_account"))
         self.admin_account_edit = QLineEdit()
         self.admin_account_edit.setReadOnly(True)
-        
+
         # Admin password
         self.admin_password_label = QLabel(self.i18n.get_string("laps.label.admin_password"))
         self.admin_password_edit = QLineEdit()
         self.admin_password_edit.setReadOnly(True)
         self.admin_password_edit.setEchoMode(QLineEdit.Password)
-        
+
         # Password buttons
         self.copy_password_btn = QPushButton(self.i18n.get_string("laps.button.copy_password"))
         self.show_password_btn = QPushButton(self.i18n.get_string("laps.button.show_password"))
 
     def _create_layout(self):
         layout = QVBoxLayout(self)
-        
+
         # Title
         layout.addWidget(self.title_label)
         layout.addSpacing(10)
-        
+
         # Current expiration
         layout.addWidget(self.current_exp_label)
         layout.addWidget(self.current_exp_edit)
         layout.addSpacing(10)
-        
+
         # Set new expiration with button
         layout.addWidget(self.set_exp_label)
         exp_layout = QHBoxLayout()
@@ -1454,42 +1454,42 @@ class LAPSTab(QWidget):
         exp_layout.addWidget(self.expire_now_btn)
         layout.addLayout(exp_layout)
         layout.addSpacing(10)
-        
+
         # Admin account
         layout.addWidget(self.admin_account_label)
         layout.addWidget(self.admin_account_edit)
         layout.addSpacing(10)
-        
+
         # Admin password with buttons
         layout.addWidget(self.admin_password_label)
         layout.addWidget(self.admin_password_edit)
-        
+
         password_btn_layout = QHBoxLayout()
         password_btn_layout.addWidget(self.copy_password_btn)
         password_btn_layout.addWidget(self.show_password_btn)
         password_btn_layout.addStretch()
         layout.addLayout(password_btn_layout)
-        
+
         layout.addStretch()
 
     def _load_laps_data(self):
         """Load LAPS information from Active Directory."""
         laps_info = get_laps_info(self.samba_conn, self.computer_dn)
-        
+
         # Current expiration
         if laps_info['password_expiration']:
             exp_str = laps_info['password_expiration'].strftime("%Y-%m-%d %H:%M:%S")
             self.current_exp_edit.setText(exp_str)
         else:
             self.current_exp_edit.setText("")
-        
+
         # Admin account name - only show if LAPS is configured
         self.admin_account_edit.setText(laps_info['admin_account'] if laps_info['admin_account'] else "")
-        
+
         # Password
         password = laps_info['password']
         self.admin_password_edit.setText(password)
-        
+
         # Enable/disable buttons based on password availability
         has_password = bool(password)
         self.copy_password_btn.setEnabled(has_password)
@@ -1504,7 +1504,7 @@ class LAPSTab(QWidget):
         """Set LAPS password expiration to now."""
         from datetime import datetime
         now = datetime.now()
-        
+
         if set_laps_expiration(self.samba_conn, self.computer_dn, now):
             self.current_exp_edit.setText(now.strftime("%Y-%m-%d %H:%M:%S"))
             QMessageBox.information(self, "Success", "LAPS password expiration set to now. The password will be updated on the next LAPS policy refresh.")

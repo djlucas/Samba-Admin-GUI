@@ -74,7 +74,7 @@ class RotatingTabBar(QWidget):
         icon_size = 20
         row_height = fm.height() + padding
         y_offset_factor = self._tab_style.get("y_offset_factor", 5)
-        
+
         self._rows = []
         if self._tabs_per_row > 0:
             tab_indices = list(range(len(self._tabs)))
@@ -139,7 +139,7 @@ class RotatingTabBar(QWidget):
         padding = self._tab_style.get("padding", 10)
         y_offset_factor = self._tab_style.get("y_offset_factor", 5)
         row_height = QFontMetrics(self.font()).height() + padding
-        
+
         for i, row in enumerate(self._rows[:-1]):
             y_pos = i * (row_height - y_offset_factor)
             for tab_index in row:
@@ -152,7 +152,7 @@ class RotatingTabBar(QWidget):
                 opt.palette.setColor(opt.palette.Button, self._tab_style["colors"].get("bg_back"))
                 painter.drawControl(QStyle.CE_TabBarTabShape, opt)
                 painter.drawControl(QStyle.CE_TabBarTabLabel, opt)
-        
+
         if self._rows:
             front_row_y = (len(self._rows) - 1) * (row_height - y_offset_factor)
             for tab_index in self._rows[-1]:
@@ -197,7 +197,7 @@ class RotatingTabBar(QWidget):
                 pen_color = self.palette().color(self.palette().Window)
                 painter.setPen(pen_color)
                 painter.setBrush(bg_color)
-                
+
                 path = QPainterPath()
                 path.moveTo(rect.bottomLeft())
                 path.lineTo(rect.topLeft() + QPoint(0, border_radius))
@@ -260,7 +260,7 @@ class RotatingTabWidget(QWidget):
 
     def currentIndex(self):
         return self._stack.currentIndex()
-    
+
     def count(self):
         return self._stack.count()
 
