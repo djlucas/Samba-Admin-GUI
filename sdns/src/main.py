@@ -101,9 +101,9 @@ class UsernamePasswordDialog(QDialog):
 
         # Get the domain and format it as a Kerberos realm (uppercase)
         self.realm = self._get_kerberos_realm()
-        
+
         formLayout = QFormLayout()
-        
+
         self.usernameInput = QLineEdit()
         self.passwordInput = QLineEdit()
         self.passwordInput.setEchoMode(QLineEdit.Password)
@@ -111,7 +111,7 @@ class UsernamePasswordDialog(QDialog):
         # Use an QHBoxLayout to combine the username input and the realm label
         usernameLayout = QHBoxLayout()
         usernameLayout.addWidget(self.usernameInput, 1)
-        
+
         realmLabel = QLabel(self.realm)
         realmLabel.setStyleSheet("font-weight: bold;")
         usernameLayout.addWidget(realmLabel)
@@ -126,9 +126,9 @@ class UsernamePasswordDialog(QDialog):
         mainLayout = QVBoxLayout()
         mainLayout.addLayout(formLayout)
         mainLayout.addWidget(self.buttonBox)
-        
+
         self.setLayout(mainLayout)
-        
+
         # Center the dialog on screen or parent
         self._center_dialog()
 
@@ -138,11 +138,11 @@ class UsernamePasswordDialog(QDialog):
             # Read the realm from krb5.conf
             with open('/etc/krb5.conf', 'r') as f:
                 content = f.read()
-            
+
             # Look for default_realm in [libdefaults] section
             lines = content.split('\n')
             in_libdefaults = False
-            
+
             for line in lines:
                 line = line.strip()
                 if line == '[libdefaults]':
@@ -153,16 +153,16 @@ class UsernamePasswordDialog(QDialog):
                     # Extract the realm value
                     realm = line.split('=', 1)[1].strip()
                     return f"@{realm}"
-            
+
             # If not found, try environment variable
             import os
             domain = os.environ.get('USERDNSDOMAIN', '')
             if domain:
                 return f"@{domain.upper()}"
-            
+
         except Exception:
             pass
-        
+
         # Fallback
         return "@DOMAIN.TLD"
 
@@ -170,7 +170,7 @@ class UsernamePasswordDialog(QDialog):
         """Center the dialog on the screen or parent widget."""
         # Make sure the dialog has been sized properly first
         self.adjustSize()
-        
+
         if self.parent():
             # Center on parent widget
             parent_rect = self.parent().geometry()
@@ -203,14 +203,14 @@ def get_ldap_conn(dc_list, logger):
     # Plain LDAP attempts for all servers
     for server in dc_list:
         connection_attempts.append((server, 'none', 'ldap', 389))
-    
+
     for server, ssl_method, protocol, port in connection_attempts:
         try:
             logger.info(f"Attempting to connect to {ssl_method.upper()} server: {server}:{port}")
             conn = ldap.initialize(f'{protocol}://{server}:{port}')
             conn.set_option(ldap.OPT_PROTOCOL_VERSION, 3)
             conn.set_option(ldap.OPT_REFERRALS, 0)
-            
+
             if ssl_method == 'ldaps':
                 # For LDAPS, set SSL options
                 conn.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
@@ -236,7 +236,7 @@ def get_ldap_conn(dc_list, logger):
             else:
                 # For plain LDAP, still disable SASL channel binding for compatibility
                 conn.set_option(ldap.OPT_X_SASL_NOCANON, 1)
-            
+
             # Kerberos/GSSAPI bind with method-specific handling
             if ssl_method in ['ldaps', 'starttls']:
                 # For encrypted connections, disable SASL security layer to avoid conflicts with TLS
@@ -259,7 +259,7 @@ def get_ldap_conn(dc_list, logger):
                 # For plain LDAP, use standard GSSAPI (allows SASL encryption)
                 sasl_auth = ldap.sasl.gssapi('')
                 conn.sasl_interactive_bind_s("", sasl_auth)
-            
+
             if ssl_method == 'ldaps':
                 logger.info(f"Successfully established secure LDAPS connection to {server}:{port}.")
             elif ssl_method == 'starttls':
@@ -268,13 +268,13 @@ def get_ldap_conn(dc_list, logger):
                 # Plain LDAP with GSSAPI actually provides encryption via SASL (typically SSF=256)
                 logger.info(f"Successfully established LDAP connection with GSSAPI encryption to {server}:{port}.")
             return conn
-            
+
         except ldap.LOCAL_ERROR as e:
             raise NoKerberosTicketError("No Kerberos ticket found") from e
         except ldap.LDAPError as e:
             logger.warning(f"{ssl_method.upper()} connection to {server}:{port} failed: {e}")
             continue
-    
+
     raise ldap.LDAPError("All LDAP connection attempts failed.")
 
 def get_authenticated_connection(logger, app):
@@ -352,14 +352,14 @@ def get_authenticated_connection(logger, app):
 def discover_dns_zones(conn, logger, zone_bases):
     zones = []
     zone_dns_by_name = {}  # Track multiple DNs for the same zone name
-    
+
     for label, base_dn in zone_bases:
         try:
             result = conn.search_s(base_dn, ldap.SCOPE_SUBTREE, "(objectClass=dnsZone)", ["dc"])
             for dn, attrs in result:
                 name = attrs.get("dc", [b"(unnamed)"])[0].decode()
                 zone_type = "Reverse" if name.endswith(".arpa") else "Forward"
-                
+
                 # Track all DNs for this zone name
                 if name not in zone_dns_by_name:
                     zone_dns_by_name[name] = []
@@ -373,7 +373,7 @@ def discover_dns_zones(conn, logger, zone_bases):
             logger.warning(f"No zones found under {label}")
         except ldap.LDAPError as e:
             logger.error(f"LDAP error during zone discovery in {label}: {e}")
-    
+
     # Create zone objects with all DNs for each zone name
     for name, dns_list in zone_dns_by_name.items():
         logger.debug(f"Zone {name} has {len(dns_list)} partitions: {[d['source'] for d in dns_list]}")
@@ -382,7 +382,7 @@ def discover_dns_zones(conn, logger, zone_bases):
             "type": dns_list[0]["type"],  # Use type from first occurrence
             "dns": dns_list  # List of all DNs and sources for this zone
         })
-    
+
     return zones
 
 def main():

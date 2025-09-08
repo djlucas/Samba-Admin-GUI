@@ -27,31 +27,31 @@ from collections import defaultdict
 
 class SortableTreeWidgetItem(QTreeWidgetItem):
     """Custom SortableTreeWidgetItem that provides custom sorting for IP addresses"""
-    
+
     def __lt__(self, other):
         """Custom comparison for sorting"""
         column = self.treeWidget().sortColumn()
-        
+
         # Get sort data from UserRole if available
         self_data = self.data(column, Qt.UserRole)
         other_data = other.data(column, Qt.UserRole)
-        
+
         # If both have UserRole data, compare that
         if self_data is not None and other_data is not None:
             return str(self_data) < str(other_data)
-        
+
         # If only one has UserRole data, it comes first
         if self_data is not None:
             return True
         if other_data is not None:
             return False
-            
+
         # Fall back to text comparison
         return self.text(column).lower() < other.text(column).lower()
 
 class SortableTreeWidget(QTreeWidget):
     """Custom QTreeWidget that uses UserRole data for sorting IP addresses"""
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         # Enable sorting
@@ -113,7 +113,7 @@ class MainWindow(QWidget):
                 return result[0][1]["defaultNamingContext"][0].decode("utf-8")
         except Exception as e:
             self.logger.warning(f"Could not get base DN: {e}")
-        
+
         # Fallback - try to derive from URI or assume common pattern
         return "DC=home,DC=lucasit,DC=com"
 
@@ -121,29 +121,29 @@ class MainWindow(QWidget):
         """Query Active Directory for all site names (cached)"""
         if self._site_names_cache is not None:
             return self._site_names_cache
-            
+
         try:
             base_dn = self._get_base_dn()
             sites_dn = f"CN=Sites,CN=Configuration,{base_dn}"
-            
+
             result = self.ldap_conn.search_s(
                 sites_dn,
                 ldap.SCOPE_SUBTREE,
                 "(objectClass=site)",
                 ["cn"]
             )
-            
+
             site_names = []
             for dn, attrs in result:
                 cn = attrs.get("cn", [b""])[0].decode("utf-8") if "cn" in attrs else ""
                 if cn:
                     site_names.append(cn)
                     self.logger.debug(f"Found AD site: {cn}")
-            
+
             # Cache the results
             self._site_names_cache = site_names if site_names else ["Default-First-Site-Name"]
             return self._site_names_cache
-            
+
         except Exception as e:
             self.logger.warning(f"Could not query AD sites: {e}")
             # Cache the fallback too
@@ -165,23 +165,23 @@ class MainWindow(QWidget):
         # Service records (start with underscore) always create hierarchy
         if name.startswith("_"):
             return True
-            
+
         # Check for actual AD site names and site-related patterns
         site_names = self._get_ad_site_names()
         for site_name in site_names:
             if site_name in name:
                 return True
-                
+
         # Also check for _sites pattern (generic site indicator)
         if "_sites" in name or name.endswith("_sites"):
             return True
-        
+
         # Special case: DomainDnsZones and ForestDnsZones by themselves should create hierarchy
         # if there are other records with the same base name
         well_known_containers = ["DomainDnsZones", "ForestDnsZones"]
         if name in well_known_containers:
             return True
-        
+
         # Create hierarchy for any dotted name containing well-known containers
         if "." in name:
             parts = name.split(".")
@@ -191,7 +191,7 @@ class MainWindow(QWidget):
                     part == "_sites" or
                     part in well_known_containers):
                     return True
-            
+
         # Don't create hierarchy for other dotted names
         return False
 
@@ -225,12 +225,12 @@ class MainWindow(QWidget):
         forward_node = SortableTreeWidgetItem(["Forward Lookup Zones"])
         forward_node.setIcon(0, icon("folder.png"))
         forward_node.setData(0, Qt.UserRole, {"type": "forward_container"})
-        
+
         # Reverse Lookup Zones container  
         reverse_node = SortableTreeWidgetItem(["Reverse Lookup Zones"])
         reverse_node.setIcon(0, icon("folder.png"))
         reverse_node.setData(0, Qt.UserRole, {"type": "reverse_container"})
-        
+
         # Conditional Forwarders container
         forwarders_node = SortableTreeWidgetItem(["Conditional Forwarders"])
         forwarders_node.setIcon(0, icon("folder.png"))
@@ -238,7 +238,7 @@ class MainWindow(QWidget):
 
         # Populate Forward Lookup Zones
         self._populate_forward_zones(forward_node, icon)
-        
+
         # Populate Reverse Lookup Zones  
         self._populate_reverse_zones(reverse_node, icon)
 
@@ -255,7 +255,7 @@ class MainWindow(QWidget):
     def _populate_forward_zones(self, forward_node, icon):
         """Populate Forward Lookup Zones with actual DNS zones"""
         forward_zones = [zone for zone in self.zones if zone.get("type") == "Forward" and zone["name"] != "RootDNSServers"]
-        
+
         for zone in forward_zones:
             zone_item = SortableTreeWidgetItem([zone["name"]])
             zone_item.setIcon(0, icon("zone.png"))
@@ -269,17 +269,17 @@ class MainWindow(QWidget):
                 zone_data["dns"] = zone["dns"]  # New structure
             else:
                 zone_data["dn"] = zone["dn"]    # Legacy structure
-            
+
             zone_item.setData(0, Qt.UserRole, zone_data)
             forward_node.addChild(zone_item)
-            
+
             # Build hierarchical structure for this zone
             self.build_zone_hierarchy(zone_item, zone, self._get_icon)
-    
+
     def _populate_reverse_zones(self, reverse_node, icon):
         """Populate Reverse Lookup Zones with actual DNS zones"""
         reverse_zones = [zone for zone in self.zones if zone.get("type") == "Reverse"]
-        
+
         for zone in reverse_zones:
             zone_item = SortableTreeWidgetItem([zone["name"]])
             zone_item.setIcon(0, icon("zone.png"))
@@ -293,10 +293,10 @@ class MainWindow(QWidget):
                 zone_data["dns"] = zone["dns"]  # New structure
             else:
                 zone_data["dn"] = zone["dn"]    # Legacy structure
-                
+
             zone_item.setData(0, Qt.UserRole, zone_data)
             reverse_node.addChild(zone_item)
-            
+
             # Build hierarchical structure for reverse zones
             self.build_zone_hierarchy(zone_item, zone, self._get_icon)
 
@@ -305,7 +305,7 @@ class MainWindow(QWidget):
         try:
             # Collect all records from all zone partitions
             all_records = {}
-            
+
             if "dns" in zone:
                 # New structure: zone has multiple DNs
                 for zone_info in zone["dns"]:
@@ -326,7 +326,7 @@ class MainWindow(QWidget):
                                 'source': zone_info["source"]
                             }
                             all_records[name] = record_data
-                                
+
                     except Exception as e:
                         self.logger.warning(f"Failed to load records from {zone_info['dn']}: {e}")
             else:
@@ -347,16 +347,16 @@ class MainWindow(QWidget):
                         'source': "System"
                     }
                     all_records[name] = record_data
-            
+
             # Check if this is an IPv6 or IPv4 reverse zone
             is_ipv6_reverse = zone["name"].endswith(".ip6.arpa")
             is_ipv4_reverse = zone["name"].endswith(".in-addr.arpa")
-            
+
             # Build hierarchy tree from all records
             hierarchy = defaultdict(dict)
-            
+
             for name, record_data in all_records.items():
-                
+
                 if is_ipv6_reverse and len(name) > 0 and name != "@":
                     # IPv6 reverse zone logic
                     last_hex = name[-1]
@@ -384,15 +384,15 @@ class MainWindow(QWidget):
                     # Skip creating hierarchy for @ records in IPv6 reverse zones
                     if is_ipv6_reverse and name == "@":
                         continue
-                    
+
                     # Only create empty hierarchy if the name doesn't already exist
                     # This prevents overwriting existing hierarchical structures
                     if name not in hierarchy:
                         hierarchy[name] = {}
-            
+
             # Create tree items from hierarchy
             self.create_hierarchy_items(zone_item, hierarchy, all_records, icon_func, "", is_ipv6_reverse)
-                    
+
         except Exception as e:
             self.logger.warning(f"Could not build hierarchy for zone {zone['name']}: {e}")
 
@@ -401,8 +401,8 @@ class MainWindow(QWidget):
         # Sort the hierarchy items for consistent order (especially for IPv6 hex digits)
         for name, children in sorted(hierarchy.items()):
             full_name = f"{name}.{prefix}" if prefix else name
-            
-            
+
+
             # For IPv6 reverse zones, create hex digit folders that contain records directly
             if is_ipv6_reverse:
                 # Create folder for this hex digit
@@ -418,7 +418,7 @@ class MainWindow(QWidget):
                     elif "dn" in parent_data:
                         # Legacy structure
                         zone_dn = parent_data["dn"]
-                
+
                 container_item.setData(0, Qt.UserRole, {
                     "type": "ipv6_container",
                     "name": name,
@@ -430,7 +430,7 @@ class MainWindow(QWidget):
                 parent_item.addChild(container_item)
                 # Don't recurse further for IPv6 - records will be shown when folder is clicked
                 continue
-            
+
             # Regular processing for non-IPv6 zones
             # Only create containers for nodes that have children
             # Leaf nodes (actual records) should not create empty folders
@@ -442,7 +442,7 @@ class MainWindow(QWidget):
                 parent_data = parent_item.data(0, Qt.UserRole)
                 if parent_data:
                     zone_dn = parent_data.get("zone_dn") or parent_data.get("dn")
-                
+
                 container_item.setData(0, Qt.UserRole, {
                     "type": "container", 
                     "name": name,
@@ -451,7 +451,7 @@ class MainWindow(QWidget):
                 })
                 container_item.setIcon(0, icon_func("folder.png"))
                 parent_item.addChild(container_item)
-                
+
                 # Recursively add children
                 self.create_hierarchy_items(container_item, children, records, icon_func, full_name)
 
@@ -485,7 +485,7 @@ class MainWindow(QWidget):
         try:
             # Collect all records from all zone partitions (similar to build_zone_hierarchy)
             all_records = {}
-            
+
             for zone_info in zone_data["dns"]:
                 try:
                     result = self.ldap_conn.search_s(
@@ -504,13 +504,13 @@ class MainWindow(QWidget):
                                 'dns_blobs': attrs.get("dnsRecord", []),
                                 'source': zone_info["source"]
                             }
-                            
+
                 except Exception as e:
                     self.logger.warning(f"Failed to load records from {zone_info['dn']}: {e}")
-            
+
             # Now process all records for display (using the same logic as load_zone_records)
             self.process_zone_records_for_display(all_records, zone_data)
-            
+
         except Exception as e:
             self.logger.error(f"Failed to load zone records: {e}")
             QMessageBox.critical(self, "Error", f"Could not load zone records:\n{e}")
@@ -521,21 +521,21 @@ class MainWindow(QWidget):
             zone_name = zone_data.get("name", "")
             is_ipv6_reverse = zone_name.endswith(".ip6.arpa")
             is_ipv4_reverse = zone_name.endswith(".in-addr.arpa")
-            
+
             self.record_list.clear()
-            
+
             for name, record_data in all_records.items():
                 attrs = record_data['attrs']
                 dn = record_data['dn'] 
                 dns_blobs = record_data['dns_blobs']
-                
+
                 if not dns_blobs:
                     continue  # Skip items without DNS records
 
                 # For IPv6 reverse zones, only show @ records at zone level
                 if is_ipv6_reverse and name != "@":
                     continue  # Skip PTR records - they belong in subfolders
-                
+
                 # For forward zones, skip names that should create hierarchy AND single names that have containers
                 if not is_ipv6_reverse and name != "@":
                     if "." in name and self._should_create_hierarchy(name, zone_data):
@@ -562,7 +562,7 @@ class MainWindow(QWidget):
                 # Process record for display
                 raw_ts = attrs.get("modifyTimestamp", attrs.get("whenCreated", [b""]))[0].decode("utf-8")
                 timestamp = self.format_timestamp(raw_ts)
-                
+
                 # Set display name based on zone type
                 if name == "@":
                     display_name = "(same as parent)"
@@ -573,22 +573,22 @@ class MainWindow(QWidget):
                 else:
                     display_name = name
                 zone_dn = dn.split(",", 1)[1] if "," in dn else ""  # Get zone DN from record DN
-                
+
                 for blob in dns_blobs:
                     record_type, data = self.parse_dns_record(blob)
-                    
+
                     item = SortableTreeWidgetItem(["", display_name, record_type, data, timestamp])
                     item.setIcon(0, self._get_icon("unknown.png"))
                     item.setData(0, Qt.UserRole, {"dn": dn, "name": name, "zone_dn": zone_dn})
-                    
+
                     # Set sortable data for both Name column (1) and Data column (3)
                     self._set_sortable_text(item, 1, display_name)
                     self._set_sortable_text(item, 3, data)
-                    
+
                     self.record_list.addTopLevelItem(item)
 
             self.logger.info(f"Loaded {self.record_list.topLevelItemCount()} DNS records")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to process zone records for display: {e}")
 
@@ -600,7 +600,7 @@ class MainWindow(QWidget):
             zone_data = zone_item.data(0, Qt.UserRole) if zone_item else {}
             zone_name = zone_data.get("name", "")
             is_ipv6_reverse = zone_name.endswith(".ip6.arpa")
-            
+
             result = self.ldap_conn.search_s(
                 zone_dn,
                 ldap.SCOPE_ONELEVEL,
@@ -621,7 +621,7 @@ class MainWindow(QWidget):
                 # PTR records should only appear in their hex digit folders
                 if is_ipv6_reverse and name != "@":
                     continue  # Skip PTR records - they belong in subfolders
-                
+
                 # For forward zones, skip names that should create hierarchy AND single names that have containers
                 if not is_ipv6_reverse and name != "@":
                     if "." in name and self._should_create_hierarchy(name):
@@ -657,18 +657,18 @@ class MainWindow(QWidget):
                         item = SortableTreeWidgetItem(["", display_name, record_type, data, timestamp])
                         item.setIcon(0, self._get_icon("unknown.png"))
                         item.setData(0, Qt.UserRole, {"dn": dn, "name": name, "zone_dn": zone_dn})
-                        
+
                         # Set sortable data for both Name column (1) and Data column (3)
                         self._set_sortable_text(item, 1, display_name)
                         self._set_sortable_text(item, 3, data)
-                        
+
                         self.record_list.addTopLevelItem(item)
                     continue
 
                 # Process all DNS blobs for this record (handles round robin entries)
                 raw_ts = attrs.get("modifyTimestamp", attrs.get("whenCreated", [b""]))[0].decode("utf-8")
                 timestamp = self.format_timestamp(raw_ts)
-                
+
                 # Set display name based on zone type
                 if name == "@":
                     display_name = "(same as parent)"
@@ -678,18 +678,18 @@ class MainWindow(QWidget):
                     display_name = ip_address
                 else:
                     display_name = name
-                
+
                 for blob in dns_blobs:
                     record_type, data = self.parse_dns_record(blob)
-                    
+
                     item = SortableTreeWidgetItem(["", display_name, record_type, data, timestamp])
                     item.setIcon(0, self._get_icon("unknown.png"))
                     item.setData(0, Qt.UserRole, {"dn": dn, "name": name, "zone_dn": zone_dn})
-                    
+
                     # Set sortable data for both Name column (1) and Data column (3)
                     self._set_sortable_text(item, 1, display_name)
                     self._set_sortable_text(item, 3, data)
-                    
+
                     self.record_list.addTopLevelItem(item)
 
             self.logger.info(f"Loaded {self.record_list.topLevelItemCount()} DNS records")
@@ -704,9 +704,9 @@ class MainWindow(QWidget):
             # Find the zone for this container
             zone_dn = container_data.get("zone_dn")
             container_prefix = container_data.get("full_name", "")
-            
+
             self.logger.debug(f"Loading container records for: '{container_prefix}'")
-            
+
             # Find the zone data (either from zone_dn or by walking up the tree)
             zone_data = None
             if not zone_dn:
@@ -722,7 +722,7 @@ class MainWindow(QWidget):
                         zone_dn = current_data["dn"]
                         break
                     current_item = current_item.parent()
-            
+
             # Load records from zone (either multi-partition or single)
             all_records = {}
             if zone_data and "dns" in zone_data:
@@ -770,7 +770,7 @@ class MainWindow(QWidget):
             else:
                 self.logger.warning("Could not find zone data for container")
                 return
-            
+
             self.record_list.clear()
 
             for name, record_data in all_records.items():
@@ -780,7 +780,7 @@ class MainWindow(QWidget):
 
                 if not dns_blobs:
                     continue
-                
+
                 # Check if this record belongs to this container level
                 if container_prefix:
                     self.logger.debug(f"  Checking record '{name}' against container '{container_prefix}'")
@@ -809,21 +809,21 @@ class MainWindow(QWidget):
 
                 raw_ts = attrs.get("modifyTimestamp", attrs.get("whenCreated", [b""]))[0].decode("utf-8")
                 timestamp = self.format_timestamp(raw_ts)
-                
+
                 # Process all DNS blobs for this record (handles round robin entries)
                 for blob in dns_blobs:
                     record_type, data = self.parse_dns_record(blob)
-                    
+
                     item = SortableTreeWidgetItem(["", display_name, record_type, data, timestamp])
                     item.setIcon(0, self._get_icon("unknown.png"))
                     # Extract zone_dn from record DN for compatibility
                     record_zone_dn = dn.split(",", 1)[1] if "," in dn else (zone_dn or "")
                     item.setData(0, Qt.UserRole, {"dn": dn, "name": name, "zone_dn": record_zone_dn})
-                    
+
                     # Set sortable data for both Name column (1) and Data column (3)
                     self._set_sortable_text(item, 1, display_name)
                     self._set_sortable_text(item, 3, data)
-                    
+
                     self.record_list.addTopLevelItem(item)
 
             self.logger.info(f"Loaded {self.record_list.topLevelItemCount()} records from container")
@@ -839,10 +839,10 @@ class MainWindow(QWidget):
             zone_dn = container_data.get("zone_dn")
             zone_data = container_data.get("zone_data")
             hex_digit = container_data.get("name", "")
-            
+
             if not hex_digit:
                 return
-            
+
             # Load records from zone (either multi-partition or single)
             all_records = {}
             if zone_data and "dns" in zone_data:
@@ -890,7 +890,7 @@ class MainWindow(QWidget):
             else:
                 self.logger.warning("Could not find zone data for IPv6 container")
                 return
-                
+
             self.record_list.clear()
 
             for name, record_data in all_records.items():
@@ -900,7 +900,7 @@ class MainWindow(QWidget):
 
                 if not dns_blobs:
                     continue
-                
+
                 # Only show records that end with this hex digit (and aren't "@")
                 if name == "@" or not name.endswith(hex_digit):
                     continue
@@ -915,17 +915,17 @@ class MainWindow(QWidget):
                 # Get zone_dn for the reconstruction function
                 reconstruction_zone_dn = zone_dn or (zone_data["dns"][0]["dn"] if zone_data and zone_data.get("dns") else "")
                 ipv6_addr = self._reconstruct_ipv6_from_nibbles(name, hex_digit, reconstruction_zone_dn)
-                
+
                 item = SortableTreeWidgetItem(["", ipv6_addr, record_type, data, timestamp])
                 item.setIcon(0, self._get_icon("unknown.png"))
                 # Extract zone_dn from record DN for compatibility
                 record_zone_dn = dn.split(",", 1)[1] if "," in dn else reconstruction_zone_dn
                 item.setData(0, Qt.UserRole, {"dn": dn, "name": name, "zone_dn": record_zone_dn})
-                
+
                 # Set sortable data for both Name column (1) and Data column (3)
                 self._set_sortable_text(item, 1, ipv6_addr)
                 self._set_sortable_text(item, 3, data)
-                
+
                 self.record_list.addTopLevelItem(item)
 
             self.logger.info(f"Loaded {self.record_list.topLevelItemCount()} IPv6 records from container {hex_digit}")
@@ -953,7 +953,7 @@ class MainWindow(QWidget):
             ttl = struct.unpack('<L', blob[12:16])[0]
             reserved, ts = struct.unpack('<L L', blob[16:24])
             payload = blob[24:]
-            
+
             # For SOA records, get the actual SOA serial from offset 8
             soa_serial = None
             if record_type == 6 and len(blob) > 8:
@@ -1044,7 +1044,7 @@ class MainWindow(QWidget):
                         # Try known working offsets first
                         mname = ""
                         rname = ""
-                        
+
                         # Try to find MNAME starting around offset 22
                         for mname_start in range(20, min(30, len(payload))):
                             if mname_start < len(payload) and 1 <= payload[mname_start] <= 63:
@@ -1052,7 +1052,7 @@ class MainWindow(QWidget):
                                     test_mname, mname_end = self._parse_dns_name(payload, mname_start)
                                     if test_mname and '.' in test_mname:  # Valid MNAME with dots
                                         mname = test_mname
-                                        
+
                                         # Now look for RNAME starting after MNAME + some header bytes
                                         for rname_start in range(mname_end, min(mname_end + 10, len(payload))):
                                             if rname_start < len(payload) and 1 <= payload[rname_start] <= 63:
@@ -1066,7 +1066,7 @@ class MainWindow(QWidget):
                                         break
                                 except:
                                     continue
-                        
+
                         return "SOA", f"[{soa_serial}], {mname}., {rname}."
                     except Exception as e:
                         return "SOA", f"(parse error: {e})"
@@ -1108,13 +1108,13 @@ class MainWindow(QWidget):
         jumped = False
         saved_offset = 0
         start_offset = offset
-        
+
         while offset < len(data):
             if offset >= len(data):
                 break
-                
+
             length = data[offset]
-            
+
             if length == 0:  # End of name
                 offset += 1
                 break
@@ -1146,10 +1146,10 @@ class MainWindow(QWidget):
             else:
                 # Invalid length, stop parsing
                 break
-        
+
         if jumped and saved_offset > 0:
             offset = saved_offset
-        
+
         return ".".join(name_parts), offset
 
     def _reconstruct_ipv6_from_nibbles(self, nibble_name, hex_digit, zone_dn):
@@ -1167,34 +1167,34 @@ class MainWindow(QWidget):
                     zone_nibbles = zone_name.replace(".ip6.arpa", "").replace(".", "")
                     # Reverse to get original order (zone is also in reverse)
                     zone_prefix_nibbles = zone_nibbles[::-1]
-            
+
             # Remove dots from record name and reverse the nibbles
             record_nibbles = nibble_name.replace(".", "")
             record_nibbles = record_nibbles[::-1]
-            
+
             # Combine: zone_prefix + record_nibbles (hex_digit is just for folder organization)
             full_nibbles = zone_prefix_nibbles + record_nibbles
-            
+
             # Pad to 32 nibbles (128 bits) if needed
             full_nibbles = full_nibbles.ljust(32, "0")
-            
+
             # Group into 4-nibble chunks and join with colons
             groups = []
             for i in range(0, min(32, len(full_nibbles)), 4):
                 group = full_nibbles[i:i+4]
                 groups.append(group)
-            
+
             # Join with colons and compress zeros
             ipv6_addr = ":".join(groups)
-            
+
             # Basic IPv6 compression (remove leading zeros in each group)
             parts = ipv6_addr.split(":")
             compressed_parts = []
             for part in parts:
                 compressed_parts.append(part.lstrip("0") or "0")
-            
+
             return ":".join(compressed_parts)
-            
+
         except Exception:
             return nibble_name  # Return original if reconstruction fails
 
@@ -1203,32 +1203,32 @@ class MainWindow(QWidget):
         try:
             # IPv4 reverse zones are like "1.168.192.in-addr.arpa"
             # Records are like "10" for IP 192.168.1.10
-            
+
             # Extract the IP prefix from zone name
             if ".in-addr.arpa" not in zone_name:
                 return octet_name  # Not an IPv4 reverse zone
-            
+
             # Get the reversed octets from zone name (e.g., "1.168.192" from "1.168.192.in-addr.arpa")
             zone_octets = zone_name.replace(".in-addr.arpa", "").split(".")
-            
+
             # Reverse the zone octets to get original order
             zone_octets.reverse()
-            
+
             # The record name is the final octet(s)
             record_octets = octet_name.split(".") if "." in octet_name else [octet_name]
-            
+
             # Combine zone octets + record octets to form full IP
             full_ip_octets = zone_octets + record_octets
-            
+
             # Validate and return IP address
             ip_address = ".".join(full_ip_octets)
-            
+
             # Basic validation - should have 4 octets
             if len(full_ip_octets) == 4 and all(octet.isdigit() and 0 <= int(octet) <= 255 for octet in full_ip_octets):
                 return ip_address
             else:
                 return octet_name  # Return original if not a valid IP
-            
+
         except Exception:
             return octet_name  # Return original if reconstruction fails
 
@@ -1240,7 +1240,7 @@ class MainWindow(QWidget):
             if len(parts) == 4 and all(part.isdigit() and 0 <= int(part) <= 255 for part in parts):
                 # Convert IPv4 to integer: 192.168.1.10 -> 3232235786
                 return (int(parts[0]) << 24) + (int(parts[1]) << 16) + (int(parts[2]) << 8) + int(parts[3])
-            
+
             # Try to extract IP from more complex strings like "192.168.1.10 some.domain.com"
             import re
             ip_match = re.search(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', str(ip_or_text))
@@ -1249,10 +1249,10 @@ class MainWindow(QWidget):
                 parts = ip.split(".")
                 if all(0 <= int(part) <= 255 for part in parts):
                     return (int(parts[0]) << 24) + (int(parts[1]) << 16) + (int(parts[2]) << 8) + int(parts[3])
-            
+
             # Not an IP address, return a large number so it sorts after IPs
             return 0xFFFFFFFF + hash(str(ip_or_text)) % 1000000
-            
+
         except (ValueError, AttributeError):
             # Not an IP address, return a large number so it sorts after IPs  
             return 0xFFFFFFFF + hash(str(ip_or_text)) % 1000000
@@ -1261,7 +1261,7 @@ class MainWindow(QWidget):
         """Convert IP addresses in text to zero-padded format for natural string sorting"""
         try:
             import re
-            
+
             def pad_ipv4(match):
                 ip = match.group(0)
                 parts = ip.split(".")
@@ -1269,7 +1269,7 @@ class MainWindow(QWidget):
                     # Pad each octet to 3 digits: 192.168.1.10 -> 192.168.001.010
                     return ".".join(f"{int(part):03d}" for part in parts)
                 return ip
-            
+
             def pad_ipv6(match):
                 ip = match.group(0)
                 try:
@@ -1280,20 +1280,20 @@ class MainWindow(QWidget):
                         left, right = ip.split('::', 1)
                         left_parts = left.split(':') if left else []
                         right_parts = right.split(':') if right else []
-                        
+
                         # Remove empty parts
                         left_parts = [p for p in left_parts if p]
                         right_parts = [p for p in right_parts if p]
-                        
+
                         # Calculate missing segments (IPv6 has 8 segments total)
                         missing_segments = 8 - len(left_parts) - len(right_parts)
-                        
+
                         # Reconstruct full address
                         full_parts = left_parts + ['0000'] * missing_segments + right_parts
                     else:
                         # Already full form
                         full_parts = ip.split(':')
-                    
+
                     # Pad each segment to 4 hex digits
                     padded_parts = []
                     for part in full_parts:
@@ -1302,28 +1302,28 @@ class MainWindow(QWidget):
                             padded_parts.append(f"{int(part, 16):04x}")
                         else:
                             return ip  # Invalid hex, return original
-                    
+
                     return ':'.join(padded_parts)
-                    
+
                 except (ValueError, IndexError):
                     return ip  # Invalid IPv6, return original
-            
+
             # Process text - first IPv4, then IPv6
             result = str(text)
-            
+
             # Replace IPv4 addresses with zero-padded versions
             result = re.sub(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', pad_ipv4, result)
-            
+
             # Replace IPv6 addresses (more complex pattern to avoid matching IPv4)
             # Match IPv6: groups of hex digits separated by colons, may contain ::
             ipv6_pattern = r'\b(?:[0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}\b|\b[0-9a-fA-F]{1,4}::(?:[0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}\b|\b::(?:[0-9a-fA-F]{1,4}:){0,7}[0-9a-fA-F]{1,4}\b|\b[0-9a-fA-F]{1,4}::\b|\b::\b'
             result = re.sub(ipv6_pattern, pad_ipv6, result)
-            
+
             return result
-            
+
         except:
             return str(text)
-    
+
     def _set_sortable_text(self, item, column, display_text):
         """Set both display text and sortable data for proper IP address sorting"""
         item.setText(column, display_text)
@@ -1336,38 +1336,38 @@ class MainWindow(QWidget):
             # Parse the DNS record to get type and data
             record_type, data = self.parse_dns_record(dns_blob)
             timestamp = self.format_timestamp(raw_ts)
-            
+
             # Split the name by dots (e.g., "_gc._tcp.Default-First-Site-Name._sites")
             parts = name.split(".")
-            
+
             if len(parts) <= 1:
                 # No dots, place directly in zone
                 display_name = name
                 item = SortableTreeWidgetItem(["", display_name, record_type, data, timestamp])
                 item.setIcon(0, self._get_icon("unknown.png"))
                 item.setData(0, Qt.UserRole, {"dn": dn, "name": name, "zone_dn": zone_dn})
-                
+
                 # Set sortable data for both Name column (1) and Data column (3)
                 self._set_sortable_text(item, 1, display_name)
                 self._set_sortable_text(item, 3, data)
-                
+
                 # Add to record list since we're in zone view
                 self.record_list.addTopLevelItem(item)
                 return
-            
+
             # Process parts from right to left to create hierarchy
             # e.g., for "_gc._tcp.Default-First-Site-Name._sites" we get:
             # parts = ["_gc", "_tcp", "Default-First-Site-Name", "_sites"]
             # We need to create: _sites -> Default-First-Site-Name -> _tcp (and place _gc in _tcp)
-            
+
             current_item = zone_item
             current_path = ""
-            
+
             # Process all but the last part to create folder hierarchy
             for i in range(len(parts) - 1, 0, -1):  # Process from rightmost to second part
                 folder_name = parts[i]
                 current_path = folder_name if not current_path else f"{folder_name}.{current_path}"
-                
+
                 # Look for existing folder at current level
                 existing_folder = None
                 for j in range(current_item.childCount()):
@@ -1378,7 +1378,7 @@ class MainWindow(QWidget):
                         child_data.get("name") == folder_name):
                         existing_folder = child
                         break
-                
+
                 # Create folder if it doesn't exist
                 if not existing_folder:
                     container_item = SortableTreeWidgetItem([folder_name])
@@ -1391,16 +1391,16 @@ class MainWindow(QWidget):
                     container_item.setIcon(0, self._get_icon("folder.png"))
                     current_item.addChild(container_item)
                     existing_folder = container_item
-                
+
                 current_item = existing_folder
-            
+
             # The first part (leftmost) is the actual record name to display
             display_name = parts[0]
-            
+
             # Note: The record isn't actually added to any tree here since this method
             # is called from load_zone_records which manages the record display.
             # The hierarchy creation is the main purpose of this method.
-            
+
         except Exception as e:
             self.logger.error(f"Failed to place record {name} in hierarchy: {e}")
 
