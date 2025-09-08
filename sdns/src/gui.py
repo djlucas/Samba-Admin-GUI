@@ -1262,7 +1262,7 @@ class MainWindow(QWidget):
         try:
             import re
             
-            def pad_ip(match):
+            def pad_ipv4(match):
                 ip = match.group(0)
                 parts = ip.split(".")
                 if len(parts) == 4 and all(part.isdigit() and 0 <= int(part) <= 255 for part in parts):
@@ -1270,8 +1270,55 @@ class MainWindow(QWidget):
                     return ".".join(f"{int(part):03d}" for part in parts)
                 return ip
             
-            # Replace all IP addresses in the text with zero-padded versions
-            result = re.sub(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', pad_ip, str(text))
+            def pad_ipv6(match):
+                ip = match.group(0)
+                try:
+                    # Handle IPv6 addresses
+                    # First, expand :: to full form
+                    if '::' in ip:
+                        # Split on ::
+                        left, right = ip.split('::', 1)
+                        left_parts = left.split(':') if left else []
+                        right_parts = right.split(':') if right else []
+                        
+                        # Remove empty parts
+                        left_parts = [p for p in left_parts if p]
+                        right_parts = [p for p in right_parts if p]
+                        
+                        # Calculate missing segments (IPv6 has 8 segments total)
+                        missing_segments = 8 - len(left_parts) - len(right_parts)
+                        
+                        # Reconstruct full address
+                        full_parts = left_parts + ['0000'] * missing_segments + right_parts
+                    else:
+                        # Already full form
+                        full_parts = ip.split(':')
+                    
+                    # Pad each segment to 4 hex digits
+                    padded_parts = []
+                    for part in full_parts:
+                        # Validate hex and pad
+                        if all(c in '0123456789abcdefABCDEF' for c in part):
+                            padded_parts.append(f"{int(part, 16):04x}")
+                        else:
+                            return ip  # Invalid hex, return original
+                    
+                    return ':'.join(padded_parts)
+                    
+                except (ValueError, IndexError):
+                    return ip  # Invalid IPv6, return original
+            
+            # Process text - first IPv4, then IPv6
+            result = str(text)
+            
+            # Replace IPv4 addresses with zero-padded versions
+            result = re.sub(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', pad_ipv4, result)
+            
+            # Replace IPv6 addresses (more complex pattern to avoid matching IPv4)
+            # Match IPv6: groups of hex digits separated by colons, may contain ::
+            ipv6_pattern = r'\b(?:[0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}\b|\b[0-9a-fA-F]{1,4}::(?:[0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}\b|\b::(?:[0-9a-fA-F]{1,4}:){0,7}[0-9a-fA-F]{1,4}\b|\b[0-9a-fA-F]{1,4}::\b|\b::\b'
+            result = re.sub(ipv6_pattern, pad_ipv6, result)
+            
             return result
             
         except:
