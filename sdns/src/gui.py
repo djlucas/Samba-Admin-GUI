@@ -355,17 +355,7 @@ class MainWindow(QWidget):
             # Build hierarchy tree from all records
             hierarchy = defaultdict(dict)
             
-            # Debug: Log all records we're about to process
-            self.logger.debug(f"*** About to process {len(all_records)} records for hierarchy building")
-            for name in sorted(all_records.keys()):
-                self.logger.debug(f"  - {name}")
-            
             for name, record_data in all_records.items():
-                # Debug: Check DomainDnsZones state before processing each record
-                if "DomainDnsZones" in hierarchy:
-                    self.logger.debug(f"*** Before processing {name}: DomainDnsZones = {hierarchy['DomainDnsZones']}")
-                else:
-                    self.logger.debug(f"*** Before processing {name}: DomainDnsZones not in hierarchy")
                 
                 if is_ipv6_reverse and len(name) > 0 and name != "@":
                     # IPv6 reverse zone logic
@@ -390,13 +380,6 @@ class MainWindow(QWidget):
                                 current[part] = {}
                         # Move to the next level - DON'T reassign if it already exists
                         current = current[part]
-                        if part == "DomainDnsZones":
-                            self.logger.debug(f"    *** DomainDnsZones now has keys: {list(current.keys())}")
-                    if "DomainDnsZones" in name:
-                        self.logger.debug(f"  *** Successfully processed DomainDnsZones hierarchy for {name}")
-                        # Show final DomainDnsZones structure
-                        if "DomainDnsZones" in hierarchy:
-                            self.logger.debug(f"  *** Final DomainDnsZones structure: {hierarchy['DomainDnsZones']}")
                 else:
                     # Skip creating hierarchy for @ records in IPv6 reverse zones
                     if is_ipv6_reverse and name == "@":
@@ -406,15 +389,6 @@ class MainWindow(QWidget):
                     # This prevents overwriting existing hierarchical structures
                     if name not in hierarchy:
                         hierarchy[name] = {}
-                    else:
-                        self.logger.debug(f"*** Skipping hierarchy creation for '{name}' - already exists with structure: {hierarchy[name]}")
-            
-            # Log hierarchy creation summary
-            self.logger.debug(f"Created hierarchy for zone {zone['name']} with {len(hierarchy)} top-level items")
-            self.logger.debug(f"Top-level hierarchy keys: {list(hierarchy.keys())}")
-            if "DomainDnsZones" in hierarchy:
-                self.logger.debug("*** DomainDnsZones container found in hierarchy!")
-                self.logger.debug(f"*** COMPLETE DomainDnsZones hierarchy: {hierarchy['DomainDnsZones']}")
             
             # Create tree items from hierarchy
             self.create_hierarchy_items(zone_item, hierarchy, all_records, icon_func, "", is_ipv6_reverse)
@@ -428,9 +402,6 @@ class MainWindow(QWidget):
         for name, children in sorted(hierarchy.items()):
             full_name = f"{name}.{prefix}" if prefix else name
             
-            self.logger.debug(f"Creating tree item for: {name}, children count: {len(children)}, full_name: {full_name}")
-            if name == "DomainDnsZones":
-                self.logger.debug(f"*** DomainDnsZones tree item - children: {list(children.keys()) if children else 'None'}")
             
             # For IPv6 reverse zones, create hex digit folders that contain records directly
             if is_ipv6_reverse:
