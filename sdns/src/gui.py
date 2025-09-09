@@ -65,6 +65,7 @@ class MainWindow(QWidget):
         self.logger = logger
         self.zones = zones
         self._site_names_cache = None  # Cache for AD site names
+        self.zone_records_cache = {}   # Cache for parsed DNS records by zone
         self.setWindowTitle("SDNS - Samba DNS Management")
         self.resize(800, 500)
 
@@ -249,7 +250,14 @@ class MainWindow(QWidget):
         root.addChild(server_node)
 
         self.zone_tree.addTopLevelItem(root)
-        self.zone_tree.expandAll()
+        
+        # Expand only specific nodes
+        root.setExpanded(True)  # DNS root
+        server_node.setExpanded(True)  # Server node
+        forward_node.setExpanded(True)  # Forward Lookup Zones
+        reverse_node.setExpanded(True)  # Reverse Lookup Zones
+        # forwarders_node stays collapsed
+        
         self.logger.info("Loaded DNS zones into tree view")
 
     def _populate_forward_zones(self, forward_node, icon):
@@ -301,52 +309,64 @@ class MainWindow(QWidget):
             self.build_zone_hierarchy(zone_item, zone, self._get_icon)
 
     def build_zone_hierarchy(self, zone_item, zone, icon_func):
-        """Build hierarchical container structure from DNS record names"""
+        """Build hierarchical container structure from DNS record names and cache parsed records"""
         try:
-            # Collect all records from all zone partitions
-            all_records = {}
+            zone_name = zone["name"]
 
-            if "dns" in zone:
-                # New structure: zone has multiple DNs
-                for zone_info in zone["dns"]:
-                    try:
-                        result = self.ldap_conn.search_s(
-                            zone_info["dn"],
-                            ldap.SCOPE_ONELEVEL,
-                            "(objectClass=dnsNode)",
-                            ["name", "dnsRecord", "whenCreated", "modifyTimestamp"]
-                        )
-                        for dn, attrs in result:
-                            name = attrs.get("name", [b""])[0].decode("utf-8") if "name" in attrs else ""
-                            record_data = {
-                                'dn': dn,
-                                'name': name,
-                                'attrs': attrs,
-                                'dns_blobs': attrs.get("dnsRecord", []),
-                                'source': zone_info["source"]
-                            }
-                            all_records[name] = record_data
-
-                    except Exception as e:
-                        self.logger.warning(f"Failed to load records from {zone_info['dn']}: {e}")
+            # Check if this zone is already cached
+            if zone_name in self.zone_records_cache:
+                self.logger.debug(f"Using cached records for zone {zone_name}")
+                cached_zone = self.zone_records_cache[zone_name]
+                all_records = cached_zone["raw_records"]
+                # Skip to hierarchy building since records are cached
             else:
-                # Legacy structure: zone has single DN
-                result = self.ldap_conn.search_s(
-                    zone["dn"],
-                    ldap.SCOPE_ONELEVEL,
-                    "(objectClass=dnsNode)",
-                    ["name", "dnsRecord", "whenCreated", "modifyTimestamp"]
-                )
-                for dn, attrs in result:
-                    name = attrs.get("name", [b""])[0].decode("utf-8") if "name" in attrs else ""
-                    record_data = {
-                        'dn': dn,
-                        'name': name,
-                        'attrs': attrs,
-                        'dns_blobs': attrs.get("dnsRecord", []),
-                        'source': "System"
-                    }
-                    all_records[name] = record_data
+                # Collect all records from all zone partitions
+                all_records = {}
+
+                if "dns" in zone:
+                    # New structure: zone has multiple DNs
+                    for zone_info in zone["dns"]:
+                        try:
+                            result = self.ldap_conn.search_s(
+                                zone_info["dn"],
+                                ldap.SCOPE_ONELEVEL,
+                                "(objectClass=dnsNode)",
+                                ["name", "dnsRecord", "whenCreated", "modifyTimestamp"]
+                            )
+                            for dn, attrs in result:
+                                name = attrs.get("name", [b""])[0].decode("utf-8") if "name" in attrs else ""
+                                record_data = {
+                                    'dn': dn,
+                                    'name': name,
+                                    'attrs': attrs,
+                                    'dns_blobs': attrs.get("dnsRecord", []),
+                                    'source': zone_info["source"]
+                                }
+                                all_records[name] = record_data
+
+                        except Exception as e:
+                            self.logger.warning(f"Failed to load records from {zone_info['dn']}: {e}")
+                else:
+                    # Legacy structure: zone has single DN
+                    result = self.ldap_conn.search_s(
+                        zone["dn"],
+                        ldap.SCOPE_ONELEVEL,
+                        "(objectClass=dnsNode)",
+                        ["name", "dnsRecord", "whenCreated", "modifyTimestamp"]
+                    )
+                    for dn, attrs in result:
+                        name = attrs.get("name", [b""])[0].decode("utf-8") if "name" in attrs else ""
+                        record_data = {
+                            'dn': dn,
+                            'name': name,
+                            'attrs': attrs,
+                            'dns_blobs': attrs.get("dnsRecord", []),
+                            'source': "System"
+                        }
+                        all_records[name] = record_data
+
+                # Parse and cache all records for this zone
+                self._build_zone_cache(zone_name, zone, all_records)
 
             # Check if this is an IPv6 or IPv4 reverse zone
             is_ipv6_reverse = zone["name"].endswith(".ip6.arpa")
@@ -395,6 +415,74 @@ class MainWindow(QWidget):
 
         except Exception as e:
             self.logger.warning(f"Could not build hierarchy for zone {zone['name']}: {e}")
+
+    def _build_zone_cache(self, zone_name, zone, all_records):
+        """Parse and cache all DNS records for a zone"""
+        try:
+            from datetime import datetime
+
+            parsed_records = {}
+            is_ipv4_reverse = zone_name.endswith(".in-addr.arpa")
+            is_ipv6_reverse = zone_name.endswith(".ip6.arpa")
+
+            for name, record_data in all_records.items():
+                dns_blobs = record_data['dns_blobs']
+                attrs = record_data['attrs']
+                dn = record_data['dn']
+
+                if not dns_blobs:
+                    continue
+
+                # Parse timestamp
+                raw_ts = attrs.get("modifyTimestamp", attrs.get("whenCreated", [b""]))[0].decode("utf-8")
+                timestamp = self.format_timestamp(raw_ts)
+
+                # Determine display name based on zone type
+                if name == "@":
+                    display_name = "(same as parent)"
+                elif is_ipv4_reverse and name != "@":
+                    display_name = self._reconstruct_ipv4_from_octets(name, zone_name)
+                else:
+                    display_name = name
+
+                # Parse all DNS records for this name
+                parsed_dns_records = []
+                for blob in dns_blobs:
+                    try:
+                        record_type, data = self.parse_dns_record(blob)
+                        parsed_dns_records.append({
+                            "type": record_type,
+                            "data": data,
+                            "raw_blob": blob
+                        })
+                    except Exception as e:
+                        self.logger.warning(f"Failed to parse DNS record for {name}: {e}")
+                        continue
+
+                # Store in cache
+                parsed_records[name] = {
+                    "dn": dn,
+                    "display_name": display_name,
+                    "parsed_records": parsed_dns_records,
+                    "timestamp": timestamp,
+                    "raw_attrs": attrs,
+                    "source": record_data.get("source", "System")
+                }
+
+            # Store the complete zone cache
+            self.zone_records_cache[zone_name] = {
+                "raw_records": all_records,  # Keep for hierarchy building
+                "parsed_records": parsed_records,  # Parsed for quick display
+                "zone_info": zone,
+                "is_ipv4_reverse": is_ipv4_reverse,
+                "is_ipv6_reverse": is_ipv6_reverse,
+                "last_updated": datetime.now()
+            }
+
+            self.logger.info(f"Cached {len(parsed_records)} parsed records for zone {zone_name}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to build cache for zone {zone_name}: {e}")
 
     def create_hierarchy_items(self, parent_item, hierarchy, records, icon_func, prefix, is_ipv6_reverse=False):
         """Recursively create tree items from hierarchy"""
@@ -481,39 +569,113 @@ class MainWindow(QWidget):
                 self.load_zone_records(item_data["dn"])
 
     def load_zone_records_multi(self, zone_data):
-        """Load DNS records for a zone with multiple DNS partitions (new structure)"""
+        """Load DNS records for a zone with multiple DNS partitions (new structure) - using cache"""
         try:
-            # Collect all records from all zone partitions (similar to build_zone_hierarchy)
-            all_records = {}
+            zone_name = zone_data.get("name", "")
 
-            for zone_info in zone_data["dns"]:
-                try:
-                    result = self.ldap_conn.search_s(
-                        zone_info["dn"],
-                        ldap.SCOPE_ONELEVEL,
-                        "(objectClass=dnsNode)",
-                        ["name", "dnsRecord", "whenCreated", "modifyTimestamp"]
-                    )
-                    for dn, attrs in result:
-                        name = attrs.get("name", [b""])[0].decode("utf-8") if "name" in attrs else ""
-                        if name not in all_records:  # Avoid duplicates
-                            all_records[name] = {
-                                'dn': dn,
-                                'name': name,
-                                'attrs': attrs,
-                                'dns_blobs': attrs.get("dnsRecord", []),
-                                'source': zone_info["source"]
-                            }
-
-                except Exception as e:
-                    self.logger.warning(f"Failed to load records from {zone_info['dn']}: {e}")
-
-            # Now process all records for display (using the same logic as load_zone_records)
-            self.process_zone_records_for_display(all_records, zone_data)
+            # Use cached records if available
+            if zone_name in self.zone_records_cache:
+                self.logger.debug(f"Loading zone records from cache for {zone_name}")
+                self._display_cached_zone_records(zone_name)
+            else:
+                # Fallback to original method if not cached (shouldn't happen after hierarchy building)
+                self.logger.warning(f"Zone {zone_name} not found in cache, loading from LDAP")
+                self._load_zone_records_from_ldap_multi(zone_data)
 
         except Exception as e:
             self.logger.error(f"Failed to load zone records: {e}")
             QMessageBox.critical(self, "Error", f"Could not load zone records:\n{e}")
+
+    def _load_zone_records_from_ldap_multi(self, zone_data):
+        """Fallback method to load from LDAP when cache is unavailable"""
+        # Collect all records from all zone partitions (similar to build_zone_hierarchy)
+        all_records = {}
+
+        for zone_info in zone_data["dns"]:
+            try:
+                result = self.ldap_conn.search_s(
+                    zone_info["dn"],
+                    ldap.SCOPE_ONELEVEL,
+                    "(objectClass=dnsNode)",
+                    ["name", "dnsRecord", "whenCreated", "modifyTimestamp"]
+                )
+                for dn, attrs in result:
+                    name = attrs.get("name", [b""])[0].decode("utf-8") if "name" in attrs else ""
+                    if name not in all_records:  # Avoid duplicates
+                        all_records[name] = {
+                            'dn': dn,
+                            'name': name,
+                            'attrs': attrs,
+                            'dns_blobs': attrs.get("dnsRecord", []),
+                            'source': zone_info["source"]
+                        }
+
+            except Exception as e:
+                self.logger.warning(f"Failed to load records from {zone_info['dn']}: {e}")
+
+        # Now process all records for display (using the same logic as load_zone_records)
+        self.process_zone_records_for_display(all_records, zone_data)
+
+    def _display_cached_zone_records(self, zone_name):
+        """Display zone records from cache"""
+        try:
+            cached_zone = self.zone_records_cache[zone_name]
+            parsed_records = cached_zone["parsed_records"]
+            is_ipv6_reverse = cached_zone["is_ipv6_reverse"]
+
+            self.record_list.clear()
+
+            for name, record_info in parsed_records.items():
+                # For IPv6 reverse zones, only show @ records at zone level
+                if is_ipv6_reverse and name != "@":
+                    continue  # Skip PTR records - they belong in subfolders
+
+                # For forward zones, skip names that should create hierarchy AND single names that have containers
+                if not is_ipv6_reverse and name != "@":
+                    if "." in name and self._should_create_hierarchy(name):
+                        continue  # Skip names that belong in hierarchical containers
+                    else:
+                        # Check if this single name has a corresponding container in the current zone
+                        zone_item = self.zone_tree.currentItem()
+                        if zone_item:
+                            should_skip = False
+                            for i in range(zone_item.childCount()):
+                                child = zone_item.child(i)
+                                child_data = child.data(0, Qt.UserRole)
+                                if (child_data and 
+                                    child_data.get("type") == "container" and 
+                                    child_data.get("name") == name):
+                                    should_skip = True
+                                    break
+                            if should_skip:
+                                continue
+
+                # Display all parsed records for this name
+                display_name = record_info["display_name"]
+                timestamp = record_info["timestamp"]
+                dn = record_info["dn"]
+
+                # Extract zone_dn from record DN for compatibility
+                zone_dn = dn.split(",", 1)[1] if "," in dn else ""
+
+                for parsed_record in record_info["parsed_records"]:
+                    record_type = parsed_record["type"]
+                    data = parsed_record["data"]
+
+                    item = SortableTreeWidgetItem(["", display_name, record_type, data, timestamp])
+                    item.setIcon(0, self._get_icon("unknown.png"))
+                    item.setData(0, Qt.UserRole, {"dn": dn, "name": name, "zone_dn": zone_dn})
+
+                    # Set sortable data for both Name column (1) and Data column (3)
+                    self._set_sortable_text(item, 1, display_name)
+                    self._set_sortable_text(item, 3, data)
+
+                    self.record_list.addTopLevelItem(item)
+
+            self.logger.info(f"Displayed {self.record_list.topLevelItemCount()} DNS records from cache")
+
+        except Exception as e:
+            self.logger.error(f"Failed to display cached zone records: {e}")
 
     def process_zone_records_for_display(self, all_records, zone_data):
         """Process zone records for display in the record list"""
@@ -593,12 +755,21 @@ class MainWindow(QWidget):
             self.logger.error(f"Failed to process zone records for display: {e}")
 
     def load_zone_records(self, zone_dn):
-        """Load DNS records for a zone"""
+        """Load DNS records for a zone - using cache"""
         try:
             # Get zone information to check if it's IPv6 reverse
             zone_item = self.zone_tree.currentItem()
             zone_data = zone_item.data(0, Qt.UserRole) if zone_item else {}
             zone_name = zone_data.get("name", "")
+
+            # Use cached records if available
+            if zone_name in self.zone_records_cache:
+                self.logger.debug(f"Loading zone records from cache for {zone_name}")
+                self._display_cached_zone_records(zone_name)
+                return
+
+            # Fallback to LDAP loading if not cached
+            self.logger.warning(f"Zone {zone_name} not found in cache, loading from LDAP")
             is_ipv6_reverse = zone_name.endswith(".ip6.arpa")
 
             result = self.ldap_conn.search_s(
@@ -699,13 +870,97 @@ class MainWindow(QWidget):
             QMessageBox.critical(self, "Error", f"Could not load records:\n{e}")
 
     def load_container_records(self, container_data):
-        """Load DNS records that belong to a container"""
+        """Load DNS records that belong to a container - using cache"""
+        try:
+            container_prefix = container_data.get("full_name", "")
+            self.logger.debug(f"Loading container records for: '{container_prefix}'")
+
+            # Find the zone name by walking up the tree
+            zone_name = None
+            current_item = self.zone_tree.currentItem()
+            while current_item:
+                current_data = current_item.data(0, Qt.UserRole)
+                if current_data and current_data.get("type") == "zone":
+                    zone_name = current_data.get("name")
+                    break
+                current_item = current_item.parent()
+
+            if not zone_name:
+                self.logger.error("Could not find zone name for container")
+                return
+
+            # Use cached records if available
+            if zone_name in self.zone_records_cache:
+                self.logger.debug(f"Loading container records from cache for {zone_name}")
+                self._display_cached_container_records(zone_name, container_prefix)
+                return
+
+            # Fallback to LDAP loading if not cached (original method)
+            self.logger.warning(f"Zone {zone_name} not found in cache, loading container from LDAP")
+            self._load_container_records_from_ldap(container_data)
+
+        except Exception as e:
+            self.logger.error(f"Failed to load container records: {e}")
+            QMessageBox.critical(self, "Error", f"Could not load container records:\n{e}")
+
+    def _display_cached_container_records(self, zone_name, container_prefix):
+        """Display container records from cache"""
+        try:
+            cached_zone = self.zone_records_cache[zone_name]
+            parsed_records = cached_zone["parsed_records"]
+
+            self.record_list.clear()
+
+            for name, record_info in parsed_records.items():
+                # Check if this record belongs to this container level
+                if container_prefix:
+                    if name == container_prefix:
+                        # This is the container itself - show as "@" record
+                        display_name = "(same as parent)"
+                    elif name.endswith(f".{container_prefix}"):
+                        # This record belongs to this container - extract the prefix
+                        remaining = name[:-len(f".{container_prefix}")]
+                        if "." in remaining:
+                            continue  # Skip - belongs to deeper container
+                        display_name = remaining
+                    else:
+                        continue  # No match, skip this record
+                else:
+                    # No container prefix, show name as-is
+                    display_name = name
+
+                # Display all parsed records for this name
+                timestamp = record_info["timestamp"]
+                dn = record_info["dn"]
+
+                # Extract zone_dn from record DN for compatibility
+                zone_dn = dn.split(",", 1)[1] if "," in dn else ""
+
+                for parsed_record in record_info["parsed_records"]:
+                    record_type = parsed_record["type"]
+                    data = parsed_record["data"]
+
+                    item = SortableTreeWidgetItem(["", display_name, record_type, data, timestamp])
+                    item.setIcon(0, self._get_icon("unknown.png"))
+                    item.setData(0, Qt.UserRole, {"dn": dn, "name": name, "zone_dn": zone_dn})
+
+                    # Set sortable data for both Name column (1) and Data column (3)
+                    self._set_sortable_text(item, 1, display_name)
+                    self._set_sortable_text(item, 3, data)
+
+                    self.record_list.addTopLevelItem(item)
+
+            self.logger.info(f"Displayed {self.record_list.topLevelItemCount()} container records from cache")
+
+        except Exception as e:
+            self.logger.error(f"Failed to display cached container records: {e}")
+
+    def _load_container_records_from_ldap(self, container_data):
+        """Fallback method to load container records from LDAP when cache unavailable"""
         try:
             # Find the zone for this container
             zone_dn = container_data.get("zone_dn")
             container_prefix = container_data.get("full_name", "")
-
-            self.logger.debug(f"Loading container records for: '{container_prefix}'")
 
             # Find the zone data (either from zone_dn or by walking up the tree)
             zone_data = None
@@ -833,15 +1088,100 @@ class MainWindow(QWidget):
             QMessageBox.critical(self, "Error", f"Could not load container records:\n{e}")
 
     def load_ipv6_container_records(self, container_data):
-        """Load IPv6 PTR records that start with a specific hex digit"""
+        """Load IPv6 PTR records that start with a specific hex digit - using cache"""
+        try:
+            hex_digit = container_data.get("name", "")
+            if not hex_digit:
+                return
+
+            # Find the zone name by walking up the tree
+            zone_name = None
+            current_item = self.zone_tree.currentItem()
+            while current_item:
+                current_data = current_item.data(0, Qt.UserRole)
+                if current_data and current_data.get("type") == "zone":
+                    zone_name = current_data.get("name")
+                    break
+                current_item = current_item.parent()
+
+            if not zone_name:
+                self.logger.error("Could not find zone name for IPv6 container")
+                return
+
+            # Use cached records if available
+            if zone_name in self.zone_records_cache:
+                self.logger.debug(f"Loading IPv6 container records from cache for {zone_name}")
+                self._display_cached_ipv6_container_records(zone_name, hex_digit)
+                return
+
+            # Fallback to LDAP loading if not cached
+            self.logger.warning(f"Zone {zone_name} not found in cache, loading IPv6 container from LDAP")
+            self._load_ipv6_container_records_from_ldap(container_data)
+
+        except Exception as e:
+            self.logger.error(f"Failed to load IPv6 container records: {e}")
+            QMessageBox.critical(self, "Error", f"Could not load IPv6 container records:\n{e}")
+
+    def _display_cached_ipv6_container_records(self, zone_name, hex_digit):
+        """Display IPv6 container records from cache"""
+        try:
+            cached_zone = self.zone_records_cache[zone_name]
+            parsed_records = cached_zone["parsed_records"]
+            zone_info = cached_zone["zone_info"]
+
+            self.record_list.clear()
+
+            for name, record_info in parsed_records.items():
+                # Only show records that end with this hex digit (and aren't "@")
+                if name == "@" or not name.endswith(hex_digit):
+                    continue
+
+                # For IPv6 PTR records, reconstruct the IPv6 address for the Name column
+                # Get zone_dn for the reconstruction function
+                zone_dn = None
+                if "dns" in zone_info and zone_info["dns"]:
+                    zone_dn = zone_info["dns"][0]["dn"]
+                elif "dn" in zone_info:
+                    zone_dn = zone_info["dn"]
+
+                if zone_dn:
+                    ipv6_addr = self._reconstruct_ipv6_from_nibbles(name, hex_digit, zone_dn)
+                else:
+                    ipv6_addr = name  # Fallback if no zone DN
+
+                # Display all parsed records for this name
+                timestamp = record_info["timestamp"]
+                dn = record_info["dn"]
+
+                # Extract zone_dn from record DN for compatibility  
+                record_zone_dn = dn.split(",", 1)[1] if "," in dn else (zone_dn or "")
+
+                for parsed_record in record_info["parsed_records"]:
+                    record_type = parsed_record["type"]
+                    data = parsed_record["data"]
+
+                    item = SortableTreeWidgetItem(["", ipv6_addr, record_type, data, timestamp])
+                    item.setIcon(0, self._get_icon("unknown.png"))
+                    item.setData(0, Qt.UserRole, {"dn": dn, "name": name, "zone_dn": record_zone_dn})
+
+                    # Set sortable data for both Name column (1) and Data column (3)
+                    self._set_sortable_text(item, 1, ipv6_addr)
+                    self._set_sortable_text(item, 3, data)
+
+                    self.record_list.addTopLevelItem(item)
+
+            self.logger.info(f"Displayed {self.record_list.topLevelItemCount()} IPv6 container records from cache")
+
+        except Exception as e:
+            self.logger.error(f"Failed to display cached IPv6 container records: {e}")
+
+    def _load_ipv6_container_records_from_ldap(self, container_data):
+        """Fallback method to load IPv6 container records from LDAP when cache unavailable"""
         try:
             # Get zone information (handle both old and new structures)
             zone_dn = container_data.get("zone_dn")
             zone_data = container_data.get("zone_data")
             hex_digit = container_data.get("name", "")
-
-            if not hex_digit:
-                return
 
             # Load records from zone (either multi-partition or single)
             all_records = {}
